@@ -228,6 +228,11 @@ a:focus-visible {
   color: #ffffff;
 }
 
+.button-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -342,6 +347,107 @@ a:focus-visible {
   gap: 14px;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.interview-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.interview-config,
+.session-panel,
+.session-content,
+.feedback-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.interview-config {
+  position: sticky;
+  top: 24px;
+}
+
+.session-panel {
+  min-height: 620px;
+  border-left: 1px solid var(--border);
+  padding-left: 24px;
+}
+
+.empty-session {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 480px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty-session p {
+  max-width: 360px;
+}
+
+.question-block {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+}
+
+.question-block h3 {
+  max-width: 760px;
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.45;
+}
+
+.feedback-panel {
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  padding: 16px 18px;
+}
+
+.feedback-panel p,
+.feedback-panel h4,
+.feedback-panel ul {
+  margin-top: 0;
+}
+
+.feedback-panel ul {
+  padding-left: 20px;
+}
+
+.session-actions {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.session-complete {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.completion-panel {
+  display: flex;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border));
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 16px;
+  color: var(--success);
+}
+
+.completion-panel p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+}
+
 .button-row {
   justify-content: flex-end;
 }
@@ -417,8 +523,22 @@ a:focus-visible {
   }
 
   .upload-tool,
-  .editor-grid {
+  .editor-grid,
+  .form-grid,
+  .interview-layout {
     grid-template-columns: 1fr;
+  }
+
+  .interview-config {
+    position: static;
+  }
+
+  .session-panel {
+    min-height: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+    padding-top: 20px;
+    padding-left: 0;
   }
 
   .filter-row {

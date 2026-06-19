@@ -13,6 +13,10 @@ export interface ModelProvider {
   models: string[];
 }
 
+export interface ModelListResponse {
+  providers: ModelProvider[];
+}
+
 export interface DocumentRecord {
   id: string;
   collection: string;
@@ -50,6 +54,12 @@ export interface InterviewConfig {
   target_rounds: number;
 }
 
+export interface InterviewConfigResponse extends InterviewConfig {
+  id: string;
+  is_last_used: boolean;
+  updated_at: string;
+}
+
 export interface InterviewSession {
   id: string;
   config_id: string;
@@ -76,6 +86,19 @@ export interface InterviewTurn {
   created_at: string;
 }
 
+export interface InterviewSessionCreatedResponse {
+  session: InterviewSession;
+  turn: InterviewTurn;
+}
+
+export interface AnswerFeedback {
+  feedback: string;
+  missing_points: string[];
+  follow_up_question: string;
+  weaknesses: string[];
+  review_suggestions: string[];
+}
+
 export interface ReportRecord {
   id: string;
   session_id: string;
@@ -83,6 +106,11 @@ export interface ReportRecord {
   summary: string;
   weaknesses: string[];
   created_at: string;
+}
+
+export interface FinishInterviewResponse {
+  session: InterviewSession;
+  report: ReportRecord;
 }
 
 export interface MemoryFileContent {

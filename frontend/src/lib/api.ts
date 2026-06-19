@@ -1,4 +1,15 @@
-import type { DocumentListResponse, DocumentRecord, DocumentUpdate } from "./types";
+import type {
+  AnswerFeedback,
+  DocumentListResponse,
+  DocumentRecord,
+  DocumentUpdate,
+  FinishInterviewResponse,
+  InterviewConfig,
+  InterviewConfigResponse,
+  InterviewSessionCreatedResponse,
+  InterviewTurn,
+  ModelListResponse,
+} from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -47,6 +58,62 @@ export function updateDocument(
 
 export function reindexDocument(documentId: string): Promise<DocumentRecord> {
   return apiJson<DocumentRecord>(`/api/documents/${documentId}/reindex`, {
+    method: "POST",
+  });
+}
+
+export function getModels(): Promise<ModelListResponse> {
+  return apiJson<ModelListResponse>("/api/models");
+}
+
+export function getLastInterviewConfig(): Promise<InterviewConfigResponse> {
+  return apiJson<InterviewConfigResponse>("/api/interview-configs/last");
+}
+
+export function saveLastInterviewConfig(
+  config: InterviewConfig,
+): Promise<InterviewConfigResponse> {
+  return apiJson<InterviewConfigResponse>("/api/interview-configs/last", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function createInterviewSession(
+  config: InterviewConfig,
+): Promise<InterviewSessionCreatedResponse> {
+  return apiJson<InterviewSessionCreatedResponse>("/api/interview-sessions", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export function submitAnswer(sessionId: string, answer: string): Promise<AnswerFeedback> {
+  return apiJson<AnswerFeedback>(`/api/interview-sessions/${sessionId}/answer`, {
+    method: "POST",
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export function submitFollowUpAnswer(
+  sessionId: string,
+  answer: string,
+): Promise<InterviewTurn> {
+  return apiJson<InterviewTurn>(`/api/interview-sessions/${sessionId}/follow-up-answer`, {
+    method: "POST",
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export function nextQuestion(sessionId: string): Promise<InterviewSessionCreatedResponse> {
+  return apiJson<InterviewSessionCreatedResponse>(
+    `/api/interview-sessions/${sessionId}/next-question`,
+    { method: "POST" },
+  );
+}
+
+export function finishInterview(sessionId: string): Promise<FinishInterviewResponse> {
+  return apiJson<FinishInterviewResponse>(`/api/interview-sessions/${sessionId}/finish`, {
     method: "POST",
   });
 }
