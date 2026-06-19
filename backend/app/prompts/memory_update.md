@@ -1,5 +1,15 @@
 Update the fixed long-term memory files after a completed mock interview.
 
+Return strict JSON only:
+
+```json
+{
+  "weakness_summary": "string",
+  "interview_summary": "string",
+  "learning_profile": "string"
+}
+```
+
 Rewrite only the current summary section of each file and append a dated record
 to that file's history section.
 

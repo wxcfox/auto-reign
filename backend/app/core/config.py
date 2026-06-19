@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     openai_chat_models: str = "gpt-4.1-mini,gpt-4.1"
     deepseek_chat_models: str = "deepseek-chat"
     qwen_chat_models: str = "qwen-plus,qwen-max"
+    deepseek_base_url: str = "https://api.deepseek.com"
+    qwen_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    deterministic_model_fallback: bool = False
 
     def ensure_data_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)

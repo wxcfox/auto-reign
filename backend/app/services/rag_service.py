@@ -1,11 +1,14 @@
 import hashlib
 import math
 import re
+from typing import Any
 
+from fastapi import HTTPException
+from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.core.errors import not_found
+from app.core.errors import bad_gateway, not_found, service_unavailable
 from app.db.models import Document, DocumentChunk
 from app.repositories.chroma_store import ChromaChunk, ChromaStore
 from app.repositories.sqlite import DocumentChunkRepository, DocumentRepository
@@ -18,11 +21,13 @@ class RagService:
         chroma_store: ChromaStore | None = None,
         document_repository: DocumentRepository | None = None,
         chunk_repository: DocumentChunkRepository | None = None,
+        embedding_client: Any | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.chroma_store = chroma_store or ChromaStore(self.settings.chroma_dir)
         self.document_repository = document_repository or DocumentRepository()
         self.chunk_repository = chunk_repository or DocumentChunkRepository()
+        self.embedding_client = embedding_client
 
     def split_text(self, text: str, chunk_size: int = 900, overlap: int = 120) -> list[str]:
         compact = text.strip()
@@ -39,7 +44,30 @@ class RagService:
         return chunks
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return [self._embed_text(text) for text in texts]
+        if not texts:
+            return []
+        if self.settings.deterministic_model_fallback:
+            return [self._embed_text(text) for text in texts]
+        if self.settings.embedding_provider != "openai" or not self.settings.openai_api_key:
+            raise service_unavailable(
+                "embedding_provider_not_configured",
+                "The configured embedding provider is not available.",
+            )
+        try:
+            client = self.embedding_client or OpenAI(api_key=self.settings.openai_api_key)
+            response = client.embeddings.create(
+                input=texts,
+                model=self.settings.embedding_model,
+                encoding_format="float",
+            )
+            return [list(item.embedding) for item in response.data]
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise bad_gateway(
+                "embedding_call_failed",
+                "The embedding provider request failed.",
+            ) from error
 
     def index_document(self, session: Session, document: Document) -> Document:
         text = self._read_document_text(document)

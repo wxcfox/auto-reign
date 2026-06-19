@@ -79,6 +79,8 @@ class MemoryService:
                     }
                     for turn in turns
                 ],
+                provider=config.chat_model_provider,
+                model=config.chat_model,
             )
         )
         report_path = self.settings.data_dir / "reports" / f"{interview_session.id}.md"
@@ -95,7 +97,12 @@ class MemoryService:
                 weaknesses=weaknesses,
             ),
         )
-        memory_files = self._update_memory_files(session, report_markdown)
+        memory_files = self._update_memory_files(
+            session,
+            report_markdown,
+            config.chat_model_provider,
+            config.chat_model,
+        )
         interview_session.status = "completed"
         interview_session.ended_at = datetime.now(UTC)
         interview_session.report_path = str(report_path)
@@ -175,7 +182,13 @@ class MemoryService:
                 )
         self.rag_service.chroma_store.upsert_chunks(self.settings.default_collection, chunks)
 
-    def _update_memory_files(self, session: Session, report_markdown: str) -> list[MemoryFile]:
+    def _update_memory_files(
+        self,
+        session: Session,
+        report_markdown: str,
+        provider: str,
+        model: str,
+    ) -> list[MemoryFile]:
         paths = self.ensure_memory_files()
         update = self.model_service.update_memory(
             MemoryUpdateRequest(
@@ -183,6 +196,8 @@ class MemoryService:
                 existing_memory={
                     kind: path.read_text(encoding="utf-8") for kind, path in paths.items()
                 },
+                provider=provider,
+                model=model,
             )
         )
         summaries = {

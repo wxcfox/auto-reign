@@ -75,6 +75,8 @@ class InterviewService:
                 extra_prompt=config_in.extra_prompt,
                 mode=config_in.mode,
                 context=context,
+                provider=config_in.chat_model_provider,
+                model=config_in.chat_model,
             )
         )
         interview_session = self.session_repository.add(
@@ -112,11 +114,16 @@ class InterviewService:
     ) -> AnswerEvaluationResult:
         interview_session = self._get_active_session(session, session_id)
         turn = self._current_turn(session, interview_session)
+        config = session.get(InterviewConfig, interview_session.config_id)
+        if config is None:
+            raise not_found("config_not_found", "Interview config not found.")
         evaluation = self.model_service.evaluate_answer(
             AnswerEvaluationRequest(
                 question=turn.question,
                 answer=answer,
                 context=[],
+                provider=config.chat_model_provider,
+                model=config.chat_model,
             )
         )
         turn.answer = answer
@@ -158,6 +165,8 @@ class InterviewService:
                 extra_prompt=config.extra_prompt,
                 mode=config.mode,
                 context=[str(hit["content"]) for hit in context_hits],
+                provider=config.chat_model_provider,
+                model=config.chat_model,
             )
         )
         interview_session.current_round = next_round
