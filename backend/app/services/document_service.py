@@ -10,6 +10,7 @@ from app.core.errors import bad_request
 from app.db.models import Document
 from app.repositories.sqlite import DocumentRepository
 from app.services.model_service import ModelService
+from app.services.rag_service import RagService
 
 
 class DocumentService:
@@ -17,9 +18,11 @@ class DocumentService:
         self,
         model_service: ModelService | None = None,
         document_repository: DocumentRepository | None = None,
+        rag_service: RagService | None = None,
     ) -> None:
         self.model_service = model_service or ModelService()
         self.document_repository = document_repository or DocumentRepository()
+        self.rag_service = rag_service or RagService()
 
     async def upload_document(self, session: Session, upload_file: UploadFile) -> Document:
         source_filename = upload_file.filename or "document.txt"
@@ -49,7 +52,8 @@ class DocumentService:
             analysis_status="completed",
             index_status="pending",
         )
-        return self.document_repository.add(session, document)
+        document = self.document_repository.add(session, document)
+        return self.rag_service.index_document(session, document)
 
     def _file_type(self, filename: str) -> str:
         suffix = Path(filename).suffix.lower()

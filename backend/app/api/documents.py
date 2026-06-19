@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.errors import not_found
 from app.db.session import session_scope
 from app.repositories.sqlite import DocumentRepository
-from app.schemas.documents import DocumentListResponse, DocumentResponse
+from app.schemas.documents import DocumentListResponse, DocumentResponse, DocumentUpdate
 from app.services.document_service import DocumentService
+from app.services.rag_service import RagService
 
 router = APIRouter(prefix="/api/documents")
 
@@ -36,4 +37,23 @@ def get_document(document_id: str, session: Session = Depends(get_session)) -> D
     document = DocumentRepository().get(session, document_id)
     if document is None:
         raise not_found("document_not_found", "Document not found.")
+    return DocumentResponse.model_validate(document)
+
+
+@router.patch("/{document_id}", response_model=DocumentResponse)
+def update_document(
+    document_id: str, update: DocumentUpdate, session: Session = Depends(get_session)
+) -> DocumentResponse:
+    document = DocumentRepository().get(session, document_id)
+    if document is None:
+        raise not_found("document_not_found", "Document not found.")
+    for field, value in update.model_dump(exclude_unset=True).items():
+        setattr(document, field, value)
+    session.flush()
+    return DocumentResponse.model_validate(document)
+
+
+@router.post("/{document_id}/reindex", response_model=DocumentResponse)
+def reindex_document(document_id: str, session: Session = Depends(get_session)) -> DocumentResponse:
+    document = RagService().reindex_document(session, document_id)
     return DocumentResponse.model_validate(document)
