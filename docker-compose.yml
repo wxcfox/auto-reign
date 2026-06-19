@@ -3,8 +3,7 @@ services:
     build:
       context: ./backend
     env_file:
-      - path: .env
-        required: false
+      - .env
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
