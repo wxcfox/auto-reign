@@ -20,7 +20,7 @@ def init_db(engine: Engine) -> None:
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 @contextmanager
