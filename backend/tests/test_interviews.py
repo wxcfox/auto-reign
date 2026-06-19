@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-import pytest
 
 
 CONFIG = {
@@ -56,7 +55,6 @@ def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None
     assert next_question.json()["turn"]["round_index"] == 2
 
 
-@pytest.mark.skip(reason="finish endpoint lands in report task")
 def test_completed_session_rejects_answer(client: TestClient) -> None:
     created = client.post("/api/interview-sessions", json=CONFIG).json()
     session_id = created["session"]["id"]

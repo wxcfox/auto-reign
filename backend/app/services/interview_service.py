@@ -14,6 +14,7 @@ from app.services.model_service import (
     ModelService,
     QuestionGenerationRequest,
 )
+from app.services.memory_service import MemoryService
 from app.services.rag_service import RagService
 
 
@@ -189,3 +190,6 @@ class InterviewService:
             if turn.round_index == interview_session.current_round:
                 return turn
         raise not_found("turn_not_found", "Current interview turn not found.")
+
+    def finish_session(self, session: Session, session_id: str):
+        return MemoryService().finish_session(session, session_id)

@@ -14,6 +14,7 @@ from app.schemas.interviews import (
     InterviewSessionDetailResponse,
     InterviewTurnResponse,
 )
+from app.schemas.reports import ReportResponse
 from app.services.interview_service import InterviewService
 
 router = APIRouter(prefix="/api")
@@ -85,3 +86,16 @@ def next_question(
 ) -> InterviewSessionCreatedResponse:
     interview_session, turn = InterviewService().next_question(session, session_id)
     return InterviewSessionCreatedResponse(session=interview_session, turn=turn)
+
+
+@router.post("/interview-sessions/{session_id}/finish")
+def finish_session(session_id: str, session: Session = Depends(get_session)) -> dict[str, object]:
+    interview_session, report = InterviewService().finish_session(session, session_id)
+    return {
+        "session": InterviewSessionDetailResponse(
+            session=interview_session,
+            config=interview_session.config,
+            turns=interview_session.turns,
+        ).session,
+        "report": ReportResponse.model_validate(report),
+    }

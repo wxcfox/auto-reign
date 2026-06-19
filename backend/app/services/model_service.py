@@ -81,10 +81,35 @@ class ModelService:
         )
 
     def generate_report(self, request: ReportGenerationRequest) -> str:
-        return (
-            "# Interview Report\n\n"
-            "## Summary\n"
-            f"Session {request.session_id} completed with {len(request.turns)} turns.\n"
+        weaknesses = sorted(
+            {
+                weakness
+                for turn in request.turns
+                for weakness in (turn.get("weaknesses") or [])
+                if isinstance(weakness, str)
+            }
+        )
+        missing_points = sorted(
+            {
+                point
+                for turn in request.turns
+                for point in (turn.get("missing_points") or [])
+                if isinstance(point, str)
+            }
+        )
+        return "\n\n".join(
+            [
+                "# Interview Report",
+                "## Summary\n"
+                f"Session {request.session_id} completed with {len(request.turns)} turns.",
+                "## Strong Signals\n- Structured backend reasoning",
+                "## Missing Points\n"
+                + "\n".join(f"- {point}" for point in missing_points or ["No major gaps recorded."]),
+                "## Weaknesses\n"
+                + "\n".join(f"- {weakness}" for weakness in weaknesses or ["No major weaknesses recorded."]),
+                "## Review Plan\n- Revisit feedback and prepare one concrete example per gap.",
+                "## Source Context\n- Generated from local interview turns and memory.",
+            ]
         )
 
     def update_memory(self, request: MemoryUpdateRequest) -> MemoryUpdateResult:
