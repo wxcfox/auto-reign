@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
@@ -13,6 +14,12 @@ from app.db.session import create_engine_for_settings, init_db, make_session_fac
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Auto Reign API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     settings = get_settings()
     engine = create_engine_for_settings(settings)
     init_db(engine)

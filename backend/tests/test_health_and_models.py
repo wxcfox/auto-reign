@@ -30,3 +30,15 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
         {"provider": "openai", "models": ["gpt-4.1-mini", "gpt-4.1"]}
     ]
     assert "sk-test" not in response.text
+
+
+def test_frontend_origin_is_allowed(client: TestClient) -> None:
+    response = client.options(
+        "/api/documents",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
