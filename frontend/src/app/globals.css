@@ -259,6 +259,203 @@ a:focus-visible {
   gap: 16px;
 }
 
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 100px;
+  padding: 18px;
+}
+
+.metric + .metric {
+  border-left: 1px solid var(--border);
+}
+
+.metric svg {
+  color: var(--accent);
+}
+
+.metric div {
+  display: grid;
+  gap: 3px;
+}
+
+.metric strong {
+  font-size: 1.5rem;
+}
+
+.metric span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.content-surface {
+  min-height: 180px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+}
+
+.latest-report {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.latest-report h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.latest-report time {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.action-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+}
+
+.action-link:hover {
+  border-color: var(--accent);
+}
+
+.action-link div {
+  display: grid;
+  gap: 4px;
+}
+
+.action-link span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  min-height: 560px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.report-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border-right: 1px solid var(--border);
+  padding: 18px 18px 18px 0;
+}
+
+.report-list-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  padding: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-list-item[data-active="true"] {
+  border-color: var(--border);
+  background: var(--surface-muted);
+}
+
+.report-list-item span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.report-list-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-list-item time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.report-preview {
+  min-width: 0;
+  padding: 24px;
+}
+
+.segmented-control {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented-control button {
+  min-height: 36px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button[data-active="true"] {
+  background: var(--surface-muted);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.memory-preview {
+  min-height: 320px;
+}
+
 .filter-row {
   justify-content: flex-end;
 }
@@ -488,6 +685,27 @@ a:focus-visible {
   line-height: 1.25;
 }
 
+.markdown-view > :first-child {
+  margin-top: 0;
+}
+
+.markdown-view > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-view pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: #17202a;
+  color: #f6f7f9;
+  padding: 14px;
+}
+
+.markdown-view code {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -525,8 +743,46 @@ a:focus-visible {
   .upload-tool,
   .editor-grid,
   .form-grid,
-  .interview-layout {
+  .interview-layout,
+  .metric-grid,
+  .dashboard-grid,
+  .quick-actions,
+  .review-layout {
     grid-template-columns: 1fr;
+  }
+
+  .metric + .metric {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .latest-report {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+  }
+
+  .report-preview {
+    padding: 20px 0;
+  }
+
+  .segmented-control {
+    display: grid;
+    width: 100%;
+  }
+
+  .segmented-control button {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .segmented-control button:last-child {
+    border-bottom: 0;
   }
 
   .interview-config {

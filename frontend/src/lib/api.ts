@@ -4,11 +4,15 @@ import type {
   DocumentRecord,
   DocumentUpdate,
   FinishInterviewResponse,
+  HealthResponse,
   InterviewConfig,
   InterviewConfigResponse,
   InterviewSessionCreatedResponse,
   InterviewTurn,
+  MemoryResponse,
   ModelListResponse,
+  ReportDetailResponse,
+  ReportListResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -116,4 +120,20 @@ export function finishInterview(sessionId: string): Promise<FinishInterviewRespo
   return apiJson<FinishInterviewResponse>(`/api/interview-sessions/${sessionId}/finish`, {
     method: "POST",
   });
+}
+
+export function getHealth(): Promise<HealthResponse> {
+  return apiJson<HealthResponse>("/api/health");
+}
+
+export function getReports(): Promise<ReportListResponse> {
+  return apiJson<ReportListResponse>("/api/reports");
+}
+
+export function getReport(reportId: string): Promise<ReportDetailResponse> {
+  return apiJson<ReportDetailResponse>(`/api/reports/${reportId}`);
+}
+
+export function getMemory(): Promise<MemoryResponse> {
+  return apiJson<MemoryResponse>("/api/memory");
 }

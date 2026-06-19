@@ -17,6 +17,15 @@ export interface ModelListResponse {
   providers: ModelProvider[];
 }
 
+export interface HealthResponse {
+  status: "ok";
+  storage: {
+    sqlite: string;
+    chroma: string;
+  };
+  providers: Record<ProviderName, boolean>;
+}
+
 export interface DocumentRecord {
   id: string;
   collection: string;
@@ -108,6 +117,15 @@ export interface ReportRecord {
   created_at: string;
 }
 
+export interface ReportListResponse {
+  reports: ReportRecord[];
+}
+
+export interface ReportDetailResponse {
+  report: ReportRecord;
+  content: string;
+}
+
 export interface FinishInterviewResponse {
   session: InterviewSession;
   report: ReportRecord;
@@ -117,4 +135,10 @@ export interface MemoryFileContent {
   kind: "weakness" | "interview_history" | "learning_profile";
   content: string;
   updated_at: string | null;
+}
+
+export type MemoryKind = MemoryFileContent["kind"];
+
+export interface MemoryResponse {
+  files: Record<MemoryKind, MemoryFileContent>;
 }
