@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.errors import not_found
 from app.db.session import session_scope
 from app.schemas.interviews import (
+    AnswerFeedbackResponse,
+    AnswerRequest,
     InterviewConfigIn,
     InterviewConfigResponse,
     InterviewSessionCreatedResponse,
     InterviewSessionDetailResponse,
+    InterviewTurnResponse,
 )
 from app.services.interview_service import InterviewService
 
@@ -55,3 +58,30 @@ def get_session_detail(
         raise not_found("session_not_found", "Interview session not found.")
     interview_session, config, turns = detail
     return InterviewSessionDetailResponse(session=interview_session, config=config, turns=turns)
+
+
+@router.post("/interview-sessions/{session_id}/answer", response_model=AnswerFeedbackResponse)
+def submit_answer(
+    session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
+) -> AnswerFeedbackResponse:
+    feedback = InterviewService().submit_answer(session, session_id, answer.answer)
+    return AnswerFeedbackResponse.model_validate(feedback.model_dump())
+
+
+@router.post(
+    "/interview-sessions/{session_id}/follow-up-answer",
+    response_model=InterviewTurnResponse,
+)
+def submit_follow_up_answer(
+    session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
+) -> InterviewTurnResponse:
+    turn = InterviewService().submit_follow_up_answer(session, session_id, answer.answer)
+    return InterviewTurnResponse.model_validate(turn)
+
+
+@router.post("/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse)
+def next_question(
+    session_id: str, session: Session = Depends(get_session)
+) -> InterviewSessionCreatedResponse:
+    interview_session, turn = InterviewService().next_question(session, session_id)
+    return InterviewSessionCreatedResponse(session=interview_session, turn=turn)
