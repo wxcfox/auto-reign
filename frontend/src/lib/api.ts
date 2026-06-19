@@ -1,4 +1,4 @@
-import type { DocumentRecord } from "./types";
+import type { DocumentListResponse, DocumentRecord, DocumentUpdate } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -25,4 +25,28 @@ export async function uploadDocument(file: File): Promise<DocumentRecord> {
     throw new Error(errorBody || `Upload failed with ${response.status}`);
   }
   return response.json() as Promise<DocumentRecord>;
+}
+
+export function getDocuments(): Promise<DocumentListResponse> {
+  return apiJson<DocumentListResponse>("/api/documents");
+}
+
+export function getDocument(documentId: string): Promise<DocumentRecord> {
+  return apiJson<DocumentRecord>(`/api/documents/${documentId}`);
+}
+
+export function updateDocument(
+  documentId: string,
+  update: DocumentUpdate,
+): Promise<DocumentRecord> {
+  return apiJson<DocumentRecord>(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+  });
+}
+
+export function reindexDocument(documentId: string): Promise<DocumentRecord> {
+  return apiJson<DocumentRecord>(`/api/documents/${documentId}/reindex`, {
+    method: "POST",
+  });
 }

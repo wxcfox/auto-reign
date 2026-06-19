@@ -1,5 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { BookOpen, ClipboardList, Database, LayoutDashboard } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -10,10 +14,11 @@ const navItems = [
 
 type AppShellProps = {
   children: ReactNode;
-  currentPath?: string;
 };
 
-export function AppShell({ children, currentPath = "/" }: AppShellProps) {
+export function AppShell({ children }: AppShellProps) {
+  const currentPath = usePathname();
+
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
@@ -24,12 +29,13 @@ export function AppShell({ children, currentPath = "/" }: AppShellProps) {
         <nav aria-label="Primary" className="app-nav">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = currentPath === item.href;
+            const active =
+              item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href);
             return (
-              <a href={item.href} key={item.href} data-active={active}>
+              <Link href={item.href} key={item.href} data-active={active}>
                 <Icon size={18} aria-hidden="true" />
                 <span>{item.label}</span>
-              </a>
+              </Link>
             );
           })}
         </nav>

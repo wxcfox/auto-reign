@@ -30,6 +30,15 @@ export interface DocumentRecord {
   updated_at: string;
 }
 
+export type DocumentUpdate = Pick<
+  DocumentRecord,
+  "title" | "summary" | "tags" | "knowledge_points" | "weakness_candidates"
+>;
+
+export interface DocumentListResponse {
+  documents: DocumentRecord[];
+}
+
 export interface InterviewConfig {
   target_company: string;
   target_role: string;
