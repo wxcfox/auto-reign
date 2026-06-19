@@ -6,6 +6,7 @@
 data/
 backend/.venv/
 backend/.pytest_cache/
+backend/*.egg-info/
 backend/__pycache__/
 backend/**/*.pyc
 frontend/node_modules/
