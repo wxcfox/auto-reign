@@ -1,0 +1,144 @@
+export type ProviderName = "openai" | "deepseek" | "qwen";
+
+export type InterviewMode =
+  | "comprehensive"
+  | "project_deep_dive"
+  | "knowledge_drill"
+  | "weakness_reinforcement";
+
+export type SessionStatus = "active" | "completed" | "cancelled";
+
+export interface ModelProvider {
+  provider: ProviderName;
+  models: string[];
+}
+
+export interface ModelListResponse {
+  providers: ModelProvider[];
+}
+
+export interface HealthResponse {
+  status: "ok";
+  storage: {
+    sqlite: string;
+    chroma: string;
+  };
+  providers: Record<ProviderName, boolean>;
+}
+
+export interface DocumentRecord {
+  id: string;
+  collection: string;
+  source_filename: string;
+  file_path: string;
+  file_type: "markdown" | "txt";
+  title: string;
+  summary: string;
+  tags: string[];
+  knowledge_points: string[];
+  weakness_candidates: string[];
+  analysis_status: "pending" | "completed" | "failed";
+  index_status: "pending" | "completed" | "failed";
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocumentUpdate = Pick<
+  DocumentRecord,
+  "title" | "summary" | "tags" | "knowledge_points" | "weakness_candidates"
+>;
+
+export interface DocumentListResponse {
+  documents: DocumentRecord[];
+}
+
+export interface InterviewConfig {
+  target_company: string;
+  target_role: string;
+  job_description: string;
+  extra_prompt: string;
+  mode: InterviewMode;
+  chat_model_provider: ProviderName;
+  chat_model: string;
+  target_rounds: number;
+}
+
+export interface InterviewConfigResponse extends InterviewConfig {
+  id: string;
+  is_last_used: boolean;
+  updated_at: string;
+}
+
+export interface InterviewSession {
+  id: string;
+  config_id: string;
+  status: SessionStatus;
+  current_round: number;
+  started_at: string;
+  ended_at: string | null;
+  report_path: string | null;
+}
+
+export interface InterviewTurn {
+  id: string;
+  session_id: string;
+  round_index: number;
+  question: string;
+  answer: string | null;
+  feedback: string | null;
+  missing_points: string[];
+  follow_up_question: string | null;
+  follow_up_answer: string | null;
+  weaknesses: string[];
+  review_suggestions: string[];
+  retrieved_context_refs: Array<Record<string, string>>;
+  created_at: string;
+}
+
+export interface InterviewSessionCreatedResponse {
+  session: InterviewSession;
+  turn: InterviewTurn;
+}
+
+export interface AnswerFeedback {
+  feedback: string;
+  missing_points: string[];
+  follow_up_question: string;
+  weaknesses: string[];
+  review_suggestions: string[];
+}
+
+export interface ReportRecord {
+  id: string;
+  session_id: string;
+  report_path: string;
+  summary: string;
+  weaknesses: string[];
+  created_at: string;
+}
+
+export interface ReportListResponse {
+  reports: ReportRecord[];
+}
+
+export interface ReportDetailResponse {
+  report: ReportRecord;
+  content: string;
+}
+
+export interface FinishInterviewResponse {
+  session: InterviewSession;
+  report: ReportRecord;
+}
+
+export interface MemoryFileContent {
+  kind: "weakness" | "interview_history" | "learning_profile";
+  content: string;
+  updated_at: string | null;
+}
+
+export type MemoryKind = MemoryFileContent["kind"];
+
+export interface MemoryResponse {
+  files: Record<MemoryKind, MemoryFileContent>;
+}
