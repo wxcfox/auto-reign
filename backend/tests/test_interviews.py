@@ -61,3 +61,57 @@ def test_completed_session_rejects_answer(client: TestClient) -> None:
     client.post(f"/api/interview-sessions/{session_id}/finish")
     response = client.post(f"/api/interview-sessions/{session_id}/answer", json={"answer": "late"})
     assert response.status_code == 409
+
+
+def test_next_question_requires_answer_and_respects_target_rounds(client: TestClient) -> None:
+    config = {**CONFIG, "target_rounds": 1}
+    created = client.post("/api/interview-sessions", json=config).json()
+    session_id = created["session"]["id"]
+
+    unanswered = client.post(f"/api/interview-sessions/{session_id}/next-question")
+    assert unanswered.status_code == 409
+    assert unanswered.json()["detail"]["code"] == "current_turn_unanswered"
+
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "A concrete answer."},
+    )
+    target_reached = client.post(f"/api/interview-sessions/{session_id}/next-question")
+    assert target_reached.status_code == 409
+    assert target_reached.json()["detail"]["code"] == "target_rounds_reached"
+
+
+def test_answers_cannot_be_submitted_twice(client: TestClient) -> None:
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+
+    follow_up_before_answer = client.post(
+        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        json={"answer": "Too early."},
+    )
+    assert follow_up_before_answer.status_code == 409
+    assert follow_up_before_answer.json()["detail"]["code"] == "main_answer_required"
+
+    first_answer = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "First answer."},
+    )
+    assert first_answer.status_code == 200
+    duplicate_answer = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "Replacement answer."},
+    )
+    assert duplicate_answer.status_code == 409
+    assert duplicate_answer.json()["detail"]["code"] == "answer_already_submitted"
+
+    first_follow_up = client.post(
+        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        json={"answer": "First follow-up."},
+    )
+    assert first_follow_up.status_code == 200
+    duplicate_follow_up = client.post(
+        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        json={"answer": "Replacement follow-up."},
+    )
+    assert duplicate_follow_up.status_code == 409
+    assert duplicate_follow_up.json()["detail"]["code"] == "follow_up_already_submitted"

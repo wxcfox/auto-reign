@@ -114,6 +114,8 @@ class InterviewService:
     ) -> AnswerEvaluationResult:
         interview_session = self._get_active_session(session, session_id)
         turn = self._current_turn(session, interview_session)
+        if turn.answer is not None:
+            raise conflict("answer_already_submitted", "The current answer was already submitted.")
         config = session.get(InterviewConfig, interview_session.config_id)
         if config is None:
             raise not_found("config_not_found", "Interview config not found.")
@@ -140,6 +142,13 @@ class InterviewService:
     ) -> InterviewTurn:
         interview_session = self._get_active_session(session, session_id)
         turn = self._current_turn(session, interview_session)
+        if turn.answer is None or not turn.follow_up_question:
+            raise conflict("main_answer_required", "Submit the main answer before the follow-up.")
+        if turn.follow_up_answer is not None:
+            raise conflict(
+                "follow_up_already_submitted",
+                "The current follow-up answer was already submitted.",
+            )
         turn.follow_up_answer = answer
         session.flush()
         return turn
@@ -151,6 +160,11 @@ class InterviewService:
         config = session.get(InterviewConfig, interview_session.config_id)
         if config is None:
             raise not_found("config_not_found", "Interview config not found.")
+        current_turn = self._current_turn(session, interview_session)
+        if current_turn.answer is None:
+            raise conflict("current_turn_unanswered", "Answer the current question before continuing.")
+        if interview_session.current_round >= config.target_rounds:
+            raise conflict("target_rounds_reached", "The configured target round count was reached.")
         next_round = interview_session.current_round + 1
         context_hits = self.rag_service.search(
             session,

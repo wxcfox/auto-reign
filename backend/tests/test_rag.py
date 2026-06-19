@@ -58,3 +58,53 @@ def test_embed_texts_uses_openai_when_configured(tmp_path) -> None:
             "encoding_format": "float",
         }
     ]
+
+
+def test_search_uses_configured_embedding_client(tmp_path) -> None:
+    embedding_calls: list[dict[str, object]] = []
+    search_calls: list[dict[str, object]] = []
+
+    class FakeEmbeddings:
+        def create(self, **kwargs):
+            embedding_calls.append(kwargs)
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.5, 0.25])])
+
+    class FakeChromaStore:
+        def search(self, collection_name, query_embedding, limit):
+            search_calls.append(
+                {
+                    "collection_name": collection_name,
+                    "query_embedding": query_embedding,
+                    "limit": limit,
+                }
+            )
+            return []
+
+    settings = Settings(
+        data_dir=tmp_path,
+        sqlite_path=tmp_path / "app.db",
+        chroma_dir=tmp_path / "chroma",
+        openai_api_key="openai-secret",
+        deterministic_model_fallback=False,
+    )
+    service = RagService(
+        settings=settings,
+        embedding_client=SimpleNamespace(embeddings=FakeEmbeddings()),
+        chroma_store=FakeChromaStore(),
+    )
+
+    assert service.search(None, "retrieval query", 3) == []
+    assert embedding_calls == [
+        {
+            "input": ["retrieval query"],
+            "model": "text-embedding-3-small",
+            "encoding_format": "float",
+        }
+    ]
+    assert search_calls == [
+        {
+            "collection_name": "default",
+            "query_embedding": [0.5, 0.25],
+            "limit": 3,
+        }
+    ]

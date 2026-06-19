@@ -120,7 +120,7 @@ class RagService:
 
     def search(self, session: Session, query: str, limit: int) -> list[dict[str, object]]:
         del session
-        query_embedding = self._embed_text(query)
+        query_embedding = self.embed_texts([query])[0]
         raw_hits = self.chroma_store.search(self.settings.default_collection, query_embedding, limit)
         hits: list[dict[str, object]] = []
         for hit in raw_hits:
