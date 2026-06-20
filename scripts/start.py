@@ -200,7 +200,16 @@ def run_command(
 ) -> None:
     result = subprocess.run(args, cwd=cwd, env=env, check=False)
     if result.returncode != 0:
-        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args)}")
+        hint = ""
+        if list(args[:6]) == ["docker", "compose", "-p", PROJECT_NAME, "up", "-d"]:
+            mysql_image = (env or {}).get("MYSQL_IMAGE", "mysql:8.4")
+            qdrant_image = (env or {}).get("QDRANT_IMAGE", "qdrant/qdrant:v1.17.0")
+            hint = (
+                " If Docker Hub access is unstable, set MYSQL_IMAGE and QDRANT_IMAGE in .env "
+                f"to reachable mirror images, then retry. Current values: MYSQL_IMAGE={mysql_image}, "
+                f"QDRANT_IMAGE={qdrant_image}."
+            )
+        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args)}{hint}")
 
 
 def backend_state_path(paths: RuntimePaths) -> Path:

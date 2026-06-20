@@ -45,8 +45,16 @@ Default host ports:
 - `13306`: MySQL
 - `16333`: Qdrant HTTP
 
+Default dependency images:
+
+- `MYSQL_IMAGE=mysql:8.4`
+- `QDRANT_IMAGE=qdrant/qdrant:v1.17.0`
+
 At least one backend provider key must be non-empty before that provider and its
 models appear in the Interview selector. Keep `.env` local; it is ignored by Git.
+If Docker Hub access is unstable in your environment, override `MYSQL_IMAGE` and
+`QDRANT_IMAGE` in `.env` with reachable mirror image references before rerunning
+`./start.sh`.
 
 ## Runtime Modes
 
@@ -113,6 +121,8 @@ docker compose config
 | `MYSQL_PORT` | Host port mapped to MySQL container port `3306`. |
 | `QDRANT_HTTP_PORT` | Host port mapped to Qdrant HTTP port `6333`. |
 | `QDRANT_GRPC_PORT` | Host port mapped to Qdrant gRPC port `6334`. |
+| `MYSQL_IMAGE` | Container image reference for the local MySQL dependency. |
+| `QDRANT_IMAGE` | Container image reference for the local Qdrant dependency. |
 | `MYSQL_DATABASE` | MySQL database name. |
 | `MYSQL_USER` | MySQL application user. |
 | `MYSQL_PASSWORD` | MySQL application password. |
