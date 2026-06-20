@@ -24,7 +24,7 @@ class RagService:
         embedding_client: Any | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.chroma_store = chroma_store or ChromaStore(self.settings.data_dir / "chroma")
+        self.chroma_store = chroma_store or ChromaStore(self.settings)
         self.document_repository = document_repository or DocumentRepository()
         self.chunk_repository = chunk_repository or DocumentChunkRepository()
         self.embedding_client = embedding_client

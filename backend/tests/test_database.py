@@ -1,8 +1,21 @@
+from unittest.mock import Mock
+
+from fastapi.testclient import TestClient
+
+from app import main as main_module
 from app.core.config import Settings
 from app.db.session import create_engine_for_settings
 
+STORAGE_ENVIRONMENT_VARIABLES = (
+    "DATABASE_URL",
+    "QDRANT_URL",
+    "QDRANT_COLLECTION",
+)
 
-def test_settings_exposes_database_and_qdrant_configuration() -> None:
+
+def test_settings_exposes_database_and_qdrant_configuration(monkeypatch) -> None:
+    for variable in STORAGE_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
     settings = Settings(_env_file=None)
 
     assert settings.database_url == (
@@ -12,7 +25,9 @@ def test_settings_exposes_database_and_qdrant_configuration() -> None:
     assert settings.qdrant_collection == "auto_reign_default"
 
 
-def test_settings_does_not_expose_legacy_storage_configuration() -> None:
+def test_settings_does_not_expose_legacy_storage_configuration(monkeypatch) -> None:
+    for variable in STORAGE_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
     settings = Settings(_env_file=None)
 
     assert not hasattr(settings, "sqlite_path")
@@ -34,3 +49,14 @@ def test_create_engine_uses_database_url_and_pool_pre_ping() -> None:
         assert engine.pool._pre_ping is True
     finally:
         engine.dispose()
+
+
+def test_app_shutdown_disposes_engine(monkeypatch) -> None:
+    engine = Mock()
+    monkeypatch.setattr(main_module, "create_engine_for_settings", lambda _settings: engine)
+
+    app = main_module.create_app()
+    with TestClient(app):
+        pass
+
+    engine.dispose.assert_called_once_with()

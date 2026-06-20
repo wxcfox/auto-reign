@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
-from app.repositories import chroma_store as chroma_store_module
 from app.repositories.chroma_store import ChromaChunk, ChromaStore
 from app.services.rag_service import RagService
 
@@ -27,8 +27,30 @@ def test_uploaded_document_is_searchable(client: TestClient) -> None:
     assert hits[0]["source_type"] == "document"
 
 
-def test_chroma_store_uses_memory_compatibility_without_chromadb(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(chroma_store_module, "chromadb", None)
+def test_chroma_store_rejects_non_memory_configuration(tmp_path) -> None:
+    settings = Settings(
+        _env_file=None,
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url="http://127.0.0.1:16333",
+        qdrant_collection="auto_reign_test",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Qdrant storage is not configured until the Qdrant adapter task",
+    ):
+        ChromaStore(settings)
+
+
+def test_chroma_store_uses_memory_compatibility_for_tests(tmp_path) -> None:
+    settings = Settings(
+        _env_file=None,
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+    )
     chunk = ChromaChunk(
         id="chunk-1",
         content="storage-neutral retrieval",
@@ -36,8 +58,8 @@ def test_chroma_store_uses_memory_compatibility_without_chromadb(tmp_path, monke
         metadata={"document_id": "document-1"},
     )
 
-    ChromaStore(tmp_path).upsert_chunks("test", [chunk])
-    hits = ChromaStore(tmp_path).search("test", [1.0, 0.0], 1)
+    ChromaStore(settings).upsert_chunks("test", [chunk])
+    hits = ChromaStore(settings).search("test", [1.0, 0.0], 1)
 
     assert hits == [
         {

@@ -17,9 +17,14 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     monkeypatch.setenv("QDRANT_COLLECTION", "auto_reign_test")
     monkeypatch.setenv("DETERMINISTIC_MODEL_FALLBACK", "true")
     get_settings.cache_clear()
-    engine = create_engine_for_settings(get_settings())
-    Base.metadata.create_all(bind=engine)
-    engine.dispose()
-    app = create_app()
-    with TestClient(app) as test_client:
-        yield test_client
+    try:
+        engine = create_engine_for_settings(get_settings())
+        try:
+            Base.metadata.create_all(bind=engine)
+        finally:
+            engine.dispose()
+        app = create_app()
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        get_settings.cache_clear()

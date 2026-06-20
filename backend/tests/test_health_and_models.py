@@ -13,8 +13,9 @@ def test_health_reports_local_dependencies(client: TestClient) -> None:
 
 def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "app.db"))
-    monkeypatch.setenv("CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'app.db'}")
+    monkeypatch.setenv("QDRANT_URL", ":memory:")
+    monkeypatch.setenv("QDRANT_COLLECTION", "auto_reign_test")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("QWEN_API_KEY", raising=False)
@@ -22,8 +23,11 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
     from app.main import create_app
 
     get_settings.cache_clear()
-    with TestClient(create_app()) as configured_client:
-        response = configured_client.get("/api/models")
+    try:
+        with TestClient(create_app()) as configured_client:
+            response = configured_client.get("/api/models")
+    finally:
+        get_settings.cache_clear()
     assert response.status_code == 200
     body = response.json()
     assert body["providers"] == [

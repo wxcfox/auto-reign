@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,15 +16,23 @@ from app.db.session import create_engine_for_settings, make_session_factory
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Auto Reign API")
+    settings = get_settings()
+    engine = create_engine_for_settings(settings)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            engine.dispose()
+
+    app = FastAPI(title="Auto Reign API", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    settings = get_settings()
-    engine = create_engine_for_settings(settings)
     app.state.session_factory = make_session_factory(engine)
     app.include_router(documents_router)
     app.include_router(health_router)
