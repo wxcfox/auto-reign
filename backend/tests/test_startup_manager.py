@@ -95,3 +95,39 @@ def test_healthy_managed_process_is_reused(tmp_path) -> None:
     )
 
     assert state == start_module.ServiceState(pid=84, port=3100, marker="next-marker")
+
+
+def test_wait_for_compose_service_health_retries_until_healthy(tmp_path, monkeypatch) -> None:
+    checks = iter(["starting", "starting", "healthy"])
+
+    def fake_health(_root, _service, _env):
+        return next(checks)
+
+    monkeypatch.setattr(start_module.time, "sleep", lambda _seconds: None)
+
+    assert (
+        start_module.wait_for_compose_service_health(
+            tmp_path,
+            "mysql",
+            2,
+            {},
+            health_reader=fake_health,
+        )
+        is True
+    )
+
+
+def test_healthy_managed_state_accepts_listener_owned_by_expected_project_dir(tmp_path) -> None:
+    state_path = tmp_path / "backend.json"
+    state_path.write_text('{"pid": 301, "port": 8300, "marker": "auto-reign-backend"}')
+
+    state = start_module.healthy_managed_state(
+        state_path,
+        health_url_for=lambda item: f"http://127.0.0.1:{item.port}/api/health",
+        command_for_pid=lambda pid: "/usr/bin/python3 uvicorn app.main:app --port 8300",
+        http_probe=lambda url, timeout: True,
+        cwd_for_pid=lambda pid: start_module.Path(start_module.__file__).resolve().parents[1] / "backend",
+        listener_pid_for_port_fn=lambda port: 301,
+    )
+
+    assert state == start_module.ServiceState(pid=301, port=8300, marker="auto-reign-backend")
