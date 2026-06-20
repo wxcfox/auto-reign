@@ -7,7 +7,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import conflict, not_found
 from app.db.models import InterviewConfig, InterviewSession, MemoryFile, Report
 from app.repositories.chroma_store import ChromaChunk
-from app.repositories.sqlite import (
+from app.repositories.database import (
     InterviewSessionRepository,
     InterviewTurnRepository,
     MemoryFileRepository,
@@ -157,7 +157,7 @@ class MemoryService:
                         "session_id": report.session_id,
                         "source_id": report.id,
                         "chunk_index": index,
-                        "collection": self.settings.default_collection,
+                        "collection": self.settings.qdrant_collection,
                         "title": "Interview Report",
                     },
                 )
@@ -175,12 +175,12 @@ class MemoryService:
                             "memory_kind": memory_file.kind,
                             "source_id": memory_file.id,
                             "chunk_index": index,
-                            "collection": self.settings.default_collection,
+                            "collection": self.settings.qdrant_collection,
                             "title": memory_file.kind,
                         },
                     )
                 )
-        self.rag_service.chroma_store.upsert_chunks(self.settings.default_collection, chunks)
+        self.rag_service.chroma_store.upsert_chunks(self.settings.qdrant_collection, chunks)
 
     def _update_memory_files(
         self,

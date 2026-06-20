@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import conflict, not_found
 from app.db.models import InterviewConfig, InterviewSession, InterviewTurn
-from app.repositories.sqlite import (
+from app.repositories.database import (
     InterviewConfigRepository,
     InterviewSessionRepository,
     InterviewTurnRepository,

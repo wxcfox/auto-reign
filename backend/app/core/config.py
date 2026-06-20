@@ -8,9 +8,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     data_dir: Path = Path("data")
-    sqlite_path: Path = Path("data/app.db")
-    chroma_dir: Path = Path("data/chroma")
-    default_collection: str = "default"
+    database_url: str = (
+        "mysql+pymysql://auto_reign:auto_reign@127.0.0.1:13306/auto_reign"
+    )
+    qdrant_url: str = "http://127.0.0.1:16333"
+    qdrant_collection: str = "auto_reign_default"
     embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
     openai_api_key: str | None = None
@@ -28,7 +30,6 @@ class Settings(BaseSettings):
         (self.data_dir / "uploads").mkdir(parents=True, exist_ok=True)
         (self.data_dir / "reports").mkdir(parents=True, exist_ok=True)
         (self.data_dir / "memory").mkdir(parents=True, exist_ok=True)
-        self.chroma_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

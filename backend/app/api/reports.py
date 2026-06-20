@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import not_found
 from app.db.session import session_scope
-from app.repositories.sqlite import ReportRepository
+from app.repositories.database import ReportRepository
 from app.schemas.reports import ReportDetailResponse, ReportListResponse, ReportResponse
 
 router = APIRouter(prefix="/api/reports")

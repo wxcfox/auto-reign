@@ -11,7 +11,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import bad_gateway, not_found, service_unavailable
 from app.db.models import Document, DocumentChunk
 from app.repositories.chroma_store import ChromaChunk, ChromaStore
-from app.repositories.sqlite import DocumentChunkRepository, DocumentRepository
+from app.repositories.database import DocumentChunkRepository, DocumentRepository
 
 
 class RagService:
@@ -24,7 +24,7 @@ class RagService:
         embedding_client: Any | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.chroma_store = chroma_store or ChromaStore(self.settings.chroma_dir)
+        self.chroma_store = chroma_store or ChromaStore(self.settings.data_dir / "chroma")
         self.document_repository = document_repository or DocumentRepository()
         self.chunk_repository = chunk_repository or DocumentChunkRepository()
         self.embedding_client = embedding_client
@@ -73,16 +73,16 @@ class RagService:
         text = self._read_document_text(document)
         chunks = self.split_text(text)
         embeddings = self.embed_texts(chunks)
-        self.chroma_store.delete_document_chunks(self.settings.default_collection, document.id)
+        self.chroma_store.delete_document_chunks(self.settings.qdrant_collection, document.id)
         self.chunk_repository.delete_for_document(session, document.id)
 
         chroma_chunks: list[ChromaChunk] = []
         db_chunks: list[DocumentChunk] = []
         for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-            chroma_id = f"document:{document.id}:{index}"
+            vector_id = f"document:{document.id}:{index}"
             chroma_chunks.append(
                 ChromaChunk(
-                    id=chroma_id,
+                    id=vector_id,
                     content=chunk,
                     embedding=embedding,
                     metadata={
@@ -101,12 +101,12 @@ class RagService:
                     document_id=document.id,
                     chunk_index=index,
                     content_hash=hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
-                    chroma_collection=self.settings.default_collection,
-                    chroma_id=chroma_id,
+                    vector_collection=self.settings.qdrant_collection,
+                    vector_id=vector_id,
                 )
             )
 
-        self.chroma_store.upsert_chunks(self.settings.default_collection, chroma_chunks)
+        self.chroma_store.upsert_chunks(self.settings.qdrant_collection, chroma_chunks)
         self.chunk_repository.add_many(session, db_chunks)
         document.index_status = "completed"
         session.flush()
@@ -121,7 +121,7 @@ class RagService:
     def search(self, session: Session, query: str, limit: int) -> list[dict[str, object]]:
         del session
         query_embedding = self.embed_texts([query])[0]
-        raw_hits = self.chroma_store.search(self.settings.default_collection, query_embedding, limit)
+        raw_hits = self.chroma_store.search(self.settings.qdrant_collection, query_embedding, limit)
         hits: list[dict[str, object]] = []
         for hit in raw_hits:
             metadata = hit["metadata"]

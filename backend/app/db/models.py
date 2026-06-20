@@ -47,8 +47,8 @@ class DocumentChunk(Base):
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     chunk_index: Mapped[int] = mapped_column(Integer)
     content_hash: Mapped[str] = mapped_column(String(128))
-    chroma_collection: Mapped[str] = mapped_column(String(120))
-    chroma_id: Mapped[str] = mapped_column(String(255), unique=True)
+    vector_collection: Mapped[str] = mapped_column(String(120))
+    vector_id: Mapped[str] = mapped_column(String(255), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     document: Mapped[Document] = relationship(back_populates="chunks")

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.errors import bad_request
 from app.db.models import Document
-from app.repositories.sqlite import DocumentRepository
+from app.repositories.database import DocumentRepository
 from app.services.model_service import ModelService
 from app.services.rag_service import RagService
 
@@ -40,7 +40,7 @@ class DocumentService:
 
         document = Document(
             id=document_id,
-            collection=settings.default_collection,
+            collection=settings.qdrant_collection,
             source_filename=source_filename,
             file_path=str(file_path),
             file_type=file_type,

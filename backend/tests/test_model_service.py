@@ -61,8 +61,9 @@ def test_model_service_uses_selected_provider(
 ) -> None:
     settings = Settings(
         data_dir=tmp_path,
-        sqlite_path=tmp_path / "app.db",
-        chroma_dir=tmp_path / "chroma",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
         deterministic_model_fallback=False,
         **settings_overrides,
     )
@@ -97,8 +98,9 @@ def test_model_service_uses_selected_provider(
 def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
-        sqlite_path=tmp_path / "app.db",
-        chroma_dir=tmp_path / "chroma",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
         deterministic_model_fallback=False,
     )
     service = ModelService(settings=settings)
@@ -121,8 +123,9 @@ def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
 def test_model_service_uses_deterministic_fallback_when_enabled(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
-        sqlite_path=tmp_path / "app.db",
-        chroma_dir=tmp_path / "chroma",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
         deterministic_model_fallback=True,
     )
     service = ModelService(settings=settings)
@@ -142,8 +145,9 @@ def test_model_service_uses_deterministic_fallback_when_enabled(tmp_path) -> Non
 def test_model_service_hides_provider_failure_details(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
-        sqlite_path=tmp_path / "app.db",
-        chroma_dir=tmp_path / "chroma",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
         openai_api_key="openai-secret",
         deterministic_model_fallback=False,
     )

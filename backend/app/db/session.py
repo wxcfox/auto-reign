@@ -5,18 +5,13 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.db.models import Base
 
 
 def create_engine_for_settings(settings: Settings) -> Engine:
-    settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(
-        f"sqlite:///{settings.sqlite_path}", connect_args={"check_same_thread": False}
-    )
-
-
-def init_db(engine: Engine) -> None:
-    Base.metadata.create_all(bind=engine)
+    kwargs: dict[str, object] = {"pool_pre_ping": True}
+    if settings.database_url.startswith("sqlite"):
+        kwargs["connect_args"] = {"check_same_thread": False}
+    return create_engine(settings.database_url, **kwargs)
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

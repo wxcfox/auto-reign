@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.repositories import chroma_store as chroma_store_module
+from app.repositories.chroma_store import ChromaChunk, ChromaStore
 from app.services.rag_service import RagService
 
 
@@ -25,6 +27,27 @@ def test_uploaded_document_is_searchable(client: TestClient) -> None:
     assert hits[0]["source_type"] == "document"
 
 
+def test_chroma_store_uses_memory_compatibility_without_chromadb(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(chroma_store_module, "chromadb", None)
+    chunk = ChromaChunk(
+        id="chunk-1",
+        content="storage-neutral retrieval",
+        embedding=[1.0, 0.0],
+        metadata={"document_id": "document-1"},
+    )
+
+    ChromaStore(tmp_path).upsert_chunks("test", [chunk])
+    hits = ChromaStore(tmp_path).search("test", [1.0, 0.0], 1)
+
+    assert hits == [
+        {
+            "content": "storage-neutral retrieval",
+            "score": 1.0,
+            "metadata": {"document_id": "document-1"},
+        }
+    ]
+
+
 def test_embed_texts_uses_openai_when_configured(tmp_path) -> None:
     calls: list[dict[str, object]] = []
 
@@ -41,8 +64,9 @@ def test_embed_texts_uses_openai_when_configured(tmp_path) -> None:
     client = SimpleNamespace(embeddings=FakeEmbeddings())
     settings = Settings(
         data_dir=tmp_path,
-        sqlite_path=tmp_path / "app.db",
-        chroma_dir=tmp_path / "chroma",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
         openai_api_key="openai-secret",
         deterministic_model_fallback=False,
     )
@@ -82,8 +106,9 @@ def test_search_uses_configured_embedding_client(tmp_path) -> None:
 
     settings = Settings(
         data_dir=tmp_path,
-        sqlite_path=tmp_path / "app.db",
-        chroma_dir=tmp_path / "chroma",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
         openai_api_key="openai-secret",
         deterministic_model_fallback=False,
     )
@@ -103,7 +128,7 @@ def test_search_uses_configured_embedding_client(tmp_path) -> None:
     ]
     assert search_calls == [
         {
-            "collection_name": "default",
+            "collection_name": "auto_reign_test",
             "query_embedding": [0.5, 0.25],
             "limit": 3,
         }
