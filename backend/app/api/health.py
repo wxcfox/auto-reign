@@ -11,8 +11,8 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "storage": {
-            "sqlite": "configured",
-            "chroma": "configured",
+            "mysql": "configured",
+            "qdrant": "configured",
         },
         "providers": {
             "openai": bool(settings.openai_api_key),

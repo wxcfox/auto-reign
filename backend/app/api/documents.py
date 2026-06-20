@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import not_found
 from app.db.session import session_scope
-from app.repositories.sqlite import DocumentRepository
+from app.repositories.database import DocumentRepository
 from app.schemas.documents import DocumentListResponse, DocumentResponse, DocumentUpdate
 from app.services.document_service import DocumentService
 from app.services.rag_service import RagService

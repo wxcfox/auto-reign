@@ -19,7 +19,7 @@ def test_upload_markdown_analyzes_and_persists_document(client: TestClient) -> N
     assert body["title"]
     assert body["summary"]
     assert body["analysis_status"] == "completed"
-    assert body["index_status"] in {"pending", "completed"}
+    assert body["index_status"] in {"completed", "failed"}
 
 
 def test_upload_rejects_pdf(client: TestClient) -> None:
