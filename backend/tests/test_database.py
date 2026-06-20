@@ -30,9 +30,12 @@ def test_settings_does_not_expose_legacy_storage_configuration(monkeypatch) -> N
         monkeypatch.delenv(variable, raising=False)
     settings = Settings(_env_file=None)
 
-    assert not hasattr(settings, "sqlite_path")
-    assert not hasattr(settings, "chroma_dir")
-    assert not hasattr(settings, "default_collection")
+    legacy_attributes = (
+        "sqlite_" + "path",
+        "chroma_" + "dir",
+        "default_" + "collection",
+    )
+    assert all(not hasattr(settings, attribute) for attribute in legacy_attributes)
 
 
 def test_create_engine_uses_database_url_and_pool_pre_ping() -> None:

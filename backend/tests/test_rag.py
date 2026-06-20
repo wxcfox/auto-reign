@@ -1,10 +1,10 @@
 from types import SimpleNamespace
-
-import pytest
+from uuid import UUID
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
-from app.repositories.chroma_store import ChromaChunk, ChromaStore
+from app.repositories.vector_store import VectorChunk, VectorStoreUnavailable
+from app.repositories.qdrant_store import QdrantVectorStore
 from app.services.rag_service import RagService
 
 
@@ -25,49 +25,6 @@ def test_uploaded_document_is_searchable(client: TestClient) -> None:
     hits = search.json()["hits"]
     assert hits
     assert hits[0]["source_type"] == "document"
-
-
-def test_chroma_store_rejects_non_memory_configuration(tmp_path) -> None:
-    settings = Settings(
-        _env_file=None,
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url="http://127.0.0.1:16333",
-        qdrant_collection="auto_reign_test",
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="Qdrant storage is not configured until the Qdrant adapter task",
-    ):
-        ChromaStore(settings)
-
-
-def test_chroma_store_uses_memory_compatibility_for_tests(tmp_path) -> None:
-    settings = Settings(
-        _env_file=None,
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-    )
-    chunk = ChromaChunk(
-        id="chunk-1",
-        content="storage-neutral retrieval",
-        embedding=[1.0, 0.0],
-        metadata={"document_id": "document-1"},
-    )
-
-    ChromaStore(settings).upsert_chunks("test", [chunk])
-    hits = ChromaStore(settings).search("test", [1.0, 0.0], 1)
-
-    assert hits == [
-        {
-            "content": "storage-neutral retrieval",
-            "score": 1.0,
-            "metadata": {"document_id": "document-1"},
-        }
-    ]
 
 
 def test_embed_texts_uses_openai_when_configured(tmp_path) -> None:
@@ -115,7 +72,7 @@ def test_search_uses_configured_embedding_client(tmp_path) -> None:
             embedding_calls.append(kwargs)
             return SimpleNamespace(data=[SimpleNamespace(embedding=[0.5, 0.25])])
 
-    class FakeChromaStore:
+    class FakeVectorStore:
         def search(self, collection_name, query_embedding, limit):
             search_calls.append(
                 {
@@ -137,7 +94,7 @@ def test_search_uses_configured_embedding_client(tmp_path) -> None:
     service = RagService(
         settings=settings,
         embedding_client=SimpleNamespace(embeddings=FakeEmbeddings()),
-        chroma_store=FakeChromaStore(),
+        vector_store=FakeVectorStore(),
     )
 
     assert service.search(None, "retrieval query", 3) == []
@@ -155,3 +112,76 @@ def test_search_uses_configured_embedding_client(tmp_path) -> None:
             "limit": 3,
         }
     ]
+
+
+def test_index_failure_is_committed_as_failed(client: TestClient, monkeypatch) -> None:
+    def fail_upsert(self, collection_name, chunks):
+        raise VectorStoreUnavailable("qdrant unavailable")
+
+    monkeypatch.setattr(QdrantVectorStore, "upsert_chunks", fail_upsert)
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("notes.txt", b"RAG notes", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["index_status"] == "failed"
+    persisted = client.get(f"/api/documents/{body['id']}")
+    assert persisted.status_code == 200
+    assert persisted.json()["index_status"] == "failed"
+
+
+def test_search_surfaces_vector_store_unavailability(client: TestClient, monkeypatch) -> None:
+    def fail_search(self, collection_name, query_embedding, limit):
+        raise VectorStoreUnavailable("qdrant unavailable")
+
+    monkeypatch.setattr(QdrantVectorStore, "search", fail_search)
+
+    response = client.post("/api/rag/search", json={"query": "retrieval query", "limit": 3})
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "vector_store_unavailable"
+
+
+def test_indexed_document_uses_stable_uuid_vector_ids(tmp_path) -> None:
+    upsert_calls: list[tuple[str, list[VectorChunk]]] = []
+
+    class FakeVectorStore:
+        def delete_document_chunks(self, collection_name, document_id):
+            return None
+
+        def upsert_chunks(self, collection_name, chunks):
+            upsert_calls.append((collection_name, chunks))
+
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        deterministic_model_fallback=True,
+    )
+    document = SimpleNamespace(
+        id="document-1",
+        collection="auto_reign_test",
+        title="Resume",
+        tags=["python"],
+        file_path=str(tmp_path / "resume.txt"),
+        index_status="pending",
+    )
+    session = SimpleNamespace(flush=lambda: None)
+    (tmp_path / "resume.txt").write_text("Python service design", encoding="utf-8")
+    service = RagService(
+        settings=settings,
+        vector_store=FakeVectorStore(),
+        chunk_repository=SimpleNamespace(delete_for_document=lambda *_args: None, add_many=lambda *_args: None),
+    )
+
+    service.index_document(session, document)
+
+    assert upsert_calls
+    _, chunks = upsert_calls[0]
+    assert chunks
+    for chunk in chunks:
+        assert str(UUID(chunk.id)) == chunk.id

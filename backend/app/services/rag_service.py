@@ -10,21 +10,29 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.errors import bad_gateway, not_found, service_unavailable
 from app.db.models import Document, DocumentChunk
-from app.repositories.chroma_store import ChromaChunk, ChromaStore
 from app.repositories.database import DocumentChunkRepository, DocumentRepository
+from app.repositories.qdrant_store import get_qdrant_store
+from app.repositories.vector_store import (
+    VectorChunk,
+    VectorDimensionMismatch,
+    VectorStore,
+    VectorStoreError,
+    VectorStoreUnavailable,
+    stable_vector_id,
+)
 
 
 class RagService:
     def __init__(
         self,
         settings: Settings | None = None,
-        chroma_store: ChromaStore | None = None,
+        vector_store: VectorStore | None = None,
         document_repository: DocumentRepository | None = None,
         chunk_repository: DocumentChunkRepository | None = None,
         embedding_client: Any | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.chroma_store = chroma_store or ChromaStore(self.settings)
+        self.vector_store = vector_store or get_qdrant_store()
         self.document_repository = document_repository or DocumentRepository()
         self.chunk_repository = chunk_repository or DocumentChunkRepository()
         self.embedding_client = embedding_client
@@ -70,45 +78,48 @@ class RagService:
             ) from error
 
     def index_document(self, session: Session, document: Document) -> Document:
-        text = self._read_document_text(document)
-        chunks = self.split_text(text)
-        embeddings = self.embed_texts(chunks)
-        self.chroma_store.delete_document_chunks(self.settings.qdrant_collection, document.id)
-        self.chunk_repository.delete_for_document(session, document.id)
+        try:
+            text = self._read_document_text(document)
+            chunks = self.split_text(text)
+            embeddings = self.embed_texts(chunks)
+            self.vector_store.delete_document_chunks(self.settings.qdrant_collection, document.id)
+            self.chunk_repository.delete_for_document(session, document.id)
 
-        chroma_chunks: list[ChromaChunk] = []
-        db_chunks: list[DocumentChunk] = []
-        for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-            vector_id = f"document:{document.id}:{index}"
-            chroma_chunks.append(
-                ChromaChunk(
-                    id=vector_id,
-                    content=chunk,
-                    embedding=embedding,
-                    metadata={
-                        "source_type": "document",
-                        "document_id": document.id,
-                        "source_id": document.id,
-                        "chunk_index": index,
-                        "collection": document.collection,
-                        "title": document.title,
-                        "tags": ",".join(document.tags),
-                    },
+            vector_chunks: list[VectorChunk] = []
+            db_chunks: list[DocumentChunk] = []
+            for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
+                vector_id = stable_vector_id("document", document.id, index)
+                vector_chunks.append(
+                    VectorChunk(
+                        id=vector_id,
+                        content=chunk,
+                        embedding=embedding,
+                        metadata={
+                            "source_type": "document",
+                            "document_id": document.id,
+                            "source_id": document.id,
+                            "chunk_index": index,
+                            "collection": document.collection,
+                            "title": document.title,
+                            "tags": ",".join(document.tags),
+                        },
+                    )
                 )
-            )
-            db_chunks.append(
-                DocumentChunk(
-                    document_id=document.id,
-                    chunk_index=index,
-                    content_hash=hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
-                    vector_collection=self.settings.qdrant_collection,
-                    vector_id=vector_id,
+                db_chunks.append(
+                    DocumentChunk(
+                        document_id=document.id,
+                        chunk_index=index,
+                        content_hash=hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+                        vector_collection=self.settings.qdrant_collection,
+                        vector_id=vector_id,
+                    )
                 )
-            )
 
-        self.chroma_store.upsert_chunks(self.settings.qdrant_collection, chroma_chunks)
-        self.chunk_repository.add_many(session, db_chunks)
-        document.index_status = "completed"
+            self.vector_store.upsert_chunks(self.settings.qdrant_collection, vector_chunks)
+            self.chunk_repository.add_many(session, db_chunks)
+            document.index_status = "completed"
+        except (OSError, HTTPException, VectorStoreError):
+            document.index_status = "failed"
         session.flush()
         return document
 
@@ -121,14 +132,27 @@ class RagService:
     def search(self, session: Session, query: str, limit: int) -> list[dict[str, object]]:
         del session
         query_embedding = self.embed_texts([query])[0]
-        raw_hits = self.chroma_store.search(self.settings.qdrant_collection, query_embedding, limit)
+        try:
+            raw_hits = self.vector_store.search(
+                self.settings.qdrant_collection, query_embedding, limit
+            )
+        except VectorDimensionMismatch as error:
+            raise service_unavailable(
+                "vector_dimension_mismatch",
+                "The configured vector collection is incompatible with the embedding dimension.",
+            ) from error
+        except VectorStoreUnavailable as error:
+            raise service_unavailable(
+                "vector_store_unavailable",
+                "The vector store is currently unavailable.",
+            ) from error
         hits: list[dict[str, object]] = []
         for hit in raw_hits:
-            metadata = hit["metadata"]
+            metadata = hit.metadata
             hits.append(
                 {
-                    "content": hit["content"],
-                    "score": hit["score"],
+                    "content": hit.content,
+                    "score": hit.score,
                     "source_type": str(metadata.get("source_type", "")),
                     "source_id": str(metadata.get("source_id") or metadata.get("document_id") or ""),
                 }

@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.errors import conflict, not_found
 from app.db.models import InterviewConfig, InterviewSession, MemoryFile, Report
-from app.repositories.chroma_store import ChromaChunk
 from app.repositories.database import (
     InterviewSessionRepository,
     InterviewTurnRepository,
     MemoryFileRepository,
     ReportRepository,
 )
+from app.repositories.vector_store import VectorChunk, stable_vector_id
 from app.services.model_service import MemoryUpdateRequest, ModelService, ReportGenerationRequest
 from app.services.rag_service import RagService
 
@@ -144,12 +144,12 @@ class MemoryService:
         self, session: Session, report: Report, memory_files: list[MemoryFile]
     ) -> None:
         del session
-        chunks: list[ChromaChunk] = []
+        chunks: list[VectorChunk] = []
         report_text = Path(report.report_path).read_text(encoding="utf-8")
         for index, chunk in enumerate(self.rag_service.split_text(report_text)):
             chunks.append(
-                ChromaChunk(
-                    id=f"report:{report.id}:{index}",
+                VectorChunk(
+                    id=stable_vector_id("report", report.id, index),
                     content=chunk,
                     embedding=self.rag_service.embed_texts([chunk])[0],
                     metadata={
@@ -166,8 +166,8 @@ class MemoryService:
             text = Path(memory_file.file_path).read_text(encoding="utf-8")
             for index, chunk in enumerate(self.rag_service.split_text(text)):
                 chunks.append(
-                    ChromaChunk(
-                        id=f"memory:{memory_file.kind}:{index}",
+                    VectorChunk(
+                        id=stable_vector_id("memory", memory_file.id, index),
                         content=chunk,
                         embedding=self.rag_service.embed_texts([chunk])[0],
                         metadata={
@@ -180,7 +180,7 @@ class MemoryService:
                         },
                     )
                 )
-        self.rag_service.chroma_store.upsert_chunks(self.settings.qdrant_collection, chunks)
+        self.rag_service.vector_store.upsert_chunks(self.settings.qdrant_collection, chunks)
 
     def _update_memory_files(
         self,

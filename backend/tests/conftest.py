@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.db.models import Base
 from app.db.session import create_engine_for_settings
 from app.main import create_app
+from app.repositories.qdrant_store import get_qdrant_store
 
 
 @pytest.fixture
@@ -17,6 +18,7 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     monkeypatch.setenv("QDRANT_COLLECTION", "auto_reign_test")
     monkeypatch.setenv("DETERMINISTIC_MODEL_FALLBACK", "true")
     get_settings.cache_clear()
+    get_qdrant_store.cache_clear()
     try:
         engine = create_engine_for_settings(get_settings())
         try:
@@ -27,4 +29,5 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
         with TestClient(app) as test_client:
             yield test_client
     finally:
+        get_qdrant_store.cache_clear()
         get_settings.cache_clear()
