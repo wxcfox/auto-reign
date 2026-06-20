@@ -28,6 +28,7 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
     try:
         config = Config(ALEMBIC_INI)
         command.upgrade(config, "head")
+        command.check(config)
 
         inspector = inspect(engine)
         assert set(inspector.get_table_names()) == APPLICATION_TABLES | {"alembic_version"}
