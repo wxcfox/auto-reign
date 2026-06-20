@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import signal
 import socket
@@ -90,23 +91,91 @@ def read_process_command(pid: int) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def read_process_cwd(pid: int) -> Path | None:
+    result = subprocess.run(
+        ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if line.startswith("n") and len(line) > 1:
+            return Path(line[1:])
+    return None
+
+
+def listener_pid_for_port(port: int) -> int | None:
+    result = subprocess.run(
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fp"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            return int(line[1:])
+    return None
+
+
+def expected_cwd_for_state(state: ServiceState) -> Path | None:
+    root = Path(__file__).resolve().parents[1]
+    if state.marker.startswith("auto-reign-backend"):
+        return root / "backend"
+    if state.marker.startswith("auto-reign-frontend"):
+        return root / "frontend"
+    return None
+
+
+def state_matches_process(
+    state: ServiceState,
+    command_for_pid: Callable[[int], str | None] | None = None,
+    cwd_for_pid: Callable[[int], Path | None] | None = None,
+    listener_pid_for_port_fn: Callable[[int], int | None] | None = None,
+) -> bool:
+    inspect_command = command_for_pid or read_process_command
+    process_cwd = cwd_for_pid or read_process_cwd
+    listener_for_port = listener_pid_for_port_fn or listener_pid_for_port
+    command = inspect_command(state.pid)
+    if command is not None and state.marker in command:
+        return True
+    expected_cwd = expected_cwd_for_state(state)
+    if expected_cwd is None:
+        return False
+    if listener_for_port(state.port) != state.pid:
+        return False
+    cwd = process_cwd(state.pid)
+    return cwd == expected_cwd
+
+
 def process_matches(state: ServiceState) -> bool:
-    command = read_process_command(state.pid)
-    return command is not None and state.marker in command
+    return state_matches_process(state)
 
 
 def stop_managed_process(
     state_path: Path,
     command_for_pid: Callable[[int], str | None] | None = None,
     signal_group: Callable[[int, int], None] | None = None,
+    cwd_for_pid: Callable[[int], Path | None] | None = None,
+    listener_pid_for_port_fn: Callable[[int], int | None] | None = None,
 ) -> bool:
-    inspect_command = command_for_pid or read_process_command
-    send_signal = signal_group or os.killpg
+    if signal_group is None:
+        def send_signal(pid: int, sig: int) -> None:
+            os.killpg(os.getpgid(pid), sig)
+    else:
+        send_signal = signal_group
     state = read_state(state_path)
     if state is None:
         return False
-    command = inspect_command(state.pid)
-    if command is None or state.marker not in command:
+    if not state_matches_process(
+        state,
+        command_for_pid=command_for_pid,
+        cwd_for_pid=cwd_for_pid,
+        listener_pid_for_port_fn=listener_pid_for_port_fn,
+    ):
         state_path.unlink(missing_ok=True)
         return False
     send_signal(state.pid, signal.SIGTERM)
@@ -119,14 +188,19 @@ def healthy_managed_state(
     health_url_for: Callable[[ServiceState], str],
     command_for_pid: Callable[[int], str | None] | None = None,
     http_probe: Callable[[str, float], bool] | None = None,
+    cwd_for_pid: Callable[[int], Path | None] | None = None,
+    listener_pid_for_port_fn: Callable[[int], int | None] | None = None,
 ) -> ServiceState | None:
-    inspect_command = command_for_pid or read_process_command
     probe = http_probe or wait_for_http
     state = read_state(state_path)
     if state is None:
         return None
-    command = inspect_command(state.pid)
-    if command is None or state.marker not in command:
+    if not state_matches_process(
+        state,
+        command_for_pid=command_for_pid,
+        cwd_for_pid=cwd_for_pid,
+        listener_pid_for_port_fn=listener_pid_for_port_fn,
+    ):
         state_path.unlink(missing_ok=True)
         return None
     return state if probe(health_url_for(state), 2) else None
@@ -152,6 +226,57 @@ def wait_for_tcp(host: str, port: int, timeout_seconds: float) -> bool:
                 return True
         except OSError:
             time.sleep(0.5)
+    return False
+
+
+def compose_service_health(
+    root: Path,
+    service: str,
+    env: MutableMapping[str, str] | None = None,
+) -> str | None:
+    container_id_result = subprocess.run(
+        ["docker", "compose", "-p", PROJECT_NAME, "ps", "-q", service],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    container_id = container_id_result.stdout.strip()
+    if container_id_result.returncode != 0 or not container_id:
+        return None
+    inspect_result = subprocess.run(
+        [
+            "docker",
+            "inspect",
+            container_id,
+            "--format",
+            "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if inspect_result.returncode != 0:
+        return None
+    return inspect_result.stdout.strip() or None
+
+
+def wait_for_compose_service_health(
+    root: Path,
+    service: str,
+    timeout_seconds: float,
+    env: MutableMapping[str, str] | None = None,
+    health_reader: Callable[[Path, str, MutableMapping[str, str] | None], str | None] | None = None,
+) -> bool:
+    read_health = health_reader or compose_service_health
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if read_health(root, service, env) == "healthy":
+            return True
+        time.sleep(0.5)
     return False
 
 
@@ -292,12 +417,14 @@ def stop_dependency_containers(root: Path, env: MutableMapping[str, str]) -> Non
     )
 
 
-def wait_for_dependencies(env: MutableMapping[str, str]) -> None:
+def wait_for_dependencies(root: Path, env: MutableMapping[str, str]) -> None:
     database_url = env.get("DATABASE_URL", "")
     qdrant_url = env.get("QDRANT_URL", "")
     mysql_host, mysql_port = database_endpoint(database_url)
     if not wait_for_tcp(mysql_host, mysql_port, MYSQL_START_TIMEOUT):
         raise RuntimeError(f"MySQL did not become reachable at {mysql_host}:{mysql_port}")
+    if not wait_for_compose_service_health(root, "mysql", MYSQL_START_TIMEOUT, env):
+        raise RuntimeError("MySQL did not report healthy status")
     ready_url = qdrant_ready_url(qdrant_url)
     if not wait_for_http(ready_url, QDRANT_START_TIMEOUT):
         raise RuntimeError(f"Qdrant did not become ready at {ready_url}")
@@ -324,7 +451,11 @@ def stop_managed_process_with_timeout(
     signal_group: Callable[[int, int], None] | None = None,
 ) -> bool:
     inspect_command = command_for_pid or read_process_command
-    send_signal = signal_group or os.killpg
+    if signal_group is None:
+        def send_signal(pid: int, sig: int) -> None:
+            os.killpg(os.getpgid(pid), sig)
+    else:
+        send_signal = signal_group
     state = read_state(state_path)
     if state is None:
         return False
@@ -365,11 +496,13 @@ def launch_managed_process(
     cwd: Path,
     env: MutableMapping[str, str],
     log_path: Path,
+    marker: str,
 ) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    shell_command = f"AUTO_REIGN_MARKER={shlex.quote(marker)} {shlex.join(command)}"
     with log_path.open("ab") as log_file:
         process = subprocess.Popen(
-            command,
+            ["/bin/sh", "-lc", shell_command],
             cwd=cwd,
             env=env,
             stdout=log_file,
@@ -391,8 +524,6 @@ def ensure_backend(paths: RuntimePaths, env: MutableMapping[str, str]) -> Servic
     process_env = backend_env(paths.root, env, port)
     pid = launch_managed_process(
         command=[
-            "env",
-            f"AUTO_REIGN_MARKER={marker}",
             "uv",
             "run",
             "uvicorn",
@@ -405,12 +536,17 @@ def ensure_backend(paths: RuntimePaths, env: MutableMapping[str, str]) -> Servic
         cwd=paths.root / "backend",
         env=process_env,
         log_path=backend_log_path(paths),
+        marker=marker,
     )
     state = ServiceState(pid=pid, port=port, marker=marker)
     write_state(state_path, state)
     if not wait_for_http(backend_health_url(state), APP_START_TIMEOUT):
         stop_managed_process_with_timeout(state_path)
         raise RuntimeError(f"Backend failed to start. Check {backend_log_path(paths)}")
+    listener_pid = listener_pid_for_port(port)
+    if listener_pid is not None:
+        state = ServiceState(pid=listener_pid, port=port, marker=marker)
+        write_state(state_path, state)
     return state
 
 
@@ -430,8 +566,6 @@ def ensure_frontend(
     process_env = frontend_env(env, backend.port)
     pid = launch_managed_process(
         command=[
-            "env",
-            f"AUTO_REIGN_MARKER={marker}",
             "npm",
             "run",
             "dev",
@@ -444,12 +578,17 @@ def ensure_frontend(
         cwd=paths.root / "frontend",
         env=process_env,
         log_path=frontend_log_path(paths),
+        marker=marker,
     )
     state = ServiceState(pid=pid, port=port, marker=marker)
     write_state(state_path, state)
     if not wait_for_http(frontend_health_url(state), APP_START_TIMEOUT):
         stop_managed_process_with_timeout(state_path)
         raise RuntimeError(f"Frontend failed to start. Check {frontend_log_path(paths)}")
+    listener_pid = listener_pid_for_port(port)
+    if listener_pid is not None:
+        state = ServiceState(pid=listener_pid, port=port, marker=marker)
+        write_state(state_path, state)
     return state
 
 
@@ -487,7 +626,7 @@ def start_stack(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     require_commands(["docker", "uv", "node", "npm"])
     verify_docker()
     start_dependency_containers(paths.root, env)
-    wait_for_dependencies(env)
+    wait_for_dependencies(paths.root, env)
     prepare_backend(paths.root, env)
     prepare_frontend(paths.root, env)
     started_paths: list[Path] = []
