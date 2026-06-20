@@ -1,8 +1,13 @@
 # Auto Reign
 
-Auto Reign is a local-first interview preparation workbench. It stores Markdown/TXT
-source documents, indexes vectors in Qdrant, runs written mock interviews, and
-persists interview metadata plus review memory on the local machine.
+*Autoregressive Q&A — every token is a step to the throne.*
+
+**Local-first AI mock interviews grounded in your own knowledge base, with
+automatic weakness tracking and review reports.**
+
+Auto Reign ingests Markdown and TXT source documents, indexes their vectors in
+Qdrant, runs written mock interviews, and stores interview history and review
+memory locally.
 
 ## Development Quick Start
 
