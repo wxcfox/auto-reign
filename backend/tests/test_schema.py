@@ -88,3 +88,19 @@ def test_alembic_does_not_create_data_directories(tmp_path, monkeypatch) -> None
         assert not data_dir.exists()
     finally:
         get_settings.cache_clear()
+
+
+def test_mysql_offline_migration_does_not_set_json_defaults(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://auto_reign:auto_reign@127.0.0.1:13306/auto_reign")
+    get_settings.cache_clear()
+
+    try:
+        command.upgrade(Config(ALEMBIC_INI), "head", sql=True)
+        stdout = capsys.readouterr().out
+    finally:
+        get_settings.cache_clear()
+
+    assert "follow_up_missing_points JSON NOT NULL" in stdout
+    assert "follow_up_weaknesses JSON NOT NULL" in stdout
+    assert "follow_up_review_suggestions JSON NOT NULL" in stdout
+    assert "JSON NOT NULL DEFAULT '[]'" not in stdout
