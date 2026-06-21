@@ -18,33 +18,42 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("interview_turns", sa.Column("follow_up_feedback", sa.Text(), nullable=True))
-    op.add_column(
-        "interview_turns",
-        sa.Column(
+    dialect_name = op.get_context().dialect.name
+
+    if dialect_name != "mysql":
+        for column_name in (
             "follow_up_missing_points",
-            sa.JSON(),
-            nullable=False,
-            server_default=sa.text("'[]'"),
-        ),
-    )
-    op.add_column(
-        "interview_turns",
-        sa.Column(
             "follow_up_weaknesses",
-            sa.JSON(),
-            nullable=False,
-            server_default=sa.text("'[]'"),
-        ),
-    )
-    op.add_column(
-        "interview_turns",
-        sa.Column(
             "follow_up_review_suggestions",
-            sa.JSON(),
+        ):
+            op.add_column(
+                "interview_turns",
+                sa.Column(
+                    column_name,
+                    sa.JSON(),
+                    nullable=False,
+                    server_default=sa.text("'[]'"),
+                ),
+            )
+        return
+
+    for column_name in (
+        "follow_up_missing_points",
+        "follow_up_weaknesses",
+        "follow_up_review_suggestions",
+    ):
+        op.add_column("interview_turns", sa.Column(column_name, sa.JSON(), nullable=True))
+        op.execute(
+            sa.text(
+                f"UPDATE interview_turns SET {column_name} = :empty_array WHERE {column_name} IS NULL"
+            ).bindparams(empty_array="[]")
+        )
+        op.alter_column(
+            "interview_turns",
+            column_name,
+            existing_type=sa.JSON(),
             nullable=False,
-            server_default=sa.text("'[]'"),
-        ),
-    )
+        )
 
 
 def downgrade() -> None:
