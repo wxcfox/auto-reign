@@ -190,7 +190,9 @@ class RagService:
                     "content": hit.content,
                     "score": hit.score,
                     "source_type": str(metadata.get("source_type", "")),
-                    "source_id": str(metadata.get("source_id") or metadata.get("document_id") or ""),
+                    "source_id": str(
+                        metadata.get("source_id") or metadata.get("document_id") or ""
+                    ),
                 }
             )
         return hits

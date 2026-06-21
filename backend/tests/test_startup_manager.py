@@ -126,7 +126,9 @@ def test_healthy_managed_state_accepts_listener_owned_by_expected_project_dir(tm
         health_url_for=lambda item: f"http://127.0.0.1:{item.port}/api/health",
         command_for_pid=lambda pid: "/usr/bin/python3 uvicorn app.main:app --port 8300",
         http_probe=lambda url, timeout: True,
-        cwd_for_pid=lambda pid: start_module.Path(start_module.__file__).resolve().parents[1] / "backend",
+        cwd_for_pid=lambda pid: (
+            start_module.Path(start_module.__file__).resolve().parents[1] / "backend"
+        ),
         listener_pid_for_port_fn=lambda port: 301,
     )
 

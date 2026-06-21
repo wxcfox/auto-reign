@@ -163,6 +163,7 @@ def stop_managed_process(
     listener_pid_for_port_fn: Callable[[int], int | None] | None = None,
 ) -> bool:
     if signal_group is None:
+
         def send_signal(pid: int, sig: int) -> None:
             os.killpg(os.getpgid(pid), sig)
     else:
@@ -452,6 +453,7 @@ def stop_managed_process_with_timeout(
 ) -> bool:
     inspect_command = command_for_pid or read_process_command
     if signal_group is None:
+
         def send_signal(pid: int, sig: int) -> None:
             os.killpg(os.getpgid(pid), sig)
     else:
@@ -592,7 +594,9 @@ def ensure_frontend(
     return state
 
 
-def format_host_status(name: str, state: ServiceState | None, url_for: Callable[[ServiceState], str]) -> str:
+def format_host_status(
+    name: str, state: ServiceState | None, url_for: Callable[[ServiceState], str]
+) -> str:
     if state is None:
         return f"{name}: stopped"
     healthy = wait_for_http(url_for(state), 1.0)
@@ -643,7 +647,9 @@ def start_stack(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
         for state_path in reversed(started_paths):
             stop_managed_process_with_timeout(state_path)
         raise
-    print(f"MySQL: ready on {database_endpoint(env['DATABASE_URL'])[0]}:{database_endpoint(env['DATABASE_URL'])[1]}")
+    print(
+        f"MySQL: ready on {database_endpoint(env['DATABASE_URL'])[0]}:{database_endpoint(env['DATABASE_URL'])[1]}"
+    )
     print(f"Qdrant: ready on {qdrant_ready_url(env['QDRANT_URL'])}")
     print(f"Backend:  http://127.0.0.1:{backend.port}")
     print(f"Frontend: http://127.0.0.1:{frontend.port}")

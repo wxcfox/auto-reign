@@ -33,15 +33,15 @@ def test_uploaded_document_is_searchable(client: TestClient) -> None:
 @pytest.mark.parametrize(
     ("settings_overrides", "expected_model", "expected_base_url"),
     [
-            (
-                {
-                    "openai_api_key": "openai-secret",
-                    "embedding_provider": "openai",
-                    "embedding_model": "text-embedding-3-small",
-                },
-                "text-embedding-3-small",
-                None,
-            ),
+        (
+            {
+                "openai_api_key": "openai-secret",
+                "embedding_provider": "openai",
+                "embedding_model": "text-embedding-3-small",
+            },
+            "text-embedding-3-small",
+            None,
+        ),
         (
             {
                 "qwen_api_key": "qwen-secret",
@@ -222,7 +222,9 @@ def test_indexed_document_uses_stable_uuid_vector_ids(tmp_path) -> None:
     service = RagService(
         settings=settings,
         vector_store=FakeVectorStore(),
-        chunk_repository=SimpleNamespace(delete_for_document=lambda *_args: None, add_many=lambda *_args: None),
+        chunk_repository=SimpleNamespace(
+            delete_for_document=lambda *_args: None, add_many=lambda *_args: None
+        ),
     )
 
     service.index_document(session, document)
@@ -234,7 +236,9 @@ def test_indexed_document_uses_stable_uuid_vector_ids(tmp_path) -> None:
         assert str(UUID(chunk.id)) == chunk.id
 
 
-def test_embed_texts_logs_provider_error_details(tmp_path, caplog: pytest.LogCaptureFixture) -> None:
+def test_embed_texts_logs_provider_error_details(
+    tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
     class FailingEmbeddings:
         def create(self, **_kwargs):
             raise RuntimeError("quota exceeded for project")

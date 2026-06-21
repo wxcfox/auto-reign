@@ -32,6 +32,8 @@ def get_session(request: Request) -> Iterator[Session]:
 
 
 @router.post("/search", response_model=RagSearchResponse)
-def search_rag(request: RagSearchRequest, session: Session = Depends(get_session)) -> RagSearchResponse:
+def search_rag(
+    request: RagSearchRequest, session: Session = Depends(get_session)
+) -> RagSearchResponse:
     hits = RagService().search(session, request.query, request.limit)
     return RagSearchResponse(hits=[RagSearchHit(**hit) for hit in hits])

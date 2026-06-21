@@ -1,23 +1,26 @@
 name: auto-reign
 
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 5s
+  timeout: 5s
+  retries: 20
+  start_period: 10s
+
 services:
   mysql:
     image: ${MYSQL_IMAGE:-mysql:8.4}
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-auto_reign}
-      MYSQL_USER: ${MYSQL_USER:-auto_reign}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-auto_reign}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-auto_reign_root}
+      MYSQL_USER: ${MYSQL_USER:-auto_reign}
     ports:
       - "${MYSQL_PORT:-13306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-auto_reign_root}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
 
   qdrant:
     image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.17.0}
@@ -27,11 +30,8 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6333/readyz', timeout=5)"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
 
   backend:
     build:
@@ -42,9 +42,9 @@ services:
         required: false
     environment:
       BACKEND_HOST: 0.0.0.0
+      DATA_DIR: /app/data
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-auto_reign}:${MYSQL_PASSWORD:-auto_reign}@mysql:3306/${MYSQL_DATABASE:-auto_reign}
       QDRANT_URL: http://qdrant:6333
-      DATA_DIR: /app/data
     ports:
       - "${BACKEND_PORT:-8300}:8000"
     volumes:
@@ -55,11 +55,8 @@ services:
       qdrant:
         condition: service_healthy
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
 
   frontend:
     build:
@@ -74,11 +71,8 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
 
 volumes:
   mysql_data:

@@ -89,9 +89,7 @@ def test_model_service_uses_selected_provider(
     )
 
     assert result.feedback == "Good structure."
-    assert factory_calls == [
-        {"api_key": "provider-secret", "base_url": expected_base_url}
-    ]
+    assert factory_calls == [{"api_key": "provider-secret", "base_url": expected_base_url}]
     assert client.completions.calls[0]["model"] == model
 
 

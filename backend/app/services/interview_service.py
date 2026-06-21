@@ -162,9 +162,13 @@ class InterviewService:
             raise not_found("config_not_found", "Interview config not found.")
         current_turn = self._current_turn(session, interview_session)
         if current_turn.answer is None:
-            raise conflict("current_turn_unanswered", "Answer the current question before continuing.")
+            raise conflict(
+                "current_turn_unanswered", "Answer the current question before continuing."
+            )
         if interview_session.current_round >= config.target_rounds:
-            raise conflict("target_rounds_reached", "The configured target round count was reached.")
+            raise conflict(
+                "target_rounds_reached", "The configured target round count was reached."
+            )
         next_round = interview_session.current_round + 1
         context_hits = self.rag_service.search(
             session,
