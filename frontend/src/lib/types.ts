@@ -20,8 +20,8 @@ export interface ModelListResponse {
 export interface HealthResponse {
   status: "ok";
   storage: {
-    sqlite: string;
-    chroma: string;
+    mysql: string;
+    qdrant: string;
   };
   providers: Record<ProviderName, boolean>;
 }

@@ -53,7 +53,9 @@ Default dependency images:
 At least one backend provider key must be non-empty before that provider and its
 models appear in the Interview selector. The default local path is tuned for a
 single `QWEN_API_KEY`: chat uses `qwen3.7-plus` by default and RAG embeddings use `text-embedding-v4`
-through the DashScope OpenAI-compatible endpoint. Keep `.env` local; it is ignored by Git.
+through the DashScope OpenAI-compatible endpoint. `QWEN_CHAT_MODELS` only controls
+the Interview model picker for chat models; embeddings stay separate under
+`EMBEDDING_PROVIDER` and `EMBEDDING_MODEL`. Keep `.env` local; it is ignored by Git.
 If Docker Hub access is unstable in your environment, override `MYSQL_IMAGE` and
 `QDRANT_IMAGE` in `.env` with reachable mirror image references before rerunning
 `./start.sh`.
