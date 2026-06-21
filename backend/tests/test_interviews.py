@@ -1,16 +1,35 @@
 from fastapi.testclient import TestClient
 
 
+DEFAULT_QWEN_CONFIG = {
+    "target_company": "",
+    "target_role": "",
+    "job_description": "",
+    "extra_prompt": "",
+    "mode": "comprehensive",
+    "chat_model_provider": "qwen",
+    "chat_model": "qwen3.7-plus",
+    "target_rounds": 3,
+}
+
+
 CONFIG = {
     "target_company": "OpenAI",
     "target_role": "Backend Engineer",
     "job_description": "Build reliable AI application backends.",
     "extra_prompt": "Focus on RAG and FastAPI.",
     "mode": "comprehensive",
-    "chat_model_provider": "openai",
-    "chat_model": "gpt-4.1-mini",
+    "chat_model_provider": "qwen",
+    "chat_model": "qwen3.7-plus",
     "target_rounds": 3,
 }
+
+
+def test_get_last_config_defaults_to_qwen(client: TestClient) -> None:
+    response = client.get("/api/interview-configs/last")
+    assert response.status_code == 200
+    body = response.json()
+    assert {key: body[key] for key in DEFAULT_QWEN_CONFIG} == DEFAULT_QWEN_CONFIG
 
 
 def test_save_last_config_and_create_session(client: TestClient) -> None:

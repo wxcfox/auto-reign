@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     )
     qdrant_url: str = "http://127.0.0.1:16333"
     qdrant_collection: str = "auto_reign_default"
-    embedding_provider: str = "openai"
-    embedding_model: str = "text-embedding-3-small"
+    embedding_provider: str = "qwen"
+    embedding_model: str = "text-embedding-v4"
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
     qwen_api_key: str | None = None

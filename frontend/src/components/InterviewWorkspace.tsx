@@ -30,8 +30,8 @@ const defaultConfig: InterviewConfig = {
   job_description: "",
   extra_prompt: "",
   mode: "comprehensive",
-  chat_model_provider: "openai",
-  chat_model: "gpt-4.1-mini",
+  chat_model_provider: "qwen",
+  chat_model: "qwen3.7-plus",
   target_rounds: 3,
 };
 
@@ -61,13 +61,44 @@ export function InterviewWorkspace() {
         return;
       }
 
+      const availableProviders =
+        modelsResult.status === "fulfilled" ? modelsResult.value.providers : [];
+
       if (modelsResult.status === "fulfilled") {
-        setProviders(modelsResult.value.providers);
+        setProviders(availableProviders);
       }
       if (configResult.status === "fulfilled") {
         const { id: _id, is_last_used: _isLastUsed, updated_at: _updatedAt, ...lastConfig } =
           configResult.value;
-        setConfig(lastConfig);
+        const matchedProvider = availableProviders.find(
+          (provider) => provider.provider === lastConfig.chat_model_provider,
+        );
+        if (matchedProvider?.models.includes(lastConfig.chat_model)) {
+          setConfig(lastConfig);
+        } else if (availableProviders.length > 0) {
+          setConfig((current) => ({
+            ...current,
+            ...lastConfig,
+            chat_model_provider: availableProviders[0].provider,
+            chat_model: availableProviders[0].models[0] ?? "",
+          }));
+        } else {
+          setConfig(lastConfig);
+        }
+      } else if (availableProviders.length > 0) {
+        setConfig((current) => {
+          const matchedProvider = availableProviders.find(
+            (provider) => provider.provider === current.chat_model_provider,
+          );
+          if (matchedProvider?.models.includes(current.chat_model)) {
+            return current;
+          }
+          return {
+            ...current,
+            chat_model_provider: availableProviders[0].provider,
+            chat_model: availableProviders[0].models[0] ?? "",
+          };
+        });
       }
       if (modelsResult.status === "rejected" || configResult.status === "rejected") {
         setError("Could not load the saved configuration or model availability.");

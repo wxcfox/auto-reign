@@ -45,8 +45,8 @@ class InterviewService:
                 job_description="",
                 extra_prompt="",
                 mode="comprehensive",
-                chat_model_provider="openai",
-                chat_model="gpt-4.1-mini",
+                chat_model_provider="qwen",
+                chat_model="qwen3.7-plus",
                 target_rounds=3,
             ),
         )

@@ -16,9 +16,10 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'app.db'}")
     monkeypatch.setenv("QDRANT_URL", ":memory:")
     monkeypatch.setenv("QDRANT_COLLECTION", "auto_reign_test")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+    monkeypatch.setenv("QWEN_API_KEY", "qwen-test")
+    monkeypatch.setenv("QWEN_CHAT_MODELS", "qwen3.7-plus,qwen3.7-max,qwen3.7-max")
     from app.core.config import get_settings
     from app.main import create_app
 
@@ -31,9 +32,9 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
     assert response.status_code == 200
     body = response.json()
     assert body["providers"] == [
-        {"provider": "openai", "models": ["gpt-4.1-mini", "gpt-4.1"]}
+        {"provider": "qwen", "models": ["qwen3.7-plus", "qwen3.7-max", "qwen3.7-max"]}
     ]
-    assert "sk-test" not in response.text
+    assert "qwen-test" not in response.text
 
 
 def test_frontend_origin_is_allowed(client: TestClient) -> None:

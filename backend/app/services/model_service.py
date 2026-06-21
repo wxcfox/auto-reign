@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import Settings, get_settings
 from app.core.errors import bad_gateway, service_unavailable
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentAnalysisResult(BaseModel):
@@ -192,6 +195,19 @@ class ModelService:
         except HTTPException:
             raise
         except Exception as error:
+            logger.exception(
+                "Provider chat request failed: provider=%s model=%s error_type=%s error_message=%s",
+                resolved_provider,
+                resolved_model,
+                type(error).__name__,
+                str(error),
+                extra={
+                    "provider": resolved_provider,
+                    "model": resolved_model,
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                },
+            )
             raise bad_gateway(
                 "provider_call_failed",
                 f"The {resolved_provider} model request failed.",

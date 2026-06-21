@@ -172,3 +172,46 @@ def test_model_service_hides_provider_failure_details(tmp_path) -> None:
     assert error.value.status_code == 502
     assert error.value.detail["code"] == "provider_call_failed"
     assert "secret" not in str(error.value.detail).lower()
+
+
+def test_model_service_logs_provider_error_details(
+    tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="openai-secret",
+        deterministic_model_fallback=False,
+    )
+
+    class FailingCompletions:
+        def create(self, **_kwargs):
+            raise RuntimeError("insufficient quota from upstream")
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=FailingCompletions()))
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(HTTPException) as error:
+            service.generate_question(
+                QuestionGenerationRequest(
+                    target_company="OpenAI",
+                    target_role="Backend Engineer",
+                    provider="openai",
+                    model="gpt-4.1-mini",
+                )
+            )
+
+    record = caplog.records[-1]
+    assert error.value.status_code == 502
+    assert error.value.detail["code"] == "provider_call_failed"
+    assert "provider=openai" in caplog.text
+    assert "model=gpt-4.1-mini" in caplog.text
+    assert "insufficient quota from upstream" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert record.provider == "openai"
+    assert record.model == "gpt-4.1-mini"
+    assert record.error_type == "RuntimeError"
+    assert record.error_message == "insufficient quota from upstream"
