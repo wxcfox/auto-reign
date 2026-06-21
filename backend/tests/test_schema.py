@@ -44,6 +44,8 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
             "follow_up_weaknesses",
             "follow_up_review_suggestions",
         }.issubset(turn_columns)
+        config_columns = {column["name"] for column in inspector.get_columns("interview_configs")}
+        assert "language" in config_columns
 
         chunk_uniques = {
             tuple(constraint["column_names"])

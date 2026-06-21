@@ -16,26 +16,54 @@ from app.repositories.vector_store import VectorChunk, stable_vector_id
 from app.services.model_service import MemoryUpdateRequest, ModelService, ReportGenerationRequest
 from app.services.rag_service import RagService
 
-MEMORY_LAYOUT = {
-    "weakness": {
-        "filename": "weakness_memory.md",
-        "title": "# Weakness Memory",
-        "summary_heading": "## Current Weakness Summary",
-        "history_heading": "## Weakness History",
-    },
-    "interview_history": {
-        "filename": "interview_history.md",
-        "title": "# Interview History",
-        "summary_heading": "## Current Interview Summary",
-        "history_heading": "## Interview Records",
-    },
-    "learning_profile": {
-        "filename": "learning_profile.md",
-        "title": "# Learning Profile",
-        "summary_heading": "## Current Learning Profile",
-        "history_heading": "## Profile Updates",
-    },
-}
+def memory_layout(language: str) -> dict[str, dict[str, str]]:
+    if language == "zh-CN":
+        return {
+            "weakness": {
+                "filename": "weakness_memory.md",
+                "title": "# 薄弱项记忆",
+                "summary_heading": "## 当前薄弱项总结",
+                "history_heading": "## 薄弱项历史记录",
+                "empty_state": "暂无已完成的中文模拟面试记录。",
+            },
+            "interview_history": {
+                "filename": "interview_history.md",
+                "title": "# 面试历史",
+                "summary_heading": "## 当前面试总结",
+                "history_heading": "## 面试记录",
+                "empty_state": "暂无已完成的中文模拟面试记录。",
+            },
+            "learning_profile": {
+                "filename": "learning_profile.md",
+                "title": "# 学习画像",
+                "summary_heading": "## 当前学习画像",
+                "history_heading": "## 画像更新记录",
+                "empty_state": "暂无已完成的中文模拟面试记录。",
+            },
+        }
+    return {
+        "weakness": {
+            "filename": "weakness_memory.md",
+            "title": "# Weakness Memory",
+            "summary_heading": "## Current Weakness Summary",
+            "history_heading": "## Weakness History",
+            "empty_state": "No completed interviews yet.",
+        },
+        "interview_history": {
+            "filename": "interview_history.md",
+            "title": "# Interview History",
+            "summary_heading": "## Current Interview Summary",
+            "history_heading": "## Interview Records",
+            "empty_state": "No completed interviews yet.",
+        },
+        "learning_profile": {
+            "filename": "learning_profile.md",
+            "title": "# Learning Profile",
+            "summary_heading": "## Current Learning Profile",
+            "history_heading": "## Profile Updates",
+            "empty_state": "No completed interviews yet.",
+        },
+    }
 
 
 class MemoryService:
@@ -67,6 +95,7 @@ class MemoryService:
         report_markdown = self.model_service.generate_report(
             ReportGenerationRequest(
                 session_id=interview_session.id,
+                language=config.language,
                 turns=[
                     {
                         "round_index": turn.round_index,
@@ -105,13 +134,14 @@ class MemoryService:
             Report(
                 session_id=interview_session.id,
                 report_path=str(report_path),
-                summary=f"{config.target_role} interview for {config.target_company}".strip(),
+                summary=self._report_summary(config.target_role, config.target_company, config.language),
                 weaknesses=weaknesses,
             ),
         )
         memory_files = self._update_memory_files(
             session,
             report_markdown,
+            config.language,
             config.chat_model_provider,
             config.chat_model,
         )
@@ -122,11 +152,12 @@ class MemoryService:
         session.flush()
         return interview_session, report
 
-    def ensure_memory_files(self) -> dict[str, Path]:
+    def ensure_memory_files(self, language: str = "en") -> dict[str, Path]:
         memory_dir = self.settings.data_dir / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
+        layout_map = memory_layout(language)
         paths: dict[str, Path] = {}
-        for kind, layout in MEMORY_LAYOUT.items():
+        for kind, layout in layout_map.items():
             path = memory_dir / layout["filename"]
             if not path.exists():
                 path.write_text(
@@ -134,7 +165,7 @@ class MemoryService:
                         [
                             layout["title"],
                             layout["summary_heading"],
-                            "No completed interviews yet.",
+                            layout["empty_state"],
                             layout["history_heading"],
                         ]
                     )
@@ -198,13 +229,15 @@ class MemoryService:
         self,
         session: Session,
         report_markdown: str,
+        language: str,
         provider: str,
         model: str,
     ) -> list[MemoryFile]:
-        paths = self.ensure_memory_files()
+        paths = self.ensure_memory_files(language)
         update = self.model_service.update_memory(
             MemoryUpdateRequest(
                 report_markdown=report_markdown,
+                language=language,
                 existing_memory={
                     kind: path.read_text(encoding="utf-8") for kind, path in paths.items()
                 },
@@ -220,7 +253,12 @@ class MemoryService:
         memory_files: list[MemoryFile] = []
         for kind, path in paths.items():
             summary = summaries[kind]
-            content = self._rewrite_memory(path.read_text(encoding="utf-8"), kind, summary)
+            content = self._rewrite_memory(
+                path.read_text(encoding="utf-8"),
+                kind,
+                summary,
+                language,
+            )
             path.write_text(content, encoding="utf-8")
             memory_file = self.memory_repository.get_by_kind(session, kind)
             if memory_file is None:
@@ -235,8 +273,8 @@ class MemoryService:
         session.flush()
         return memory_files
 
-    def _rewrite_memory(self, content: str, kind: str, summary: str) -> str:
-        layout = MEMORY_LAYOUT[kind]
+    def _rewrite_memory(self, content: str, kind: str, summary: str, language: str) -> str:
+        layout = memory_layout(language)[kind]
         entry = f"### {datetime.now(UTC).isoformat()}\n{summary}"
         return "\n\n".join(
             [
@@ -253,3 +291,16 @@ class MemoryService:
             return entry
         existing = content.split(history_heading, 1)[1].strip()
         return f"{existing}\n\n{entry}".strip()
+
+    def _report_summary(self, target_role: str, target_company: str, language: str) -> str:
+        role = target_role.strip()
+        company = target_company.strip()
+        if language == "zh-CN":
+            if role and company:
+                return f"{company}{role}面试复盘"
+            if role:
+                return f"{role}面试复盘"
+            if company:
+                return f"{company}面试复盘"
+            return "面试复盘"
+        return f"{role} interview for {company}".strip()

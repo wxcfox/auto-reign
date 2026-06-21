@@ -6,6 +6,7 @@ DEFAULT_QWEN_CONFIG = {
     "target_role": "",
     "job_description": "",
     "extra_prompt": "",
+    "language": "en",
     "mode": "comprehensive",
     "chat_model_provider": "qwen",
     "chat_model": "qwen3.7-plus",
@@ -18,6 +19,7 @@ CONFIG = {
     "target_role": "Backend Engineer",
     "job_description": "Build reliable AI application backends.",
     "extra_prompt": "Focus on RAG and FastAPI.",
+    "language": "en",
     "mode": "comprehensive",
     "chat_model_provider": "qwen",
     "chat_model": "qwen3.7-plus",
@@ -38,6 +40,7 @@ def test_save_last_config_and_create_session(client: TestClient) -> None:
     loaded = client.get("/api/interview-configs/last")
     assert loaded.status_code == 200
     assert loaded.json()["target_company"] == "OpenAI"
+    assert loaded.json()["language"] == "en"
 
     created = client.post("/api/interview-sessions", json=CONFIG)
     assert created.status_code == 200

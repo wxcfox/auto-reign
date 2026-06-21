@@ -32,6 +32,7 @@ const defaultConfig: InterviewConfig = {
   target_role: "",
   job_description: "",
   extra_prompt: "",
+  language: "en",
   mode: "comprehensive",
   chat_model_provider: "qwen",
   chat_model: "qwen3.7-plus",
@@ -39,7 +40,7 @@ const defaultConfig: InterviewConfig = {
 };
 
 export function InterviewWorkspace() {
-  const { t } = useTranslation("interview");
+  const { t, getCurrentLanguage, i18n } = useTranslation("interview");
   const [config, setConfig] = useState<InterviewConfig>(defaultConfig);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [session, setSession] = useState<InterviewSession | null>(null);
@@ -58,6 +59,13 @@ export function InterviewWorkspace() {
     { value: "knowledge_drill", label: t("mode_options.knowledge_drill") },
     { value: "weakness_reinforcement", label: t("mode_options.weakness_reinforcement") },
   ];
+
+  useEffect(() => {
+    setConfig((current) => ({
+      ...current,
+      language: getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en",
+    }));
+  }, [i18n.language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,8 +162,13 @@ export function InterviewWorkspace() {
     setError(null);
     setReport(null);
     try {
-      await saveLastInterviewConfig(config);
-      const created = await createInterviewSession(config);
+      const activeConfig: InterviewConfig = {
+        ...config,
+        language: getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en",
+      };
+      setConfig(activeConfig);
+      await saveLastInterviewConfig(activeConfig);
+      const created = await createInterviewSession(activeConfig);
       setSession(created.session);
       setTurn(created.turn);
       setFeedback(null);

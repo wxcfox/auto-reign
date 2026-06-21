@@ -57,6 +57,7 @@ export interface InterviewConfig {
   target_role: string;
   job_description: string;
   extra_prompt: string;
+  language: "en" | "zh-CN";
   mode: InterviewMode;
   chat_model_provider: ProviderName;
   chat_model: string;

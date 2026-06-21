@@ -6,8 +6,10 @@ from fastapi import HTTPException
 from app.core.config import Settings
 from app.services.model_service import (
     AnswerEvaluationRequest,
+    MemoryUpdateRequest,
     ModelService,
     QuestionGenerationRequest,
+    ReportGenerationRequest,
 )
 
 
@@ -140,6 +142,39 @@ def test_model_service_uses_deterministic_fallback_when_enabled(tmp_path) -> Non
     )
 
     assert question == "How would you explain your Backend Engineer experience for OpenAI?"
+
+
+def test_model_service_uses_chinese_fallback_outputs_when_requested(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        deterministic_model_fallback=True,
+    )
+    service = ModelService(settings=settings)
+
+    report = service.generate_report(
+        ReportGenerationRequest(
+            session_id="session-1",
+            language="zh-CN",
+            turns=[],
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+    memory = service.update_memory(
+        MemoryUpdateRequest(
+            report_markdown="# 面试复盘报告",
+            existing_memory={},
+            language="zh-CN",
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+
+    assert "# 面试复盘报告" in report
+    assert memory.weakness_summary.startswith("重点")
 
 
 def test_model_service_hides_provider_failure_details(tmp_path) -> None:
