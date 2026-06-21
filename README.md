@@ -51,7 +51,9 @@ Default dependency images:
 - `QDRANT_IMAGE=qdrant/qdrant:v1.17.0`
 
 At least one backend provider key must be non-empty before that provider and its
-models appear in the Interview selector. Keep `.env` local; it is ignored by Git.
+models appear in the Interview selector. The default local path is tuned for a
+single `QWEN_API_KEY`: chat uses `qwen3.7-plus` by default and RAG embeddings use `text-embedding-v4`
+through the DashScope OpenAI-compatible endpoint. Keep `.env` local; it is ignored by Git.
 If Docker Hub access is unstable in your environment, override `MYSQL_IMAGE` and
 `QDRANT_IMAGE` in `.env` with reachable mirror image references before rerunning
 `./start.sh`.
@@ -131,8 +133,8 @@ docker compose config
 | `QDRANT_URL` | Backend-to-Qdrant URL. |
 | `QDRANT_COLLECTION` | Default Qdrant collection name. |
 | `DATA_DIR` | Root directory for uploads, generated reports, and local files. |
-| `EMBEDDING_PROVIDER` | Embedding provider identifier. |
-| `EMBEDDING_MODEL` | Embedding model identifier. |
+| `EMBEDDING_PROVIDER` | Embedding provider identifier. Defaults to `qwen`. |
+| `EMBEDDING_MODEL` | Embedding model identifier. Defaults to `text-embedding-v4`. |
 | `OPENAI_API_KEY` | Enables the OpenAI model catalog. Backend only. |
 | `DEEPSEEK_API_KEY` | Enables the DeepSeek model catalog. Backend only. |
 | `QWEN_API_KEY` | Enables the Qwen model catalog. Backend only. |
@@ -149,10 +151,12 @@ availability and configured model names, never key values. Keys are not accepted
 the frontend and are not written to MySQL, Qdrant, reports, or memory files.
 
 OpenAI uses the standard API endpoint. DeepSeek and Qwen use their OpenAI-compatible
-endpoints. OpenAI embeddings require `OPENAI_API_KEY` even when chat uses DeepSeek or
-Qwen. Set `DETERMINISTIC_MODEL_FALLBACK=true` only for automated tests or an explicitly
-offline demo; this bypasses provider calls and uses stable local responses and hash
-vectors.
+endpoints. The default setup uses Qwen for both chat and embeddings, so a valid
+`QWEN_API_KEY` is enough to run document indexing, retrieval, and interviews locally.
+OpenAI remains supported for both chat and embeddings when `EMBEDDING_PROVIDER=openai`
+and `EMBEDDING_MODEL=text-embedding-3-small`. Set `DETERMINISTIC_MODEL_FALLBACK=true`
+only for automated tests or an explicitly offline demo; this bypasses provider calls
+and uses stable local responses and hash vectors.
 
 ## Document Library
 
@@ -166,7 +170,7 @@ stored in Qdrant. PDF, Word, image, audio, and video ingestion are not supported
 2. Open Dashboard and confirm `Backend ready`.
 3. Open Library and upload a Markdown file with a level-one heading.
 4. Confirm analysis and indexing complete, then open the document detail page.
-5. Configure at least one provider key in `.env` and restart with `./start.sh --restart`.
+5. Configure `QWEN_API_KEY` in `.env` and restart with `./start.sh --restart`.
 6. Open Interview, set company, role, mode, model, and target rounds.
 7. Start a session, submit an answer and optional follow-up, then finish it.
 8. Open Review and confirm the report and memory content are visible.

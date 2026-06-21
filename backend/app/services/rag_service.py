@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import math
 import re
 from typing import Any
@@ -21,6 +22,8 @@ from app.repositories.vector_store import (
     stable_vector_id,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class RagService:
     def __init__(
@@ -30,12 +33,14 @@ class RagService:
         document_repository: DocumentRepository | None = None,
         chunk_repository: DocumentChunkRepository | None = None,
         embedding_client: Any | None = None,
+        embedding_client_factory: Any = OpenAI,
     ) -> None:
         self.settings = settings or get_settings()
         self.vector_store = vector_store or get_qdrant_store()
         self.document_repository = document_repository or DocumentRepository()
         self.chunk_repository = chunk_repository or DocumentChunkRepository()
         self.embedding_client = embedding_client
+        self.embedding_client_factory = embedding_client_factory
 
     def split_text(self, text: str, chunk_size: int = 900, overlap: int = 120) -> list[str]:
         compact = text.strip()
@@ -56,13 +61,18 @@ class RagService:
             return []
         if self.settings.deterministic_model_fallback:
             return [self._embed_text(text) for text in texts]
-        if self.settings.embedding_provider != "openai" or not self.settings.openai_api_key:
+        provider_config = self._resolve_embedding_provider()
+        if provider_config is None:
             raise service_unavailable(
                 "embedding_provider_not_configured",
                 "The configured embedding provider is not available.",
             )
         try:
-            client = self.embedding_client or OpenAI(api_key=self.settings.openai_api_key)
+            provider_name, api_key, base_url = provider_config
+            client = self.embedding_client or self.embedding_client_factory(
+                api_key=api_key,
+                base_url=base_url,
+            )
             response = client.embeddings.create(
                 input=texts,
                 model=self.settings.embedding_model,
@@ -72,10 +82,36 @@ class RagService:
         except HTTPException:
             raise
         except Exception as error:
+            logger.exception(
+                "Embedding provider request failed: provider=%s model=%s error_type=%s error_message=%s",
+                self.settings.embedding_provider,
+                self.settings.embedding_model,
+                type(error).__name__,
+                str(error),
+                extra={
+                    "provider": self.settings.embedding_provider,
+                    "model": self.settings.embedding_model,
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                },
+            )
             raise bad_gateway(
                 "embedding_call_failed",
                 "The embedding provider request failed.",
             ) from error
+
+    def _resolve_embedding_provider(self) -> tuple[str, str, str | None] | None:
+        providers = {
+            "openai": (self.settings.openai_api_key, None),
+            "qwen": (self.settings.qwen_api_key, self.settings.qwen_base_url),
+        }
+        provider_name = self.settings.embedding_provider
+        if provider_name not in providers:
+            return None
+        api_key, base_url = providers[provider_name]
+        if not api_key:
+            return None
+        return provider_name, api_key, base_url
 
     def index_document(self, session: Session, document: Document) -> Document:
         try:

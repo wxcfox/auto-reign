@@ -1,8 +1,11 @@
 from types import SimpleNamespace
 from uuid import UUID
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from fastapi import HTTPException
 from app.repositories.vector_store import VectorChunk, VectorStoreUnavailable
 from app.repositories.qdrant_store import QdrantVectorStore
 from app.services.rag_service import RagService
@@ -27,7 +30,33 @@ def test_uploaded_document_is_searchable(client: TestClient) -> None:
     assert hits[0]["source_type"] == "document"
 
 
-def test_embed_texts_uses_openai_when_configured(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("settings_overrides", "expected_model", "expected_base_url"),
+    [
+            (
+                {
+                    "openai_api_key": "openai-secret",
+                    "embedding_provider": "openai",
+                    "embedding_model": "text-embedding-3-small",
+                },
+                "text-embedding-3-small",
+                None,
+            ),
+        (
+            {
+                "qwen_api_key": "qwen-secret",
+                "embedding_provider": "qwen",
+                "embedding_model": "text-embedding-v4",
+                "qwen_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            },
+            "text-embedding-v4",
+            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        ),
+    ],
+)
+def test_embed_texts_uses_supported_provider_when_configured(
+    tmp_path, settings_overrides: dict[str, str], expected_model: str, expected_base_url: str | None
+) -> None:
     calls: list[dict[str, object]] = []
 
     class FakeEmbeddings:
@@ -40,24 +69,40 @@ def test_embed_texts_uses_openai_when_configured(tmp_path) -> None:
                 ]
             )
 
-    client = SimpleNamespace(embeddings=FakeEmbeddings())
+    factory_calls: list[dict[str, str | None]] = []
+
+    def client_factory(*, api_key: str, base_url: str | None = None):
+        factory_calls.append({"api_key": api_key, "base_url": base_url})
+        return SimpleNamespace(embeddings=FakeEmbeddings())
+
     settings = Settings(
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
-        openai_api_key="openai-secret",
         deterministic_model_fallback=False,
+        **settings_overrides,
     )
-    service = RagService(settings=settings, embedding_client=client)
+    service = RagService(
+        settings=settings,
+        embedding_client=None,
+        embedding_client_factory=client_factory,
+    )
 
     embeddings = service.embed_texts(["first", "second"])
 
     assert embeddings == [[0.1, 0.2], [0.3, 0.4]]
+    assert factory_calls == [
+        {
+            "api_key": settings_overrides.get("openai_api_key")
+            or settings_overrides.get("qwen_api_key"),
+            "base_url": expected_base_url,
+        }
+    ]
     assert calls == [
         {
             "input": ["first", "second"],
-            "model": "text-embedding-3-small",
+            "model": expected_model,
             "encoding_format": "float",
         }
     ]
@@ -89,6 +134,8 @@ def test_search_uses_configured_embedding_client(tmp_path) -> None:
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
         openai_api_key="openai-secret",
+        embedding_provider="openai",
+        embedding_model="text-embedding-3-small",
         deterministic_model_fallback=False,
     )
     service = RagService(
@@ -185,3 +232,40 @@ def test_indexed_document_uses_stable_uuid_vector_ids(tmp_path) -> None:
     assert chunks
     for chunk in chunks:
         assert str(UUID(chunk.id)) == chunk.id
+
+
+def test_embed_texts_logs_provider_error_details(tmp_path, caplog: pytest.LogCaptureFixture) -> None:
+    class FailingEmbeddings:
+        def create(self, **_kwargs):
+            raise RuntimeError("quota exceeded for project")
+
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="openai-secret",
+        embedding_provider="openai",
+        embedding_model="text-embedding-3-small",
+        deterministic_model_fallback=False,
+    )
+    service = RagService(
+        settings=settings,
+        embedding_client=SimpleNamespace(embeddings=FailingEmbeddings()),
+    )
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(HTTPException) as error:
+            service.embed_texts(["hello"])
+
+    record = caplog.records[-1]
+    assert error.value.status_code == 502
+    assert error.value.detail["code"] == "embedding_call_failed"
+    assert "provider=openai" in caplog.text
+    assert "model=text-embedding-3-small" in caplog.text
+    assert "quota exceeded for project" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert record.provider == "openai"
+    assert record.model == "text-embedding-3-small"
+    assert record.error_type == "RuntimeError"
+    assert record.error_message == "quota exceeded for project"
