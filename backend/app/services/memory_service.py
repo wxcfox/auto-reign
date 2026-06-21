@@ -53,9 +53,7 @@ class MemoryService:
         self.report_repository = ReportRepository()
         self.memory_repository = MemoryFileRepository()
 
-    def finish_session(
-        self, session: Session, interview_session_id: str
-    ) -> tuple[InterviewSession, Report]:
+    def finish_session(self, session: Session, interview_session_id: str) -> tuple[InterviewSession, Report]:
         interview_session = self.session_repository.get(session, interview_session_id)
         if interview_session is None:
             raise not_found("session_not_found", "Interview session not found.")
@@ -228,18 +226,15 @@ class MemoryService:
     def _rewrite_memory(self, content: str, kind: str, summary: str) -> str:
         layout = MEMORY_LAYOUT[kind]
         entry = f"### {datetime.now(UTC).isoformat()}\n{summary}"
-        return (
-            "\n\n".join(
-                [
-                    layout["title"],
-                    layout["summary_heading"],
-                    summary,
-                    layout["history_heading"],
-                    self._existing_history(content, layout["history_heading"], entry),
-                ]
-            ).strip()
-            + "\n"
-        )
+        return "\n\n".join(
+            [
+                layout["title"],
+                layout["summary_heading"],
+                summary,
+                layout["history_heading"],
+                self._existing_history(content, layout["history_heading"], entry),
+            ]
+        ).strip() + "\n"
 
     def _existing_history(self, content: str, history_heading: str, entry: str) -> str:
         if history_heading not in content:

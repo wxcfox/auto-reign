@@ -16,9 +16,7 @@ class DocumentRepository:
         return session.get(models.Document, document_id)
 
     def list(self, session: Session) -> list[models.Document]:
-        return list(
-            session.scalars(select(models.Document).order_by(models.Document.created_at.desc()))
-        )
+        return list(session.scalars(select(models.Document).order_by(models.Document.created_at.desc())))
 
 
 class DocumentChunkRepository:
@@ -63,9 +61,7 @@ class InterviewConfigRepository:
 
 
 class InterviewSessionRepository:
-    def add(
-        self, session: Session, interview_session: models.InterviewSession
-    ) -> models.InterviewSession:
+    def add(self, session: Session, interview_session: models.InterviewSession) -> models.InterviewSession:
         session.add(interview_session)
         session.flush()
         return interview_session
@@ -100,9 +96,7 @@ class ReportRepository:
         return session.get(models.Report, report_id)
 
     def list(self, session: Session) -> list[models.Report]:
-        return list(
-            session.scalars(select(models.Report).order_by(models.Report.created_at.desc()))
-        )
+        return list(session.scalars(select(models.Report).order_by(models.Report.created_at.desc())))
 
 
 class MemoryFileRepository:

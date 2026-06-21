@@ -19,9 +19,7 @@ def get_session(request: Request) -> Iterator[Session]:
 
 
 @router.post("/upload", response_model=DocumentResponse)
-async def upload_document(
-    file: UploadFile, session: Session = Depends(get_session)
-) -> DocumentResponse:
+async def upload_document(file: UploadFile, session: Session = Depends(get_session)) -> DocumentResponse:
     document = await DocumentService().upload_document(session, file)
     return DocumentResponse.model_validate(document)
 

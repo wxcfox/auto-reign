@@ -80,9 +80,7 @@ def submit_follow_up_answer(
     return InterviewTurnResponse.model_validate(turn)
 
 
-@router.post(
-    "/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse
-)
+@router.post("/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse)
 def next_question(
     session_id: str, session: Session = Depends(get_session)
 ) -> InterviewSessionCreatedResponse:

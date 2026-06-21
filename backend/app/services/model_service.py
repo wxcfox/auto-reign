@@ -303,7 +303,8 @@ class ModelService:
                 ),
                 "## Weaknesses\n"
                 + "\n".join(
-                    f"- {weakness}" for weakness in weaknesses or ["No major weaknesses recorded."]
+                    f"- {weakness}"
+                    for weakness in weaknesses or ["No major weaknesses recorded."]
                 ),
                 "## Review Plan\n- Revisit feedback and prepare one concrete example per gap.",
                 "## Source Context\n- Generated from local interview turns and memory.",

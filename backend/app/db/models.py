@@ -33,9 +33,7 @@ class Document(Base):
     analysis_status: Mapped[str] = mapped_column(String(32), default="pending")
     index_status: Mapped[str] = mapped_column(String(32), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_now, onupdate=_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
@@ -69,9 +67,7 @@ class InterviewConfig(Base):
     chat_model: Mapped[str] = mapped_column(String(120))
     target_rounds: Mapped[int] = mapped_column(Integer, default=3)
     is_last_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_now, onupdate=_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     sessions: Mapped[list["InterviewSession"]] = relationship(back_populates="config")
 
@@ -135,6 +131,4 @@ class MemoryFile(Base):
     file_path: Mapped[str] = mapped_column(String(1024))
     summary_hash: Mapped[str] = mapped_column(String(128), default="")
     last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_now, onupdate=_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
