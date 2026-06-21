@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
 from app import main as main_module
 from app.core.config import Settings
+from app.db.models import UTCDateTime
 from app.db.session import create_engine_for_settings
 
 STORAGE_ENVIRONMENT_VARIABLES = (
@@ -63,3 +65,22 @@ def test_app_shutdown_disposes_engine(monkeypatch) -> None:
         pass
 
     engine.dispose.assert_called_once_with()
+
+
+def test_utc_datetime_normalizes_aware_values_to_naive_utc_for_storage() -> None:
+    value = datetime(2026, 6, 22, 8, 30, tzinfo=UTC)
+
+    assert UTCDateTime().process_bind_param(value, None) == datetime(2026, 6, 22, 8, 30)
+
+
+def test_utc_datetime_attaches_utc_to_naive_database_values() -> None:
+    stored_value = datetime(2026, 6, 22, 8, 30)
+
+    assert UTCDateTime().process_result_value(stored_value, None) == datetime(
+        2026,
+        6,
+        22,
+        8,
+        30,
+        tzinfo=UTC,
+    )

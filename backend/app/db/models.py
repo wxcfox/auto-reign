@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -11,6 +12,28 @@ def _uuid() -> str:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    impl = DateTime
+    cache_ok = True
+
+    def __init__(self) -> None:
+        super().__init__(timezone=True)
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 class Base(DeclarativeBase):
@@ -32,8 +55,8 @@ class Document(Base):
     weakness_candidates: Mapped[list[str]] = mapped_column(JSON, default=list)
     analysis_status: Mapped[str] = mapped_column(String(32), default="pending")
     index_status: Mapped[str] = mapped_column(String(32), default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
@@ -49,7 +72,7 @@ class DocumentChunk(Base):
     content_hash: Mapped[str] = mapped_column(String(128))
     vector_collection: Mapped[str] = mapped_column(String(120))
     vector_id: Mapped[str] = mapped_column(String(255), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
 
@@ -67,7 +90,7 @@ class InterviewConfig(Base):
     chat_model: Mapped[str] = mapped_column(String(120))
     target_rounds: Mapped[int] = mapped_column(Integer, default=3)
     is_last_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
     sessions: Mapped[list["InterviewSession"]] = relationship(back_populates="config")
 
@@ -79,8 +102,8 @@ class InterviewSession(Base):
     config_id: Mapped[str] = mapped_column(ForeignKey("interview_configs.id"))
     status: Mapped[str] = mapped_column(String(32), default="active")
     current_round: Mapped[int] = mapped_column(Integer, default=1)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     config: Mapped[InterviewConfig] = relationship(back_populates="sessions")
@@ -109,7 +132,7 @@ class InterviewTurn(Base):
     weaknesses: Mapped[list[str]] = mapped_column(JSON, default=list)
     review_suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
     retrieved_context_refs: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
 
     session: Mapped[InterviewSession] = relationship(back_populates="turns")
 
@@ -122,7 +145,7 @@ class Report(Base):
     report_path: Mapped[str] = mapped_column(String(1024))
     summary: Mapped[str] = mapped_column(Text)
     weaknesses: Mapped[list[str]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
 
     session: Mapped[InterviewSession] = relationship(back_populates="reports")
 
@@ -134,5 +157,5 @@ class MemoryFile(Base):
     kind: Mapped[str] = mapped_column(String(64), unique=True)
     file_path: Mapped[str] = mapped_column(String(1024))
     summary_hash: Mapped[str] = mapped_column(String(128), default="")
-    last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    last_indexed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
