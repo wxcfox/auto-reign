@@ -55,6 +55,10 @@ class InterviewTurnResponse(BaseModel):
     missing_points: list[str] = Field(default_factory=list)
     follow_up_question: str | None = None
     follow_up_answer: str | None = None
+    follow_up_feedback: str | None = None
+    follow_up_missing_points: list[str] = Field(default_factory=list)
+    follow_up_weaknesses: list[str] = Field(default_factory=list)
+    follow_up_review_suggestions: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     review_suggestions: list[str] = Field(default_factory=list)
     retrieved_context_refs: list[dict[str, str]] = Field(default_factory=list)
@@ -76,9 +80,16 @@ class AnswerRequest(BaseModel):
     answer: str
 
 
-class AnswerFeedbackResponse(BaseModel):
+class FeedbackResponse(BaseModel):
     feedback: str
     missing_points: list[str] = Field(default_factory=list)
-    follow_up_question: str
     weaknesses: list[str] = Field(default_factory=list)
     review_suggestions: list[str] = Field(default_factory=list)
+
+
+class AnswerFeedbackResponse(FeedbackResponse):
+    follow_up_question: str
+
+
+class FollowUpFeedbackResponse(FeedbackResponse):
+    pass

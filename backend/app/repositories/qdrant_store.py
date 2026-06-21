@@ -40,6 +40,16 @@ class QdrantVectorStore:
     def __init__(self, client: QdrantClient) -> None:
         self._client = client
 
+    def has_searchable_content(self, collection_name: str) -> bool:
+        if not _call_qdrant(self._client.collection_exists, collection_name=collection_name):
+            return False
+        response = _call_qdrant(
+            self._client.count,
+            collection_name=collection_name,
+            exact=False,
+        )
+        return int(response.count or 0) > 0
+
     def upsert_chunks(self, collection_name: str, chunks: list[VectorChunk]) -> None:
         if not chunks:
             return

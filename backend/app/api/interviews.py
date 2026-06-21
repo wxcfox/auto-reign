@@ -8,11 +8,11 @@ from app.db.session import session_scope
 from app.schemas.interviews import (
     AnswerFeedbackResponse,
     AnswerRequest,
+    FollowUpFeedbackResponse,
     InterviewConfigIn,
     InterviewConfigResponse,
     InterviewSessionCreatedResponse,
     InterviewSessionDetailResponse,
-    InterviewTurnResponse,
 )
 from app.schemas.reports import ReportResponse
 from app.services.interview_service import InterviewService
@@ -71,13 +71,13 @@ def submit_answer(
 
 @router.post(
     "/interview-sessions/{session_id}/follow-up-answer",
-    response_model=InterviewTurnResponse,
+    response_model=FollowUpFeedbackResponse,
 )
 def submit_follow_up_answer(
     session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
-) -> InterviewTurnResponse:
-    turn = InterviewService().submit_follow_up_answer(session, session_id, answer.answer)
-    return InterviewTurnResponse.model_validate(turn)
+) -> FollowUpFeedbackResponse:
+    feedback = InterviewService().submit_follow_up_answer(session, session_id, answer.answer)
+    return FollowUpFeedbackResponse.model_validate(feedback.model_dump())
 
 
 @router.post("/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse)

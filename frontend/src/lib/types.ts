@@ -89,6 +89,10 @@ export interface InterviewTurn {
   missing_points: string[];
   follow_up_question: string | null;
   follow_up_answer: string | null;
+  follow_up_feedback: string | null;
+  follow_up_missing_points: string[];
+  follow_up_weaknesses: string[];
+  follow_up_review_suggestions: string[];
   weaknesses: string[];
   review_suggestions: string[];
   retrieved_context_refs: Array<Record<string, string>>;
@@ -104,6 +108,13 @@ export interface AnswerFeedback {
   feedback: string;
   missing_points: string[];
   follow_up_question: string;
+  weaknesses: string[];
+  review_suggestions: string[];
+}
+
+export interface FollowUpFeedback {
+  feedback: string;
+  missing_points: string[];
   weaknesses: string[];
   review_suggestions: string[];
 }

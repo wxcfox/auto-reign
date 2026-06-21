@@ -3,7 +3,9 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Upload } from "lucide-react";
 
+import { useTranslation } from "@/hooks/useTranslation";
 import { uploadDocument } from "@/lib/api";
+import { getErrorMessage } from "@/lib/error-messages";
 import type { DocumentRecord } from "@/lib/types";
 
 type DocumentUploaderProps = {
@@ -11,6 +13,7 @@ type DocumentUploaderProps = {
 };
 
 export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
+  const { t } = useTranslation("library");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -35,7 +38,7 @@ export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
       setFile(null);
       form.reset();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+      setError(getErrorMessage(uploadError, t, "common:errors.generic_upload"));
     } finally {
       setUploading(false);
     }
@@ -45,7 +48,7 @@ export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
     <form className="upload-tool" onSubmit={handleSubmit}>
       <div>
         <label className="field-label" htmlFor="document-file">
-          Document
+          {t("uploader.label")}
         </label>
         <input
           accept=".md,.txt,text/markdown,text/plain"
@@ -53,11 +56,11 @@ export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
           onChange={handleFileChange}
           type="file"
         />
-        <p className="field-hint">Markdown/TXT, processed and indexed locally.</p>
+        <p className="field-hint">{t("uploader.hint")}</p>
       </div>
       <button className="button button-primary" disabled={!file || uploading} type="submit">
         <Upload aria-hidden="true" size={17} />
-        {uploading ? "Uploading..." : "Upload"}
+        {uploading ? t("uploader.uploading") : t("common:actions.upload")}
       </button>
       {error ? (
         <p className="form-error" role="alert">

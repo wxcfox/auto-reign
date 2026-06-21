@@ -139,7 +139,7 @@ class InterviewService:
 
     def submit_follow_up_answer(
         self, session: Session, session_id: str, answer: str
-    ) -> InterviewTurn:
+    ) -> AnswerEvaluationResult:
         interview_session = self._get_active_session(session, session_id)
         turn = self._current_turn(session, interview_session)
         if turn.answer is None or not turn.follow_up_question:
@@ -149,9 +149,25 @@ class InterviewService:
                 "follow_up_already_submitted",
                 "The current follow-up answer was already submitted.",
             )
+        config = session.get(InterviewConfig, interview_session.config_id)
+        if config is None:
+            raise not_found("config_not_found", "Interview config not found.")
+        evaluation = self.model_service.evaluate_answer(
+            AnswerEvaluationRequest(
+                question=turn.follow_up_question,
+                answer=answer,
+                context=[],
+                provider=config.chat_model_provider,
+                model=config.chat_model,
+            )
+        )
         turn.follow_up_answer = answer
+        turn.follow_up_feedback = evaluation.feedback
+        turn.follow_up_missing_points = evaluation.missing_points
+        turn.follow_up_weaknesses = evaluation.weaknesses
+        turn.follow_up_review_suggestions = evaluation.review_suggestions
         session.flush()
-        return turn
+        return evaluation
 
     def next_question(
         self, session: Session, session_id: str

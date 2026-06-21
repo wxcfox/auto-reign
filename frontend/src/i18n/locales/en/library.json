@@ -1,0 +1,33 @@
+{
+  "eyebrow": "Knowledge base",
+  "title": "Library",
+  "summary": "{{count}} documents available for interview context.",
+  "indexed_eyebrow": "Indexed material",
+  "documents_title": "Documents",
+  "keyword_label": "Filter by keyword",
+  "keyword_placeholder": "Keyword",
+  "tag_label": "Filter by tag",
+  "tag_placeholder": "Tag",
+  "loading": "Loading documents...",
+  "empty": "No documents match the current filters.",
+  "no_summary": "No summary available.",
+  "updated": "Updated {{value}}",
+  "uploader": {
+    "label": "Document",
+    "hint": "Markdown/TXT, processed and indexed locally.",
+    "uploading": "Uploading..."
+  },
+  "detail": {
+    "back": "Library",
+    "loading": "Loading document...",
+    "save_success": "Saved.",
+    "save_reindex_success": "Saved and reindexed.",
+    "source_analysis": "Analysis: {{status}}",
+    "source_index": "Index: {{status}}",
+    "title_label": "Title",
+    "summary_label": "Summary",
+    "tags_label": "Tags",
+    "knowledge_points_label": "Knowledge points",
+    "weakness_candidates_label": "Weakness candidates"
+  }
+}

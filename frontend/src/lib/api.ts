@@ -4,16 +4,17 @@ import type {
   DocumentRecord,
   DocumentUpdate,
   FinishInterviewResponse,
+  FollowUpFeedback,
   HealthResponse,
   InterviewConfig,
   InterviewConfigResponse,
   InterviewSessionCreatedResponse,
-  InterviewTurn,
   MemoryResponse,
   ModelListResponse,
   ReportDetailResponse,
   ReportListResponse,
 } from "./types";
+import { throwApiError } from "./api-error";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -22,8 +23,7 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   headers.set("Content-Type", "application/json");
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(errorBody || `Request failed with ${response.status}`);
+    await throwApiError(response, `Request failed with ${response.status}`);
   }
   return response.json() as Promise<T>;
 }
@@ -36,8 +36,7 @@ export async function uploadDocument(file: File): Promise<DocumentRecord> {
     body,
   });
   if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(errorBody || `Upload failed with ${response.status}`);
+    await throwApiError(response, `Upload failed with ${response.status}`);
   }
   return response.json() as Promise<DocumentRecord>;
 }
@@ -102,8 +101,8 @@ export function submitAnswer(sessionId: string, answer: string): Promise<AnswerF
 export function submitFollowUpAnswer(
   sessionId: string,
   answer: string,
-): Promise<InterviewTurn> {
-  return apiJson<InterviewTurn>(`/api/interview-sessions/${sessionId}/follow-up-answer`, {
+): Promise<FollowUpFeedback> {
+  return apiJson<FollowUpFeedback>(`/api/interview-sessions/${sessionId}/follow-up-answer`, {
     method: "POST",
     body: JSON.stringify({ answer }),
   });

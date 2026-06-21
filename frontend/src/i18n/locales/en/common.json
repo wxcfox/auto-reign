@@ -1,0 +1,48 @@
+{
+  "app": {
+    "title": "Auto Reign",
+    "language": "Language"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "library": "Library",
+    "interview": "Interview",
+    "review": "Review"
+  },
+  "states": {
+    "loading": "Loading...",
+    "unavailable": "Unavailable",
+    "checking": "Checking",
+    "completed": "Completed",
+    "working": "Working..."
+  },
+  "actions": {
+    "save": "Save",
+    "finish": "Finish",
+    "upload": "Upload",
+    "start": "Start interview",
+    "open_report": "Open report",
+    "save_and_reindex": "Save and reindex",
+    "review_memory": "Review memory"
+  },
+  "errors": {
+    "generic_load": "The requested data could not be loaded.",
+    "generic_save": "The changes could not be saved.",
+    "generic_upload": "The upload failed.",
+    "answer_already_submitted": "This answer has already been submitted.",
+    "current_turn_unanswered": "Submit the current answer before continuing.",
+    "document_not_found": "The document could not be found.",
+    "embedding_call_failed": "The embedding request failed.",
+    "follow_up_already_submitted": "This follow-up answer has already been submitted.",
+    "main_answer_required": "Submit the main answer before the follow-up.",
+    "model_not_configured": "The selected model is not configured.",
+    "provider_call_failed": "The model request failed.",
+    "provider_invalid_response": "The model returned an invalid structured response.",
+    "provider_not_configured": "The selected provider is not configured.",
+    "session_not_active": "This interview session is no longer active.",
+    "session_not_found": "The interview session could not be found.",
+    "target_rounds_reached": "The configured round count has already been reached.",
+    "vector_dimension_mismatch": "The vector collection is incompatible with the current embedding model.",
+    "vector_store_unavailable": "The vector store is temporarily unavailable."
+  }
+}

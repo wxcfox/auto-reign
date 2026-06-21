@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { useTranslation } from "@/hooks/useTranslation";
 import { StatusPill } from "@/components/StatusPill";
 import { getDocument, reindexDocument, updateDocument } from "@/lib/api";
+import { getErrorMessage } from "@/lib/error-messages";
 import type { DocumentRecord, DocumentUpdate } from "@/lib/types";
 
 type FormState = {
@@ -43,6 +45,7 @@ function toList(value: string): string[] {
 }
 
 export default function DocumentDetailPage() {
+  const { t } = useTranslation("library");
   const params = useParams<{ documentId: string }>();
   const documentId = params.documentId;
   const [document, setDocument] = useState<DocumentRecord | null>(null);
@@ -58,7 +61,7 @@ export default function DocumentDetailPage() {
         setForm(toFormState(response));
       })
       .catch((loadError) =>
-        setError(loadError instanceof Error ? loadError.message : "Failed to load document."),
+        setError(getErrorMessage(loadError, t, "common:errors.generic_load")),
       );
   }, [documentId]);
 
@@ -87,9 +90,9 @@ export default function DocumentDetailPage() {
       }
       setDocument(saved);
       setForm(toFormState(saved));
-      setMessage(reindex ? "Saved and reindexed." : "Saved.");
+      setMessage(reindex ? t("detail.save_reindex_success") : t("detail.save_success"));
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to save document.");
+      setError(getErrorMessage(saveError, t, "common:errors.generic_save"));
     } finally {
       setSaving(false);
     }
@@ -101,14 +104,14 @@ export default function DocumentDetailPage() {
   }
 
   if (!document && !error) {
-    return <p className="empty-state">Loading document...</p>;
+    return <p className="empty-state">{t("detail.loading")}</p>;
   }
 
   return (
     <div className="page-stack">
       <Link className="back-link" href="/library">
         <ArrowLeft aria-hidden="true" size={17} />
-        Library
+        {t("detail.back")}
       </Link>
 
       {error && !document ? (
@@ -126,11 +129,11 @@ export default function DocumentDetailPage() {
             </div>
             <div className="status-row">
               <StatusPill
-                label={`Analysis: ${document.analysis_status}`}
+                label={t("detail.source_analysis", { status: document.analysis_status })}
                 tone={document.analysis_status === "completed" ? "success" : "warning"}
               />
               <StatusPill
-                label={`Index: ${document.index_status}`}
+                label={t("detail.source_index", { status: document.index_status })}
                 tone={document.index_status === "completed" ? "success" : "warning"}
               />
             </div>
@@ -138,7 +141,7 @@ export default function DocumentDetailPage() {
 
           <form className="editor-form" onSubmit={handleSubmit}>
             <label>
-              <span className="field-label">Title</span>
+              <span className="field-label">{t("detail.title_label")}</span>
               <input
                 onChange={(event) => setField("title", event.target.value)}
                 required
@@ -147,7 +150,7 @@ export default function DocumentDetailPage() {
             </label>
 
             <label>
-              <span className="field-label">Summary</span>
+              <span className="field-label">{t("detail.summary_label")}</span>
               <textarea
                 onChange={(event) => setField("summary", event.target.value)}
                 rows={5}
@@ -157,7 +160,7 @@ export default function DocumentDetailPage() {
 
             <div className="editor-grid">
               <label>
-                <span className="field-label">Tags</span>
+                <span className="field-label">{t("detail.tags_label")}</span>
                 <textarea
                   onChange={(event) => setField("tags", event.target.value)}
                   rows={7}
@@ -165,7 +168,7 @@ export default function DocumentDetailPage() {
                 />
               </label>
               <label>
-                <span className="field-label">Knowledge points</span>
+                <span className="field-label">{t("detail.knowledge_points_label")}</span>
                 <textarea
                   onChange={(event) => setField("knowledgePoints", event.target.value)}
                   rows={7}
@@ -173,7 +176,7 @@ export default function DocumentDetailPage() {
                 />
               </label>
               <label>
-                <span className="field-label">Weakness candidates</span>
+                <span className="field-label">{t("detail.weakness_candidates_label")}</span>
                 <textarea
                   onChange={(event) => setField("weaknessCandidates", event.target.value)}
                   rows={7}
@@ -196,7 +199,7 @@ export default function DocumentDetailPage() {
             <div className="button-row">
               <button className="button" disabled={saving} type="submit">
                 <Save aria-hidden="true" size={17} />
-                Save
+                {t("common:actions.save")}
               </button>
               <button
                 className="button button-primary"
@@ -205,7 +208,7 @@ export default function DocumentDetailPage() {
                 type="button"
               >
                 <RefreshCw aria-hidden="true" size={17} />
-                {saving ? "Working..." : "Save and reindex"}
+                {saving ? t("common:states.working") : t("common:actions.save_and_reindex")}
               </button>
             </div>
           </form>

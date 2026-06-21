@@ -1,0 +1,48 @@
+{
+  "app": {
+    "title": "Auto Reign",
+    "language": "语言"
+  },
+  "nav": {
+    "dashboard": "总览",
+    "library": "资料库",
+    "interview": "面试",
+    "review": "复盘"
+  },
+  "states": {
+    "loading": "加载中...",
+    "unavailable": "不可用",
+    "checking": "检查中",
+    "completed": "已完成",
+    "working": "处理中..."
+  },
+  "actions": {
+    "save": "保存",
+    "finish": "结束面试",
+    "upload": "上传",
+    "start": "开始面试",
+    "open_report": "打开报告",
+    "save_and_reindex": "保存并重建索引",
+    "review_memory": "查看记忆"
+  },
+  "errors": {
+    "generic_load": "加载数据失败。",
+    "generic_save": "保存失败。",
+    "generic_upload": "上传失败。",
+    "answer_already_submitted": "当前回答已经提交过了。",
+    "current_turn_unanswered": "请先提交当前回答，再继续下一步。",
+    "document_not_found": "未找到该文档。",
+    "embedding_call_failed": "向量模型请求失败。",
+    "follow_up_already_submitted": "当前追问回答已经提交过了。",
+    "main_answer_required": "请先提交主回答，再提交追问回答。",
+    "model_not_configured": "所选模型未配置。",
+    "provider_call_failed": "模型请求失败。",
+    "provider_invalid_response": "模型返回了无效的结构化结果。",
+    "provider_not_configured": "所选模型提供方未配置。",
+    "session_not_active": "当前面试会话已不处于进行中。",
+    "session_not_found": "未找到该面试会话。",
+    "target_rounds_reached": "已达到配置的轮次数。",
+    "vector_dimension_mismatch": "当前向量集合与 embedding 模型维度不兼容。",
+    "vector_store_unavailable": "向量库暂时不可用。"
+  }
+}
