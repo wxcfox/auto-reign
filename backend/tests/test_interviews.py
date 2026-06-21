@@ -45,6 +45,8 @@ def test_save_last_config_and_create_session(client: TestClient) -> None:
     assert body["session"]["status"] == "active"
     assert body["turn"]["round_index"] == 1
     assert body["turn"]["question"]
+    assert body["session"]["started_at"].endswith(("Z", "+00:00"))
+    assert body["turn"]["created_at"].endswith(("Z", "+00:00"))
 
 
 def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monkeypatch) -> None:
