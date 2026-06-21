@@ -1,0 +1,21 @@
+{
+  "eyebrow": "Reports and memory",
+  "title": "Review",
+  "summary": "{{count}} completed interviews.",
+  "history_eyebrow": "History",
+  "reports_title": "Reports",
+  "reports_empty": "No reports yet.",
+  "select_report": "Select a report to preview it.",
+  "memory_eyebrow": "Persistent context",
+  "memory_title": "Memory",
+  "memory_loading": "Loading memory...",
+  "tabs": {
+    "weakness": "Weakness",
+    "interview_history": "Interview history",
+    "learning_profile": "Learning profile"
+  },
+  "errors": {
+    "review_load": "Failed to load review data.",
+    "report_load": "Failed to load report."
+  }
+}

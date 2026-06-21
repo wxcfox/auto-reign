@@ -3,8 +3,10 @@
 import { FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { useTranslation } from "@/hooks/useTranslation";
 import { MarkdownView } from "@/components/MarkdownView";
 import { getMemory, getReport, getReports } from "@/lib/api";
+import { getErrorMessage } from "@/lib/error-messages";
 import type {
   MemoryKind,
   MemoryResponse,
@@ -12,19 +14,19 @@ import type {
   ReportRecord,
 } from "@/lib/types";
 
-const memoryTabs: Array<{ value: MemoryKind; label: string }> = [
-  { value: "weakness", label: "Weakness" },
-  { value: "interview_history", label: "Interview history" },
-  { value: "learning_profile", label: "Learning profile" },
-];
-
 export default function ReviewPage() {
+  const { t, getCurrentLanguage } = useTranslation("review");
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [reportDetail, setReportDetail] = useState<ReportDetailResponse | null>(null);
   const [memory, setMemory] = useState<MemoryResponse | null>(null);
   const [memoryTab, setMemoryTab] = useState<MemoryKind>("weakness");
   const [error, setError] = useState<string | null>(null);
+  const memoryTabs: Array<{ value: MemoryKind; label: string }> = [
+    { value: "weakness", label: t("tabs.weakness") },
+    { value: "interview_history", label: t("tabs.interview_history") },
+    { value: "learning_profile", label: t("tabs.learning_profile") },
+  ];
 
   useEffect(() => {
     const requestedReport = new URLSearchParams(window.location.search).get("report");
@@ -35,7 +37,7 @@ export default function ReviewPage() {
         setSelectedReportId(requestedReport ?? reportResponse.reports[0]?.id ?? null);
       })
       .catch((loadError) =>
-        setError(loadError instanceof Error ? loadError.message : "Failed to load review data."),
+        setError(getErrorMessage(loadError, t, "review:errors.review_load")),
       );
   }, []);
 
@@ -47,7 +49,7 @@ export default function ReviewPage() {
     getReport(selectedReportId)
       .then(setReportDetail)
       .catch((loadError) =>
-        setError(loadError instanceof Error ? loadError.message : "Failed to load report."),
+        setError(getErrorMessage(loadError, t, "review:errors.report_load")),
       );
   }, [selectedReportId]);
 
@@ -55,10 +57,10 @@ export default function ReviewPage() {
     <div className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Reports and memory</p>
-          <h1>Review</h1>
+          <p className="eyebrow">{t("eyebrow")}</p>
+          <h1>{t("title")}</h1>
         </div>
-        <p className="page-summary">{reports.length} completed interviews.</p>
+        <p className="page-summary">{t("summary", { count: reports.length })}</p>
       </header>
 
       {error ? (
@@ -71,11 +73,11 @@ export default function ReviewPage() {
         <div className="report-list">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">History</p>
-              <h2 id="reports-heading">Reports</h2>
+              <p className="eyebrow">{t("history_eyebrow")}</p>
+              <h2 id="reports-heading">{t("reports_title")}</h2>
             </div>
           </div>
-          {reports.length === 0 ? <p className="empty-state">No reports yet.</p> : null}
+          {reports.length === 0 ? <p className="empty-state">{t("reports_empty")}</p> : null}
           {reports.map((report) => (
             <button
               className="report-list-item"
@@ -88,7 +90,7 @@ export default function ReviewPage() {
               <span>
                 <strong>{report.summary}</strong>
                 <time dateTime={report.created_at}>
-                  {new Date(report.created_at).toLocaleString()}
+                  {new Date(report.created_at).toLocaleString(getCurrentLanguage())}
                 </time>
               </span>
             </button>
@@ -99,7 +101,7 @@ export default function ReviewPage() {
           {reportDetail ? (
             <MarkdownView content={reportDetail.content} />
           ) : (
-            <p className="empty-state">Select a report to preview it.</p>
+            <p className="empty-state">{t("select_report")}</p>
           )}
         </div>
       </section>
@@ -107,8 +109,8 @@ export default function ReviewPage() {
       <section className="page-section" aria-labelledby="memory-heading">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Persistent context</p>
-            <h2 id="memory-heading">Memory</h2>
+            <p className="eyebrow">{t("memory_eyebrow")}</p>
+            <h2 id="memory-heading">{t("memory_title")}</h2>
           </div>
           <div className="segmented-control" role="tablist" aria-label="Memory file">
             {memoryTabs.map((tab) => (
@@ -126,7 +128,7 @@ export default function ReviewPage() {
           </div>
         </div>
         <div className="content-surface memory-preview" role="tabpanel">
-          <MarkdownView content={memory?.files[memoryTab].content ?? "Loading memory..."} />
+          <MarkdownView content={memory?.files[memoryTab].content ?? t("memory_loading")} />
         </div>
       </section>
     </div>

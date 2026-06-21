@@ -167,6 +167,8 @@ class RagService:
 
     def search(self, session: Session, query: str, limit: int) -> list[dict[str, object]]:
         del session
+        if not self.vector_store.has_searchable_content(self.settings.qdrant_collection):
+            return []
         query_embedding = self.embed_texts([query])[0]
         try:
             raw_hits = self.vector_store.search(

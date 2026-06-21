@@ -74,6 +74,12 @@ class MemoryService:
                         "answer": turn.answer,
                         "feedback": turn.feedback,
                         "missing_points": turn.missing_points,
+                        "follow_up_question": turn.follow_up_question,
+                        "follow_up_answer": turn.follow_up_answer,
+                        "follow_up_feedback": turn.follow_up_feedback,
+                        "follow_up_missing_points": turn.follow_up_missing_points,
+                        "follow_up_weaknesses": turn.follow_up_weaknesses,
+                        "follow_up_review_suggestions": turn.follow_up_review_suggestions,
                         "weaknesses": turn.weaknesses,
                         "review_suggestions": turn.review_suggestions,
                     }
@@ -87,7 +93,13 @@ class MemoryService:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report_markdown, encoding="utf-8")
 
-        weaknesses = sorted({weakness for turn in turns for weakness in turn.weaknesses})
+        weaknesses = sorted(
+            {
+                weakness
+                for turn in turns
+                for weakness in [*turn.weaknesses, *turn.follow_up_weaknesses]
+            }
+        )
         report = self.report_repository.add(
             session,
             Report(

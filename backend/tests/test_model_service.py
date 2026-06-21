@@ -48,7 +48,7 @@ class FakeOpenAIClient:
             "qwen",
             "qwen-plus",
             {"qwen_api_key": "provider-secret"},
-            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
         ),
     ],
 )

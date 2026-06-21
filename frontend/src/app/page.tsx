@@ -4,9 +4,11 @@ import { ArrowRight, BookOpen, Database, MessageSquareText, Upload } from "lucid
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { useTranslation } from "@/hooks/useTranslation";
 import { MarkdownView } from "@/components/MarkdownView";
 import { StatusPill } from "@/components/StatusPill";
 import { getDocuments, getHealth, getMemory, getReports } from "@/lib/api";
+import { getErrorMessage } from "@/lib/error-messages";
 import type {
   DocumentRecord,
   HealthResponse,
@@ -23,6 +25,7 @@ function currentWeaknessSummary(content: string): string {
 }
 
 export default function DashboardPage() {
+  const { t, getCurrentLanguage } = useTranslation("dashboard");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [memory, setMemory] = useState<MemoryResponse | null>(null);
@@ -50,7 +53,14 @@ export default function DashboardPage() {
             (result) => result.status === "rejected",
           )
         ) {
-          setError("Some dashboard data could not be loaded.");
+          const firstRejected = [healthResult, documentsResult, memoryResult, reportsResult].find(
+            (result) => result.status === "rejected",
+          );
+          setError(
+            firstRejected?.status === "rejected"
+              ? getErrorMessage(firstRejected.reason, t, "common:errors.generic_load")
+              : t("status_error"),
+          );
         }
       })
       .finally(() => setLoading(false));
@@ -61,7 +71,7 @@ export default function DashboardPage() {
     [health],
   );
   const weaknessSummary = currentWeaknessSummary(
-    memory?.files.weakness.content ?? "No completed interviews yet.",
+    memory?.files.weakness.content ?? t("memory.empty"),
   );
   const latestReport = reports[0];
 
@@ -69,11 +79,17 @@ export default function DashboardPage() {
     <div className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Local interview workbench</p>
-          <h1>Dashboard</h1>
+          <p className="eyebrow">{t("eyebrow")}</p>
+          <h1>{t("title")}</h1>
         </div>
         <StatusPill
-          label={health?.status === "ok" ? "Backend ready" : loading ? "Checking" : "Unavailable"}
+          label={
+            health?.status === "ok"
+              ? t("status_ready")
+              : loading
+                ? t("common:states.checking")
+                : t("common:states.unavailable")
+          }
           tone={health?.status === "ok" ? "success" : "warning"}
         />
       </header>
@@ -89,21 +105,21 @@ export default function DashboardPage() {
           <Database aria-hidden="true" size={20} />
           <div>
             <strong>{documents.length}</strong>
-            <span>Indexed documents</span>
+            <span>{t("metrics.documents")}</span>
           </div>
         </div>
         <div className="metric">
           <MessageSquareText aria-hidden="true" size={20} />
           <div>
             <strong>{availableProviders.length}</strong>
-            <span>Available providers</span>
+            <span>{t("metrics.providers")}</span>
           </div>
         </div>
         <div className="metric">
           <BookOpen aria-hidden="true" size={20} />
           <div>
             <strong>{reports.length}</strong>
-            <span>Interview reports</span>
+            <span>{t("metrics.reports")}</span>
           </div>
         </div>
       </section>
@@ -112,11 +128,11 @@ export default function DashboardPage() {
         <div className="page-section">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Current memory</p>
-              <h2>Weakness summary</h2>
+              <p className="eyebrow">{t("memory.eyebrow")}</p>
+              <h2>{t("memory.title")}</h2>
             </div>
             <Link className="text-link" href="/review">
-              Review memory
+              {t("common:actions.review_memory")}
               <ArrowRight aria-hidden="true" size={16} />
             </Link>
           </div>
@@ -128,8 +144,8 @@ export default function DashboardPage() {
         <div className="page-section">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Latest output</p>
-              <h2>Interview report</h2>
+              <p className="eyebrow">{t("report.eyebrow")}</p>
+              <h2>{t("report.title")}</h2>
             </div>
           </div>
           <div className="content-surface latest-report">
@@ -138,16 +154,16 @@ export default function DashboardPage() {
                 <div>
                   <h3>{latestReport.summary}</h3>
                   <time dateTime={latestReport.created_at}>
-                    {new Date(latestReport.created_at).toLocaleString()}
+                    {new Date(latestReport.created_at).toLocaleString(getCurrentLanguage())}
                   </time>
                 </div>
                 <Link className="button" href={`/review?report=${latestReport.id}`}>
-                  Open report
+                  {t("common:actions.open_report")}
                   <ArrowRight aria-hidden="true" size={16} />
                 </Link>
               </>
             ) : (
-              <p className="empty-state">No interview reports yet.</p>
+              <p className="empty-state">{t("report.empty")}</p>
             )}
           </div>
         </div>
@@ -157,16 +173,16 @@ export default function DashboardPage() {
         <Link className="action-link" href="/library">
           <Upload aria-hidden="true" size={20} />
           <div>
-            <strong>Upload documents</strong>
-            <span>Add Markdown or TXT knowledge sources.</span>
+            <strong>{t("actions.upload_title")}</strong>
+            <span>{t("actions.upload_desc")}</span>
           </div>
           <ArrowRight aria-hidden="true" size={18} />
         </Link>
         <Link className="action-link" href="/interview">
           <MessageSquareText aria-hidden="true" size={20} />
           <div>
-            <strong>Start interview</strong>
-            <span>Configure a role and begin a mock session.</span>
+            <strong>{t("actions.interview_title")}</strong>
+            <span>{t("actions.interview_desc")}</span>
           </div>
           <ArrowRight aria-hidden="true" size={18} />
         </Link>

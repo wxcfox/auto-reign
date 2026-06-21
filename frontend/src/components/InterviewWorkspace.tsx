@@ -3,6 +3,7 @@
 import { CheckCircle2, MessageSquareText, Play, SkipForward, Square } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { useTranslation } from "@/hooks/useTranslation";
 import {
   createInterviewSession,
   finishInterview,
@@ -13,8 +14,10 @@ import {
   submitAnswer,
   submitFollowUpAnswer,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/error-messages";
 import type {
   AnswerFeedback,
+  FollowUpFeedback,
   InterviewConfig,
   InterviewMode,
   InterviewSession,
@@ -35,24 +38,26 @@ const defaultConfig: InterviewConfig = {
   target_rounds: 3,
 };
 
-const modeOptions: Array<{ value: InterviewMode; label: string }> = [
-  { value: "comprehensive", label: "Comprehensive" },
-  { value: "project_deep_dive", label: "Project deep dive" },
-  { value: "knowledge_drill", label: "Knowledge drill" },
-  { value: "weakness_reinforcement", label: "Weakness reinforcement" },
-];
-
 export function InterviewWorkspace() {
+  const { t } = useTranslation("interview");
   const [config, setConfig] = useState<InterviewConfig>(defaultConfig);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [session, setSession] = useState<InterviewSession | null>(null);
   const [turn, setTurn] = useState<InterviewTurn | null>(null);
   const [feedback, setFeedback] = useState<AnswerFeedback | null>(null);
+  const [followUpFeedback, setFollowUpFeedback] = useState<FollowUpFeedback | null>(null);
   const [report, setReport] = useState<ReportRecord | null>(null);
   const [answer, setAnswer] = useState("");
   const [followUpAnswer, setFollowUpAnswer] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const modeOptions: Array<{ value: InterviewMode; label: string }> = [
+    { value: "comprehensive", label: t("mode_options.comprehensive") },
+    { value: "project_deep_dive", label: t("mode_options.project_deep_dive") },
+    { value: "knowledge_drill", label: t("mode_options.knowledge_drill") },
+    { value: "weakness_reinforcement", label: t("mode_options.weakness_reinforcement") },
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +106,12 @@ export function InterviewWorkspace() {
         });
       }
       if (modelsResult.status === "rejected" || configResult.status === "rejected") {
-        setError("Could not load the saved configuration or model availability.");
+        const rejection = modelsResult.status === "rejected"
+          ? modelsResult.reason
+          : configResult.status === "rejected"
+            ? configResult.reason
+            : null;
+        setError(getErrorMessage(rejection, t, "interview:errors.load"));
       }
     });
     return () => {
@@ -149,10 +159,11 @@ export function InterviewWorkspace() {
       setSession(created.session);
       setTurn(created.turn);
       setFeedback(null);
+      setFollowUpFeedback(null);
       setAnswer("");
       setFollowUpAnswer("");
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "Failed to start interview.");
+      setError(getErrorMessage(startError, t, "interview:errors.start"));
     } finally {
       setBusyAction(null);
     }
@@ -167,6 +178,7 @@ export function InterviewWorkspace() {
     try {
       const response = await submitAnswer(session.id, answer.trim());
       setFeedback(response);
+      setFollowUpFeedback(null);
       setTurn({
         ...turn,
         answer: answer.trim(),
@@ -177,25 +189,31 @@ export function InterviewWorkspace() {
         review_suggestions: response.review_suggestions,
       });
     } catch (answerError) {
-      setError(answerError instanceof Error ? answerError.message : "Failed to submit answer.");
+      setError(getErrorMessage(answerError, t, "interview:errors.answer"));
     } finally {
       setBusyAction(null);
     }
   }
 
   async function handleFollowUp() {
-    if (!session || !followUpAnswer.trim()) {
+    if (!session || !turn || !followUpAnswer.trim()) {
       return;
     }
     setBusyAction("follow-up");
     setError(null);
     try {
       const response = await submitFollowUpAnswer(session.id, followUpAnswer.trim());
-      setTurn(response);
+      setFollowUpFeedback(response);
+      setTurn({
+        ...turn,
+        follow_up_answer: followUpAnswer.trim(),
+        follow_up_feedback: response.feedback,
+        follow_up_missing_points: response.missing_points,
+        follow_up_weaknesses: response.weaknesses,
+        follow_up_review_suggestions: response.review_suggestions,
+      });
     } catch (followUpError) {
-      setError(
-        followUpError instanceof Error ? followUpError.message : "Failed to submit follow-up.",
-      );
+      setError(getErrorMessage(followUpError, t, "interview:errors.follow_up"));
     } finally {
       setBusyAction(null);
     }
@@ -212,10 +230,11 @@ export function InterviewWorkspace() {
       setSession(response.session);
       setTurn(response.turn);
       setFeedback(null);
+      setFollowUpFeedback(null);
       setAnswer("");
       setFollowUpAnswer("");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Failed to load next question.");
+      setError(getErrorMessage(nextError, t, "interview:errors.next"));
     } finally {
       setBusyAction(null);
     }
@@ -232,7 +251,7 @@ export function InterviewWorkspace() {
       setSession(response.session);
       setReport(response.report);
     } catch (finishError) {
-      setError(finishError instanceof Error ? finishError.message : "Failed to finish interview.");
+      setError(getErrorMessage(finishError, t, "interview:errors.finish"));
     } finally {
       setBusyAction(null);
     }
@@ -240,16 +259,30 @@ export function InterviewWorkspace() {
 
   const reachedTargetRounds =
     session !== null && session.current_round >= config.target_rounds;
+  const statusHint = (() => {
+    if (!turn?.answer) {
+      return null;
+    }
+    if (reachedTargetRounds) {
+      return t("guidance.final_round");
+    }
+    if (turn.follow_up_answer) {
+      return t("guidance.follow_up_complete");
+    }
+    return t("guidance.continue");
+  })();
 
   return (
     <div className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Mock interview</p>
-          <h1>Interview</h1>
+          <p className="eyebrow">{t("eyebrow")}</p>
+          <h1>{t("title")}</h1>
         </div>
         <p className="page-summary">
-          {session ? `Round ${session.current_round} of ${config.target_rounds}` : "Not started"}
+          {session
+            ? t("round_summary", { current: session.current_round, total: config.target_rounds })
+            : t("not_started")}
         </p>
       </header>
 
@@ -257,13 +290,13 @@ export function InterviewWorkspace() {
         <form className="tool-panel interview-config" onSubmit={handleStart}>
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Setup</p>
-              <h2>Configuration</h2>
+              <p className="eyebrow">{t("setup_eyebrow")}</p>
+              <h2>{t("setup_title")}</h2>
             </div>
           </div>
 
           <label>
-            <span className="field-label">Target company</span>
+            <span className="field-label">{t("target_company")}</span>
             <input
               disabled={session?.status === "active"}
               onChange={(event) => updateConfig("target_company", event.target.value)}
@@ -272,7 +305,7 @@ export function InterviewWorkspace() {
             />
           </label>
           <label>
-            <span className="field-label">Target role</span>
+            <span className="field-label">{t("target_role")}</span>
             <input
               disabled={session?.status === "active"}
               onChange={(event) => updateConfig("target_role", event.target.value)}
@@ -281,7 +314,7 @@ export function InterviewWorkspace() {
             />
           </label>
           <label>
-            <span className="field-label">Job description</span>
+            <span className="field-label">{t("job_description")}</span>
             <textarea
               disabled={session?.status === "active"}
               onChange={(event) => updateConfig("job_description", event.target.value)}
@@ -290,7 +323,7 @@ export function InterviewWorkspace() {
             />
           </label>
           <label>
-            <span className="field-label">Extra prompt</span>
+            <span className="field-label">{t("extra_prompt")}</span>
             <textarea
               disabled={session?.status === "active"}
               onChange={(event) => updateConfig("extra_prompt", event.target.value)}
@@ -299,7 +332,7 @@ export function InterviewWorkspace() {
             />
           </label>
           <label>
-            <span className="field-label">Mode</span>
+            <span className="field-label">{t("mode")}</span>
             <select
               disabled={session?.status === "active"}
               onChange={(event) => updateConfig("mode", event.target.value as InterviewMode)}
@@ -314,13 +347,13 @@ export function InterviewWorkspace() {
           </label>
           <div className="form-grid">
             <label>
-              <span className="field-label">Provider</span>
+              <span className="field-label">{t("provider")}</span>
               <select
                 disabled={session?.status === "active" || providers.length === 0}
                 onChange={(event) => selectProvider(event.target.value as ProviderName)}
                 value={selectedProvider ? config.chat_model_provider : ""}
               >
-                {providers.length === 0 ? <option value="">No providers configured</option> : null}
+                {providers.length === 0 ? <option value="">{t("no_providers")}</option> : null}
                 {providers.map((provider) => (
                   <option key={provider.provider} value={provider.provider}>
                     {provider.provider}
@@ -329,13 +362,13 @@ export function InterviewWorkspace() {
               </select>
             </label>
             <label>
-              <span className="field-label">Model</span>
+              <span className="field-label">{t("model")}</span>
               <select
                 disabled={session?.status === "active" || !selectedProvider}
                 onChange={(event) => updateConfig("chat_model", event.target.value)}
                 value={selectedModelAvailable ? config.chat_model : ""}
               >
-                {!selectedProvider ? <option value="">Unavailable</option> : null}
+                {!selectedProvider ? <option value="">{t("model_unavailable")}</option> : null}
                 {selectedProvider?.models.map((model) => (
                   <option key={model} value={model}>
                     {model}
@@ -345,7 +378,7 @@ export function InterviewWorkspace() {
             </label>
           </div>
           <label>
-            <span className="field-label">Target rounds</span>
+            <span className="field-label">{t("target_rounds")}</span>
             <input
               disabled={session?.status === "active"}
               max={12}
@@ -364,20 +397,20 @@ export function InterviewWorkspace() {
             type="submit"
           >
             <Play aria-hidden="true" size={17} />
-            {busyAction === "start" ? "Starting..." : "Start interview"}
+            {busyAction === "start" ? `${t("common:actions.start")}...` : t("common:actions.start")}
           </button>
         </form>
 
         <section className="session-panel" aria-labelledby="session-heading">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Live session</p>
-              <h2 id="session-heading">Question and feedback</h2>
+              <p className="eyebrow">{t("session_eyebrow")}</p>
+              <h2 id="session-heading">{t("session_title")}</h2>
             </div>
             {session?.status === "completed" ? (
               <span className="session-complete">
                 <CheckCircle2 aria-hidden="true" size={17} />
-                Completed
+                {t("completed")}
               </span>
             ) : null}
           </div>
@@ -385,17 +418,17 @@ export function InterviewWorkspace() {
           {!turn ? (
             <div className="empty-session">
               <MessageSquareText aria-hidden="true" size={24} />
-              <p>Configure an available model and start an interview.</p>
+              <p>{t("session_empty")}</p>
             </div>
           ) : (
             <div className="session-content">
               <div className="question-block">
-                <p className="eyebrow">Question {turn.round_index}</p>
+                <p className="eyebrow">{t("question", { index: turn.round_index })}</p>
                 <h3>{turn.question}</h3>
               </div>
 
               <label>
-                <span className="field-label">Your answer</span>
+                <span className="field-label">{t("your_answer")}</span>
                 <textarea
                   disabled={Boolean(turn.answer) || session?.status !== "active"}
                   onChange={(event) => setAnswer(event.target.value)}
@@ -414,18 +447,18 @@ export function InterviewWorkspace() {
                 onClick={() => void handleAnswer()}
                 type="button"
               >
-                Submit answer
+                {busyAction === "answer" ? t("submit_answer_busy") : t("submit_answer")}
               </button>
 
               {feedback ? (
                 <div className="feedback-panel">
                   <div>
-                    <p className="eyebrow">Feedback</p>
+                    <p className="eyebrow">{t("feedback")}</p>
                     <p>{feedback.feedback}</p>
                   </div>
                   {feedback.missing_points.length > 0 ? (
                     <div>
-                      <h4>Missing points</h4>
+                      <h4>{t("missing_points")}</h4>
                       <ul>
                         {feedback.missing_points.map((point) => (
                           <li key={point}>{point}</li>
@@ -434,11 +467,11 @@ export function InterviewWorkspace() {
                     </div>
                   ) : null}
                   <div>
-                    <p className="eyebrow">Follow-up</p>
+                    <p className="eyebrow">{t("follow_up")}</p>
                     <p>{feedback.follow_up_question}</p>
                   </div>
                   <label>
-                    <span className="field-label">Follow-up answer</span>
+                    <span className="field-label">{t("follow_up_answer")}</span>
                     <textarea
                       disabled={Boolean(turn.follow_up_answer) || session?.status !== "active"}
                       onChange={(event) => setFollowUpAnswer(event.target.value)}
@@ -457,10 +490,30 @@ export function InterviewWorkspace() {
                     onClick={() => void handleFollowUp()}
                     type="button"
                   >
-                    Submit follow-up
+                    {busyAction === "follow-up" ? t("submit_follow_up_busy") : t("submit_follow_up")}
                   </button>
+                  {followUpFeedback ? (
+                    <div className="follow-up-feedback-panel">
+                      <div>
+                        <p className="eyebrow">{t("follow_up_feedback")}</p>
+                        <p>{followUpFeedback.feedback}</p>
+                      </div>
+                      {followUpFeedback.missing_points.length > 0 ? (
+                        <div>
+                          <h4>{t("missing_points")}</h4>
+                          <ul>
+                            {followUpFeedback.missing_points.map((point) => (
+                              <li key={point}>{point}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
+
+              {statusHint ? <p className="session-guidance">{statusHint}</p> : null}
 
               <div className="button-row session-actions">
                 <button
@@ -475,7 +528,7 @@ export function InterviewWorkspace() {
                   type="button"
                 >
                   <SkipForward aria-hidden="true" size={17} />
-                  Next question
+                  {busyAction === "next" ? t("next_question_busy") : t("next_question")}
                 </button>
                 <button
                   className="button button-danger"
@@ -484,7 +537,7 @@ export function InterviewWorkspace() {
                   type="button"
                 >
                   <Square aria-hidden="true" size={15} />
-                  Finish
+                  {busyAction === "finish" ? t("finish_busy") : t("common:actions.finish")}
                 </button>
               </div>
             </div>
@@ -499,7 +552,7 @@ export function InterviewWorkspace() {
             <div className="completion-panel">
               <CheckCircle2 aria-hidden="true" size={20} />
               <div>
-                <strong>Report generated</strong>
+                <strong>{t("report_generated")}</strong>
                 <p>{report.summary}</p>
               </div>
             </div>

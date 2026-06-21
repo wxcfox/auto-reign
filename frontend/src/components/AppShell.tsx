@@ -5,12 +5,8 @@ import { BookOpen, ClipboardList, Database, LayoutDashboard } from "lucide-react
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/library", label: "Library", icon: Database },
-  { href: "/interview", label: "Interview", icon: ClipboardList },
-  { href: "/review", label: "Review", icon: BookOpen },
-];
+import { useTranslation } from "@/hooks/useTranslation";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 type AppShellProps = {
   children: ReactNode;
@@ -18,13 +14,20 @@ type AppShellProps = {
 
 export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
+  const { t } = useTranslation("common");
+  const navItems = [
+    { href: "/", label: t("nav.dashboard"), icon: LayoutDashboard },
+    { href: "/library", label: t("nav.library"), icon: Database },
+    { href: "/interview", label: t("nav.interview"), icon: ClipboardList },
+    { href: "/review", label: t("nav.review"), icon: BookOpen },
+  ];
 
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="app-brand">
           <ClipboardList size={20} aria-hidden="true" />
-          <span>Auto Reign</span>
+          <span>{t("app.title")}</span>
         </div>
         <nav aria-label="Primary" className="app-nav">
           {navItems.map((item) => {
@@ -39,6 +42,9 @@ export function AppShell({ children }: AppShellProps) {
             );
           })}
         </nav>
+        <div className="app-sidebar-footer">
+          <LanguageSwitcher />
+        </div>
       </aside>
       <main className="app-main">{children}</main>
     </div>

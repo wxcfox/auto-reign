@@ -1,0 +1,27 @@
+{
+  "eyebrow": "Local interview workbench",
+  "title": "Dashboard",
+  "status_ready": "Backend ready",
+  "status_error": "Some dashboard data could not be loaded.",
+  "metrics": {
+    "documents": "Indexed documents",
+    "providers": "Available providers",
+    "reports": "Interview reports"
+  },
+  "memory": {
+    "eyebrow": "Current memory",
+    "title": "Weakness summary",
+    "empty": "No completed interviews yet."
+  },
+  "report": {
+    "eyebrow": "Latest output",
+    "title": "Interview report",
+    "empty": "No interview reports yet."
+  },
+  "actions": {
+    "upload_title": "Upload documents",
+    "upload_desc": "Add Markdown or TXT knowledge sources.",
+    "interview_title": "Start interview",
+    "interview_desc": "Configure a role and begin a mock session."
+  }
+}

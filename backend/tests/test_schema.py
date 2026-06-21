@@ -37,6 +37,14 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
         assert {"vector_collection", "vector_id"}.issubset(chunk_columns)
         assert {"chroma_collection", "chroma_id"}.isdisjoint(chunk_columns)
 
+        turn_columns = {column["name"] for column in inspector.get_columns("interview_turns")}
+        assert {
+            "follow_up_feedback",
+            "follow_up_missing_points",
+            "follow_up_weaknesses",
+            "follow_up_review_suggestions",
+        }.issubset(turn_columns)
+
         chunk_uniques = {
             tuple(constraint["column_names"])
             for constraint in inspector.get_unique_constraints("document_chunks")

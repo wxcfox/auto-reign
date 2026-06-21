@@ -47,6 +47,20 @@ def test_save_last_config_and_create_session(client: TestClient) -> None:
     assert body["turn"]["question"]
 
 
+def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monkeypatch) -> None:
+    def fail_embed_texts(_self, _texts):
+        raise AssertionError("embedding should not run for an empty library")
+
+    monkeypatch.setattr("app.services.rag_service.RagService.embed_texts", fail_embed_texts)
+
+    created = client.post("/api/interview-sessions", json=CONFIG)
+
+    assert created.status_code == 200
+    body = created.json()
+    assert body["turn"]["question"]
+    assert body["turn"]["retrieved_context_refs"] == []
+
+
 def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None:
     created = client.post("/api/interview-sessions", json=CONFIG).json()
     session_id = created["session"]["id"]
@@ -68,6 +82,11 @@ def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None
         json={"answer": "I would add retries, timeouts, and structured errors."},
     )
     assert follow_up.status_code == 200
+    follow_up_body = follow_up.json()
+    assert follow_up_body["feedback"]
+    assert isinstance(follow_up_body["missing_points"], list)
+    assert isinstance(follow_up_body["weaknesses"], list)
+    assert isinstance(follow_up_body["review_suggestions"], list)
 
     next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
     assert next_question.status_code == 200

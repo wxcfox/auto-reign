@@ -5,11 +5,14 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { DocumentUploader } from "@/components/DocumentUploader";
+import { useTranslation } from "@/hooks/useTranslation";
 import { StatusPill } from "@/components/StatusPill";
 import { getDocuments } from "@/lib/api";
+import { getErrorMessage } from "@/lib/error-messages";
 import type { DocumentRecord } from "@/lib/types";
 
 export default function LibraryPage() {
+  const { t, getCurrentLanguage } = useTranslation("library");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [keyword, setKeyword] = useState("");
   const [tag, setTag] = useState("");
@@ -20,7 +23,7 @@ export default function LibraryPage() {
     getDocuments()
       .then((response) => setDocuments(response.documents))
       .catch((loadError) =>
-        setError(loadError instanceof Error ? loadError.message : "Failed to load documents."),
+        setError(getErrorMessage(loadError, t, "common:errors.generic_load")),
       )
       .finally(() => setLoading(false));
   }, []);
@@ -50,10 +53,10 @@ export default function LibraryPage() {
     <div className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Knowledge base</p>
-          <h1>Library</h1>
+          <p className="eyebrow">{t("eyebrow")}</p>
+          <h1>{t("title")}</h1>
         </div>
-        <p className="page-summary">{documents.length} documents available for interview context.</p>
+        <p className="page-summary">{t("summary", { count: documents.length })}</p>
       </header>
 
       <section className="tool-panel" aria-label="Upload document">
@@ -63,25 +66,25 @@ export default function LibraryPage() {
       <section className="page-section" aria-labelledby="document-list-heading">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Indexed material</p>
-            <h2 id="document-list-heading">Documents</h2>
+            <p className="eyebrow">{t("indexed_eyebrow")}</p>
+            <h2 id="document-list-heading">{t("documents_title")}</h2>
           </div>
           <div className="filter-row">
             <label className="search-field">
               <Search aria-hidden="true" size={17} />
-              <span className="sr-only">Filter by keyword</span>
+              <span className="sr-only">{t("keyword_label")}</span>
               <input
                 onChange={(event) => setKeyword(event.target.value)}
-                placeholder="Keyword"
+                placeholder={t("keyword_placeholder")}
                 type="search"
                 value={keyword}
               />
             </label>
             <label>
-              <span className="sr-only">Filter by tag</span>
+              <span className="sr-only">{t("tag_label")}</span>
               <input
                 onChange={(event) => setTag(event.target.value)}
-                placeholder="Tag"
+                placeholder={t("tag_placeholder")}
                 type="search"
                 value={tag}
               />
@@ -89,14 +92,14 @@ export default function LibraryPage() {
           </div>
         </div>
 
-        {loading ? <p className="empty-state">Loading documents...</p> : null}
+        {loading ? <p className="empty-state">{t("loading")}</p> : null}
         {error ? (
           <p className="form-error" role="alert">
             {error}
           </p>
         ) : null}
         {!loading && !error && filteredDocuments.length === 0 ? (
-          <p className="empty-state">No documents match the current filters.</p>
+          <p className="empty-state">{t("empty")}</p>
         ) : null}
 
         <div className="document-grid">
@@ -112,7 +115,7 @@ export default function LibraryPage() {
                   tone={document.index_status === "completed" ? "success" : "warning"}
                 />
               </div>
-              <p>{document.summary || "No summary available."}</p>
+              <p>{document.summary || t("no_summary")}</p>
               <div className="tag-row">
                 {document.tags.map((documentTag) => (
                   <span className="tag" key={documentTag}>
@@ -121,7 +124,9 @@ export default function LibraryPage() {
                 ))}
               </div>
               <time dateTime={document.updated_at}>
-                Updated {new Date(document.updated_at).toLocaleString()}
+                {t("updated", {
+                  value: new Date(document.updated_at).toLocaleString(getCurrentLanguage()),
+                })}
               </time>
             </Link>
           ))}

@@ -86,6 +86,8 @@ a:focus-visible {
 }
 
 .app-sidebar {
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--surface);
   padding: 18px 14px;
@@ -103,6 +105,11 @@ a:focus-visible {
 .app-nav {
   display: grid;
   gap: 4px;
+}
+
+.app-sidebar-footer {
+  margin-top: auto;
+  padding: 18px 6px 0;
 }
 
 .app-nav a {
@@ -123,6 +130,18 @@ a:focus-visible {
 .app-main {
   min-width: 0;
   padding: 24px;
+}
+
+.language-switcher {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.language-switcher select {
+  padding-left: 10px;
 }
 
 .page-stack {
@@ -607,19 +626,37 @@ a:focus-visible {
   padding: 16px 18px;
 }
 
+.follow-up-feedback-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
 .feedback-panel p,
 .feedback-panel h4,
-.feedback-panel ul {
+.feedback-panel ul,
+.follow-up-feedback-panel p,
+.follow-up-feedback-panel h4,
+.follow-up-feedback-panel ul {
   margin-top: 0;
 }
 
-.feedback-panel ul {
+.feedback-panel ul,
+.follow-up-feedback-panel ul {
   padding-left: 20px;
 }
 
 .session-actions {
   border-top: 1px solid var(--border);
   padding-top: 16px;
+}
+
+.session-guidance {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  padding: 12px 14px;
+  color: var(--text-muted);
 }
 
 .session-complete {
