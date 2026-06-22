@@ -23,15 +23,19 @@ def test_reset_all_data_removes_runtime_state_and_keeps_configuration(tmp_path: 
     root = tmp_path
     for path in [
         root / "data" / "workspace" / "knowledge.md",
-        root / "backend" / "data" / "app.db",
         root / ".pids" / "backend.json",
         root / "logs" / "backend.log",
         root / "custom-data" / "upload.txt",
+    ]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("runtime", encoding="utf-8")
+    for path in [
+        root / "backend" / "data" / "app.db",
         root / "legacy.sqlite3",
         root / "legacy-chroma" / "index.bin",
     ]:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("runtime", encoding="utf-8")
+        path.write_text("legacy", encoding="utf-8")
     (root / ".env").write_text(
         "\n".join(
             [
@@ -60,18 +64,15 @@ def test_reset_all_data_removes_runtime_state_and_keeps_configuration(tmp_path: 
     ]
     assert sorted(path.relative_to(root).as_posix() for path in result.removed_paths) == [
         ".pids",
-        "backend/data",
         "custom-data",
         "data",
-        "legacy-chroma",
-        "legacy.sqlite3",
         "logs",
     ]
     assert not (root / "data").exists()
-    assert not (root / "backend" / "data").exists()
     assert not (root / "custom-data").exists()
-    assert not (root / "legacy.sqlite3").exists()
-    assert not (root / "legacy-chroma").exists()
+    assert (root / "backend" / "data" / "app.db").exists()
+    assert (root / "legacy.sqlite3").exists()
+    assert (root / "legacy-chroma" / "index.bin").exists()
     assert (root / ".env").read_text(encoding="utf-8").endswith("local-secret")
 
 

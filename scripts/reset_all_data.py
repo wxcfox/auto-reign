@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_NAME = "auto-reign"
-BASELINE_RUNTIME_PATHS = ("data", "backend/data", ".pids", "logs")
-ENV_PATH_KEYS = ("DATA_DIR", "SQLITE_PATH", "CHROMA_DIR")
+BASELINE_RUNTIME_PATHS = ("data", ".pids", "logs")
+ENV_PATH_KEYS = ("DATA_DIR",)
 
 
 @dataclass(frozen=True)
