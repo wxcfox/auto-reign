@@ -1,8 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   BookOpen,
+  ChevronDown,
   ClipboardList,
   Database,
   LayoutDashboard,
@@ -32,6 +33,10 @@ export function AppShell({ children }: AppShellProps) {
     { href: "/", label: t("nav.dashboard"), icon: LayoutDashboard },
     { href: "/review", label: t("nav.review"), icon: BookOpen },
   ];
+  const secondaryNavActive = secondaryNavItems.some((item) =>
+    item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href),
+  );
+  const [moreOpen, setMoreOpen] = useState(secondaryNavActive);
 
   return (
     <div className="app-shell">
@@ -65,11 +70,17 @@ export function AppShell({ children }: AppShellProps) {
           <Link href="/review">{t("nav.latest_review")}</Link>
         </section>
         <section className="sidebar-more" aria-label={t("nav.more")}>
-          <button className="sidebar-more-button" type="button" aria-expanded="true">
+          <button
+            className="sidebar-more-button"
+            type="button"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((current) => !current)}
+          >
             <MoreHorizontal size={18} aria-hidden="true" />
             <span>{t("nav.more")}</span>
+            <ChevronDown className="sidebar-more-chevron" size={16} aria-hidden="true" />
           </button>
-          <div className="sidebar-more-list">
+          <div className="sidebar-more-list" data-open={moreOpen}>
             {secondaryNavItems.map((item) => {
               const Icon = item.icon;
               const active =

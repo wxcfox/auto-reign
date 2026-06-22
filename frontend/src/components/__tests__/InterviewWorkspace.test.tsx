@@ -3,24 +3,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InterviewWorkspace } from "../InterviewWorkspace";
 import {
-  createInterviewSession,
+  createInterviewSessionStream,
   getLastInterviewConfig,
   getModels,
-  nextQuestion,
+  nextQuestionStream,
   saveLastInterviewConfig,
-  submitAnswer,
-  submitFollowUpAnswer,
+  submitAnswerStream,
+  submitFollowUpAnswerStream,
 } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
   createInterviewSession: vi.fn(),
+  createInterviewSessionStream: vi.fn(),
   finishInterview: vi.fn(),
   getLastInterviewConfig: vi.fn(),
   getModels: vi.fn(),
   nextQuestion: vi.fn(),
+  nextQuestionStream: vi.fn(),
   saveLastInterviewConfig: vi.fn(),
   submitAnswer: vi.fn(),
+  submitAnswerStream: vi.fn(),
   submitFollowUpAnswer: vi.fn(),
+  submitFollowUpAnswerStream: vi.fn(),
 }));
 
 const baseConfig = {
@@ -81,12 +85,13 @@ const secondTurn = {
 
 describe("InterviewWorkspace", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(getModels).mockResolvedValue({
       providers: [{ provider: "qwen", models: ["qwen3.7-plus"] }],
     });
     vi.mocked(getLastInterviewConfig).mockResolvedValue(baseConfig);
     vi.mocked(saveLastInterviewConfig).mockResolvedValue(baseConfig);
-    vi.mocked(submitFollowUpAnswer).mockResolvedValue({
+    vi.mocked(submitFollowUpAnswerStream).mockResolvedValue({
       feedback: "Follow-up feedback",
       missing_points: [],
       weaknesses: [],
@@ -103,21 +108,39 @@ describe("InterviewWorkspace", () => {
     expect(screen.getByRole("button", { name: /Show advanced settings/i })).toBeInTheDocument();
   });
 
-  it("keeps earlier interview turns visible after advancing to the next question", async () => {
-    vi.mocked(createInterviewSession).mockResolvedValue({
-      session: baseSession,
-      turn: firstTurn,
+  it("keeps earlier interview turns visible and automatically streams the next question after follow-up", async () => {
+    vi.mocked(createInterviewSessionStream).mockImplementation(async (_config, handlers) => {
+      handlers.onDelta(firstTurn.question);
+      return {
+        session: baseSession,
+        turn: firstTurn,
+      };
     });
-    vi.mocked(submitAnswer).mockResolvedValue({
-      feedback: "Use concrete cache invalidation examples.",
-      missing_points: ["Eviction policy"],
-      follow_up_question: "How would you handle stale data?",
-      weaknesses: ["Needs operational detail"],
-      review_suggestions: ["Prepare one production cache incident"],
+    vi.mocked(submitAnswerStream).mockImplementation(async (_sessionId, _answer, handlers) => {
+      handlers.onDelta("Use concrete cache invalidation examples.");
+      return {
+        feedback: "Use concrete cache invalidation examples.",
+        missing_points: ["Eviction policy"],
+        follow_up_question: "How would you handle stale data?",
+        weaknesses: ["Needs operational detail"],
+        review_suggestions: ["Prepare one production cache incident"],
+      };
     });
-    vi.mocked(nextQuestion).mockResolvedValue({
-      session: { ...baseSession, current_round: 2 },
-      turn: secondTurn,
+    vi.mocked(submitFollowUpAnswerStream).mockImplementation(async (_sessionId, _answer, handlers) => {
+      handlers.onDelta("Follow-up feedback.");
+      return {
+        feedback: "Follow-up feedback.",
+        missing_points: [],
+        weaknesses: [],
+        review_suggestions: [],
+      };
+    });
+    vi.mocked(nextQuestionStream).mockImplementation(async (_sessionId, handlers) => {
+      handlers.onDelta(secondTurn.question);
+      return {
+        session: { ...baseSession, current_round: 2 },
+        turn: secondTurn,
+      };
     });
 
     render(<InterviewWorkspace />);
@@ -128,29 +151,38 @@ describe("InterviewWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /Start interview/i }));
 
     expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Next question/i })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
       target: { value: "I use Redis with TTLs and metrics." },
     });
     fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
 
-    expect(await screen.findByText(/Use concrete cache invalidation examples/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/Use concrete cache invalidation examples/i)).toBeInTheDocument(),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: /Next question/i }));
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I would monitor stale reads and cache hit rate." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send follow-up/i }));
 
-    expect(await screen.findByText(secondTurn.question)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(secondTurn.question)).toBeInTheDocument());
     expect(screen.getByText(firstTurn.question)).toBeInTheDocument();
     expect(screen.getByText(/I use Redis with TTLs and metrics/i)).toBeInTheDocument();
     expect(screen.getByText(/Use concrete cache invalidation examples/i)).toBeInTheDocument();
+    expect(screen.getByText(/I would monitor stale reads/i)).toBeInTheDocument();
+    expect(screen.getByText("Follow-up feedback.")).toBeInTheDocument();
+    expect(nextQuestionStream).toHaveBeenCalledWith("session-1", expect.any(Object));
   });
 
   it("shows an assistant loading state while feedback is being generated", async () => {
-    let resolveFeedback: ((value: Awaited<ReturnType<typeof submitAnswer>>) => void) | undefined;
-    vi.mocked(createInterviewSession).mockResolvedValue({
+    let resolveFeedback: ((value: Awaited<ReturnType<typeof submitAnswerStream>>) => void) | undefined;
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
       session: baseSession,
       turn: firstTurn,
     });
-    vi.mocked(submitAnswer).mockReturnValue(
+    vi.mocked(submitAnswerStream).mockReturnValue(
       new Promise((resolve) => {
         resolveFeedback = resolve;
       }),
@@ -180,6 +212,47 @@ describe("InterviewWorkspace", () => {
     });
     await waitFor(() =>
       expect(screen.getByText(/Good structure; add a sharper example/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("renders streamed answer deltas before replacing them with final feedback", async () => {
+    let resolveStream: (() => void) | undefined;
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
+      session: baseSession,
+      turn: firstTurn,
+    });
+    vi.mocked(submitAnswerStream).mockImplementation(async (_sessionId, _answer, handlers) => {
+      handlers.onDelta("Streaming ");
+      handlers.onDelta("feedback");
+      await new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+      return {
+        feedback: "Final structured feedback.",
+        missing_points: [],
+        follow_up_question: "What would you measure?",
+        weaknesses: [],
+        review_suggestions: [],
+      };
+    });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Show advanced settings/i }));
+    fireEvent.change(screen.getByLabelText(/Target company/i), { target: { value: "Acme" } });
+    fireEvent.change(screen.getByLabelText(/Target role/i), { target: { value: "Backend Engineer" } });
+    fireEvent.click(screen.getByRole("button", { name: /Start interview/i }));
+
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I use Redis with TTLs and metrics." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
+
+    expect(await screen.findByText(/Streaming feedback/i)).toBeInTheDocument();
+    resolveStream?.();
+    await waitFor(() =>
+      expect(screen.getByText(/Final structured feedback/i)).toBeInTheDocument(),
     );
   });
 });

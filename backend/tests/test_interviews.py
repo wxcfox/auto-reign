@@ -52,6 +52,19 @@ def test_save_last_config_and_create_session(client: TestClient) -> None:
     assert body["turn"]["created_at"].endswith(("Z", "+00:00"))
 
 
+def test_stream_create_session_returns_question_delta_and_result(client: TestClient) -> None:
+    response = client.post("/api/interview-sessions/stream", json=CONFIG)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: delta" in body
+    assert "event: result" in body
+    assert '"session"' in body
+    assert '"turn"' in body
+    assert "Backend Engineer" in body
+
+
 def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monkeypatch) -> None:
     def fail_embed_texts(_self, _texts):
         raise AssertionError("embedding should not run for an empty library")
@@ -151,6 +164,71 @@ def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None
     next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
     assert next_question.status_code == 200
     assert next_question.json()["turn"]["round_index"] == 2
+
+
+def test_stream_answer_feedback_returns_delta_and_result(client: TestClient) -> None:
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json={"answer": "I would design clear service boundaries."},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: delta" in body
+    assert "event: result" in body
+    assert '"feedback"' in body
+    assert "The answer shows" in body
+
+    duplicate = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "duplicate"},
+    )
+    assert duplicate.status_code == 409
+
+
+def test_stream_follow_up_answer_returns_delta_and_result(client: TestClient) -> None:
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I would design clear service boundaries."},
+    )
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
+        json={"answer": "I would add retries, timeouts, and dashboards."},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: delta" in body
+    assert "event: result" in body
+    assert '"feedback"' in body
+    assert "The answer shows" in body
+
+
+def test_stream_next_question_returns_delta_and_result(client: TestClient) -> None:
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I would design clear service boundaries."},
+    )
+
+    response = client.post(f"/api/interview-sessions/{session_id}/next-question/stream")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: delta" in body
+    assert "event: result" in body
+    assert '"turn"' in body
+    assert '"round_index":2' in body
 
 
 def test_chinese_session_uses_chinese_question_and_feedback(client: TestClient) -> None:

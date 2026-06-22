@@ -97,6 +97,72 @@ def test_model_service_uses_selected_provider(
     assert client.completions.calls[0]["model"] == model
 
 
+def test_model_service_streams_provider_chunks(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+        deterministic_model_fallback=False,
+    )
+
+    class FakeStreamCompletions:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return [
+                SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="Hel"))]),
+                SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="lo"))]),
+                SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None))]),
+            ]
+
+    completions = FakeStreamCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    chunks = list(
+        service.stream_chat(
+            "question_generation.md",
+            {"target_role": "Backend Engineer"},
+            "openai",
+            "gpt-4.1-mini",
+        )
+    )
+
+    assert chunks == ["Hel", "lo"]
+    assert completions.calls[0]["stream"] is True
+    assert completions.calls[0]["model"] == "gpt-4.1-mini"
+
+
+def test_model_service_streams_deterministic_answer_in_chunks(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        deterministic_model_fallback=True,
+    )
+    service = ModelService(settings=settings)
+
+    chunks = list(
+        service.stream_answer_evaluation(
+            AnswerEvaluationRequest(
+                question="How do you operate the service?",
+                answer="With dashboards and alerts.",
+                provider="openai",
+                model="gpt-4.1-mini",
+            )
+        )
+    )
+
+    assert len(chunks) > 1
+    parsed = service.parse_answer_evaluation("".join(chunks))
+    assert parsed.feedback.startswith("The answer shows")
+
+
 def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,

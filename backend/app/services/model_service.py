@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +108,17 @@ class ModelService:
             request.model,
         ).strip()
 
+    def stream_question(self, request: QuestionGenerationRequest) -> Iterator[str]:
+        if self.settings.deterministic_model_fallback:
+            yield from self._chunk_text(self.generate_question(request))
+            return
+        yield from self.stream_chat(
+            "question_generation.md",
+            request.model_dump(exclude={"provider", "model"}),
+            request.provider,
+            request.model,
+        )
+
     def evaluate_answer(self, request: AnswerEvaluationRequest) -> AnswerEvaluationResult:
         if self.settings.deterministic_model_fallback:
             if request.language == "zh-CN":
@@ -136,6 +147,21 @@ class ModelService:
             request.model,
         )
 
+    def stream_answer_evaluation(self, request: AnswerEvaluationRequest) -> Iterator[str]:
+        if self.settings.deterministic_model_fallback:
+            result = self.evaluate_answer(request)
+            yield from self._chunk_text(json.dumps(result.model_dump(), ensure_ascii=False))
+            return
+        yield from self.stream_chat(
+            "answer_feedback.md",
+            request.model_dump(exclude={"provider", "model"}),
+            request.provider,
+            request.model,
+        )
+
+    def parse_answer_evaluation(self, content: str) -> AnswerEvaluationResult:
+        return self.parse_structured_response(content, AnswerEvaluationResult)
+
     def generate_report(self, request: ReportGenerationRequest) -> str:
         if self.settings.deterministic_model_fallback:
             return self._fallback_report(request)
@@ -157,6 +183,32 @@ class ModelService:
             request.model,
         )
 
+    def stream_chat(
+        self,
+        prompt_filename: str,
+        payload: dict[str, object],
+        provider: str | None,
+        model: str | None,
+    ) -> Iterator[str]:
+        if self.settings.deterministic_model_fallback:
+            yield from self._chunk_text(json.dumps(payload, ensure_ascii=False))
+            return
+        yield from self._stream_chat(prompt_filename, payload, provider, model)
+
+    def parse_structured_response(
+        self,
+        content: str,
+        result_type: type[BaseModel],
+    ):
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip())
+        try:
+            return result_type.model_validate_json(cleaned)
+        except ValidationError as error:
+            raise bad_gateway(
+                "provider_invalid_response",
+                "The selected model returned an invalid structured response.",
+            ) from error
+
     def _structured_chat(
         self,
         prompt_filename: str,
@@ -166,14 +218,7 @@ class ModelService:
         model: str | None = None,
     ):
         content = self._chat(prompt_filename, payload, provider, model)
-        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip())
-        try:
-            return result_type.model_validate_json(cleaned)
-        except ValidationError as error:
-            raise bad_gateway(
-                "provider_invalid_response",
-                "The selected model returned an invalid structured response.",
-            ) from error
+        return self.parse_structured_response(content, result_type)
 
     def _chat(
         self,
@@ -224,6 +269,71 @@ class ModelService:
                 "provider_call_failed",
                 f"The {resolved_provider} model request failed.",
             ) from error
+
+    def _stream_chat(
+        self,
+        prompt_filename: str,
+        payload: dict[str, object],
+        provider: str | None,
+        model: str | None,
+    ) -> Iterator[str]:
+        resolved_provider, resolved_model, api_key, base_url = self._resolve_provider(
+            provider, model
+        )
+        try:
+            client = self.client_factory(api_key=api_key, base_url=base_url)
+            stream = client.chat.completions.create(
+                model=resolved_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (self.prompt_dir / prompt_filename).read_text(encoding="utf-8"),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(payload, ensure_ascii=False),
+                    },
+                ],
+                stream=True,
+            )
+            yielded = False
+            for chunk in stream:
+                for choice in getattr(chunk, "choices", []) or []:
+                    delta = getattr(choice, "delta", None)
+                    content = (
+                        delta.get("content")
+                        if isinstance(delta, dict)
+                        else getattr(delta, "content", None)
+                    )
+                    if isinstance(content, str) and content:
+                        yielded = True
+                        yield content
+            if not yielded:
+                raise ValueError("empty model stream")
+        except HTTPException:
+            raise
+        except Exception as error:
+            logger.exception(
+                "Provider streaming request failed: provider=%s model=%s error_type=%s error_message=%s",
+                resolved_provider,
+                resolved_model,
+                type(error).__name__,
+                str(error),
+                extra={
+                    "provider": resolved_provider,
+                    "model": resolved_model,
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                },
+            )
+            raise bad_gateway(
+                "provider_call_failed",
+                f"The {resolved_provider} model request failed.",
+            ) from error
+
+    def _chunk_text(self, text: str, chunk_size: int = 24) -> Iterator[str]:
+        for index in range(0, len(text), chunk_size):
+            yield text[index : index + chunk_size]
 
     def _resolve_provider(
         self, provider: str | None, model: str | None
