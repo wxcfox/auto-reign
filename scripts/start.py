@@ -52,16 +52,28 @@ def load_env(path: Path, environ: MutableMapping[str, str]) -> None:
         environ.setdefault(key.strip(), value)
 
 
-def find_available_port(start_port: int) -> int:
-    for port in range(start_port, 65536):
-        with socket.socket() as candidate:
-            candidate.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                candidate.bind(("127.0.0.1", port))
-            except OSError:
-                continue
+def require_configured_port(
+    port: int,
+    service_name: str,
+    *,
+    listener_pid_for_port_fn: Callable[[int], int | None] | None = None,
+    command_for_pid: Callable[[int], str | None] | None = None,
+    cwd_for_pid: Callable[[int], Path | None] | None = None,
+) -> int:
+    listener_for_port = listener_pid_for_port_fn or listener_pid_for_port
+    pid = listener_for_port(port)
+    if pid is None:
         return port
-    raise RuntimeError(f"No available TCP port at or above {start_port}")
+    inspect_command = command_for_pid or read_process_command
+    process_cwd = cwd_for_pid or read_process_cwd
+    command = inspect_command(pid) or "unknown command"
+    cwd = process_cwd(pid)
+    cwd_hint = f" cwd={cwd}" if cwd is not None else ""
+    raise RuntimeError(
+        f"{service_name} port {port} is already in use by pid {pid}.{cwd_hint} "
+        f"command={command!r}. Stop the process from that checkout with ./start.sh --stop, "
+        "or kill it before starting this checkout."
+    )
 
 
 def read_state(path: Path) -> ServiceState | None:
@@ -119,6 +131,48 @@ def listener_pid_for_port(port: int) -> int | None:
         if line.startswith("p") and line[1:].isdigit():
             return int(line[1:])
     return None
+
+
+def listener_pids() -> list[int]:
+    result = subprocess.run(
+        ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fp"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    pids: list[int] = []
+    for line in result.stdout.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            pid = int(line[1:])
+            if pid not in pids:
+                pids.append(pid)
+    return pids
+
+
+def require_no_checkout_service_listener(
+    service_cwd: Path,
+    service_name: str,
+    *,
+    listener_pids_fn: Callable[[], list[int]] | None = None,
+    cwd_for_pid: Callable[[int], Path | None] | None = None,
+    command_for_pid: Callable[[int], str | None] | None = None,
+) -> None:
+    list_pids = listener_pids_fn or listener_pids
+    process_cwd = cwd_for_pid or read_process_cwd
+    inspect_command = command_for_pid or read_process_command
+    expected_cwd = service_cwd.resolve()
+    for pid in list_pids():
+        cwd = process_cwd(pid)
+        if cwd is None or cwd.resolve() != expected_cwd:
+            continue
+        command = inspect_command(pid) or "unknown command"
+        raise RuntimeError(
+            f"{service_name} is already running from this checkout as pid {pid} "
+            f"cwd={cwd} command={command!r}. Run ./start.sh --stop or kill {pid} "
+            "before starting this checkout."
+        )
 
 
 def expected_cwd_for_state(state: ServiceState) -> Path | None:
@@ -469,11 +523,11 @@ def stop_managed_process_with_timeout(
     deadline = time.monotonic() + STOP_TIMEOUT
     while time.monotonic() < deadline:
         command = inspect_command(state.pid)
-        if command is None or state.marker not in command:
+        if command is None or listener_pid_for_port(state.port) != state.pid:
             return True
         time.sleep(0.2)
     command = inspect_command(state.pid)
-    if command is not None and state.marker in command:
+    if command is not None and (state.marker in command or listener_pid_for_port(state.port) == state.pid):
         send_signal(state.pid, signal.SIGKILL)
     return True
 
@@ -519,7 +573,8 @@ def ensure_backend(paths: RuntimePaths, env: MutableMapping[str, str]) -> Servic
 
     state_path = backend_state_path(paths)
     stop_managed_process_with_timeout(state_path)
-    port = find_available_port(parse_int(env, "BACKEND_PORT", 8300))
+    require_no_checkout_service_listener(paths.root / "backend", "backend")
+    port = require_configured_port(parse_int(env, "BACKEND_PORT", 8300), "backend")
     marker = service_marker("backend")
     process_env = backend_env(paths.root, env, port)
     pid = launch_managed_process(
@@ -561,7 +616,8 @@ def ensure_frontend(
 
     state_path = frontend_state_path(paths)
     stop_managed_process_with_timeout(state_path)
-    port = find_available_port(parse_int(env, "FRONTEND_PORT", 3100))
+    require_no_checkout_service_listener(paths.root / "frontend", "frontend")
+    port = require_configured_port(parse_int(env, "FRONTEND_PORT", 3100), "frontend")
     marker = f"{service_marker('frontend')}-backend-{backend.port}"
     process_env = frontend_env(env, backend.port)
     pid = launch_managed_process(
@@ -621,9 +677,22 @@ def show_status(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     return 0
 
 
+def preflight_host_ports(paths: RuntimePaths, env: MutableMapping[str, str]) -> None:
+    backend = healthy_managed_state(backend_state_path(paths), backend_health_url)
+    if backend is None:
+        require_no_checkout_service_listener(paths.root / "backend", "backend")
+        require_configured_port(parse_int(env, "BACKEND_PORT", 8300), "backend")
+
+    frontend = healthy_managed_state(frontend_state_path(paths), frontend_health_url)
+    if frontend is None:
+        require_no_checkout_service_listener(paths.root / "frontend", "frontend")
+        require_configured_port(parse_int(env, "FRONTEND_PORT", 3100), "frontend")
+
+
 def start_stack(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     ensure_runtime_dirs(paths)
     require_commands(["docker", "uv", "node", "npm"])
+    preflight_host_ports(paths, env)
     verify_docker()
     start_dependency_containers(paths.root, env)
     wait_for_dependencies(paths.root, env)
