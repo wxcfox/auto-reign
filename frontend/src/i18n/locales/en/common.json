@@ -1,13 +1,19 @@
 {
   "app": {
     "title": "Auto Reign",
-    "language": "Language"
+    "language": "Language",
+    "settings": "Settings",
+    "user": "Local user"
   },
   "nav": {
     "dashboard": "Dashboard",
     "library": "Library",
     "interview": "Interview",
-    "review": "Review"
+    "review": "Review",
+    "more": "More",
+    "recent_sessions": "Recent",
+    "current_session": "Current interview",
+    "latest_review": "Latest review"
   },
   "states": {
     "loading": "Loading...",
@@ -21,6 +27,7 @@
     "finish": "Finish",
     "upload": "Upload",
     "start": "Start interview",
+    "new_interview": "New interview",
     "open_report": "Open report",
     "save_and_reindex": "Save and reindex",
     "review_memory": "Review memory"

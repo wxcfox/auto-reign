@@ -1,7 +1,17 @@
 "use client";
 
-import { CheckCircle2, MessageSquareText, Play, SkipForward, Square } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  CheckCircle2,
+  Loader2,
+  Paperclip,
+  RotateCcw,
+  Send,
+  Settings2,
+  SkipForward,
+  Square,
+  Sparkles,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -39,19 +49,48 @@ const defaultConfig: InterviewConfig = {
   target_rounds: 3,
 };
 
+type ComposerMode = "start" | "answer" | "follow-up" | "idle";
+
+type ChatMessageProps = {
+  children: ReactNode;
+  meta?: string;
+  tone?: "assistant" | "user" | "system";
+};
+
+function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
+  return (
+    <article className="chat-message" data-tone={tone}>
+      <div className="chat-avatar" aria-hidden="true">
+        {tone === "user" ? "You" : "AR"}
+      </div>
+      <div className="chat-bubble">
+        {meta ? <p className="chat-meta">{meta}</p> : null}
+        <div className="chat-copy">{children}</div>
+      </div>
+    </article>
+  );
+}
+
+function updateTurn(
+  turns: InterviewTurn[],
+  turnId: string,
+  updater: (turn: InterviewTurn) => InterviewTurn,
+) {
+  return turns.map((item) => (item.id === turnId ? updater(item) : item));
+}
+
 export function InterviewWorkspace() {
   const { t, getCurrentLanguage, i18n } = useTranslation("interview");
   const [config, setConfig] = useState<InterviewConfig>(defaultConfig);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [session, setSession] = useState<InterviewSession | null>(null);
-  const [turn, setTurn] = useState<InterviewTurn | null>(null);
-  const [feedback, setFeedback] = useState<AnswerFeedback | null>(null);
-  const [followUpFeedback, setFollowUpFeedback] = useState<FollowUpFeedback | null>(null);
+  const [turns, setTurns] = useState<InterviewTurn[]>([]);
   const [report, setReport] = useState<ReportRecord | null>(null);
-  const [answer, setAnswer] = useState("");
-  const [followUpAnswer, setFollowUpAnswer] = useState("");
+  const [composerValue, setComposerValue] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
 
   const modeOptions: Array<{ value: InterviewMode; label: string }> = [
     { value: "comprehensive", label: t("mode_options.comprehensive") },
@@ -127,17 +166,53 @@ export function InterviewWorkspace() {
     };
   }, []);
 
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) {
+      return;
+    }
+    if (typeof transcript.scrollTo === "function") {
+      transcript.scrollTo({
+        top: transcript.scrollHeight,
+        behavior: "smooth",
+      });
+    } else {
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+  }, [turns.length, busyAction]);
+
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.provider === config.chat_model_provider),
     [config.chat_model_provider, providers],
   );
   const selectedModelAvailable =
     selectedProvider?.models.includes(config.chat_model) ?? false;
+  const currentTurn = turns.at(-1) ?? null;
+  const reachedTargetRounds =
+    session !== null && session.current_round >= config.target_rounds;
   const canStart =
     Boolean(config.target_company.trim()) &&
     Boolean(config.target_role.trim()) &&
     selectedModelAvailable &&
-    !busyAction;
+    !busyAction &&
+    session?.status !== "active";
+  const composerMode: ComposerMode = (() => {
+    if (!session || session.status !== "active" || !currentTurn) {
+      return session?.status === "completed" ? "idle" : "start";
+    }
+    if (!currentTurn.answer) {
+      return "answer";
+    }
+    if (currentTurn.follow_up_question && !currentTurn.follow_up_answer) {
+      return "follow-up";
+    }
+    return "idle";
+  })();
+  const canSend =
+    session?.status === "active" &&
+    Boolean(composerValue.trim()) &&
+    !busyAction &&
+    (composerMode === "answer" || composerMode === "follow-up");
 
   function updateConfig<K extends keyof InterviewConfig>(field: K, value: InterviewConfig[K]) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -152,8 +227,8 @@ export function InterviewWorkspace() {
     }));
   }
 
-  async function handleStart(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleStart(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (!canStart) {
       return;
     }
@@ -170,11 +245,9 @@ export function InterviewWorkspace() {
       await saveLastInterviewConfig(activeConfig);
       const created = await createInterviewSession(activeConfig);
       setSession(created.session);
-      setTurn(created.turn);
-      setFeedback(null);
-      setFollowUpFeedback(null);
-      setAnswer("");
-      setFollowUpAnswer("");
+      setTurns([created.turn]);
+      setComposerValue("");
+      setShowAdvanced(false);
     } catch (startError) {
       setError(getErrorMessage(startError, t, "interview:errors.start"));
     } finally {
@@ -183,24 +256,22 @@ export function InterviewWorkspace() {
   }
 
   async function handleAnswer() {
-    if (!session || !turn || !answer.trim()) {
+    if (!session || !currentTurn || !composerValue.trim()) {
       return;
     }
+    const submittedAnswer = composerValue.trim();
+    setComposerValue("");
     setBusyAction("answer");
     setError(null);
+    setTurns((current) =>
+      updateTurn(current, currentTurn.id, (item) => ({
+        ...item,
+        answer: submittedAnswer,
+      })),
+    );
     try {
-      const response = await submitAnswer(session.id, answer.trim());
-      setFeedback(response);
-      setFollowUpFeedback(null);
-      setTurn({
-        ...turn,
-        answer: answer.trim(),
-        feedback: response.feedback,
-        missing_points: response.missing_points,
-        follow_up_question: response.follow_up_question,
-        weaknesses: response.weaknesses,
-        review_suggestions: response.review_suggestions,
-      });
+      const response = await submitAnswer(session.id, submittedAnswer);
+      applyMainFeedback(currentTurn.id, response);
     } catch (answerError) {
       setError(getErrorMessage(answerError, t, "interview:errors.answer"));
     } finally {
@@ -208,28 +279,53 @@ export function InterviewWorkspace() {
     }
   }
 
+  function applyMainFeedback(turnId: string, response: AnswerFeedback) {
+    setTurns((current) =>
+      updateTurn(current, turnId, (item) => ({
+        ...item,
+        feedback: response.feedback,
+        missing_points: response.missing_points,
+        follow_up_question: response.follow_up_question,
+        weaknesses: response.weaknesses,
+        review_suggestions: response.review_suggestions,
+      })),
+    );
+  }
+
   async function handleFollowUp() {
-    if (!session || !turn || !followUpAnswer.trim()) {
+    if (!session || !currentTurn || !composerValue.trim()) {
       return;
     }
+    const submittedAnswer = composerValue.trim();
+    setComposerValue("");
     setBusyAction("follow-up");
     setError(null);
+    setTurns((current) =>
+      updateTurn(current, currentTurn.id, (item) => ({
+        ...item,
+        follow_up_answer: submittedAnswer,
+      })),
+    );
     try {
-      const response = await submitFollowUpAnswer(session.id, followUpAnswer.trim());
-      setFollowUpFeedback(response);
-      setTurn({
-        ...turn,
-        follow_up_answer: followUpAnswer.trim(),
-        follow_up_feedback: response.feedback,
-        follow_up_missing_points: response.missing_points,
-        follow_up_weaknesses: response.weaknesses,
-        follow_up_review_suggestions: response.review_suggestions,
-      });
+      const response = await submitFollowUpAnswer(session.id, submittedAnswer);
+      applyFollowUpFeedback(currentTurn.id, response);
     } catch (followUpError) {
       setError(getErrorMessage(followUpError, t, "interview:errors.follow_up"));
     } finally {
       setBusyAction(null);
     }
+  }
+
+  function applyFollowUpFeedback(turnId: string, response: FollowUpFeedback) {
+    setTurns((current) =>
+      updateTurn(current, turnId, (item) => ({
+        ...item,
+        follow_up_feedback: response.feedback,
+        follow_up_missing_points: response.missing_points,
+        follow_up_weaknesses: response.weaknesses,
+        follow_up_review_suggestions: response.review_suggestions,
+      })),
+    );
   }
 
   async function handleNextQuestion() {
@@ -241,11 +337,8 @@ export function InterviewWorkspace() {
     try {
       const response = await nextQuestion(session.id);
       setSession(response.session);
-      setTurn(response.turn);
-      setFeedback(null);
-      setFollowUpFeedback(null);
-      setAnswer("");
-      setFollowUpAnswer("");
+      setTurns((current) => [...current, response.turn]);
+      setComposerValue("");
     } catch (nextError) {
       setError(getErrorMessage(nextError, t, "interview:errors.next"));
     } finally {
@@ -270,24 +363,30 @@ export function InterviewWorkspace() {
     }
   }
 
-  const reachedTargetRounds =
-    session !== null && session.current_round >= config.target_rounds;
-  const statusHint = (() => {
-    if (!turn?.answer) {
-      return null;
+  function handleComposerSubmit() {
+    if (composerMode === "answer") {
+      void handleAnswer();
+    } else if (composerMode === "follow-up") {
+      void handleFollowUp();
     }
-    if (reachedTargetRounds) {
-      return t("guidance.final_round");
+  }
+
+  const composerPlaceholder = (() => {
+    if (composerMode === "answer") {
+      return t("composer.answer_placeholder");
     }
-    if (turn.follow_up_answer) {
-      return t("guidance.follow_up_complete");
+    if (composerMode === "follow-up") {
+      return t("composer.follow_up_placeholder");
     }
-    return t("guidance.continue");
+    if (composerMode === "start") {
+      return t("composer.start_placeholder");
+    }
+    return t("composer.idle_placeholder");
   })();
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="chat-workspace">
+      <header className="chat-topbar">
         <div>
           <p className="eyebrow">{t("eyebrow")}</p>
           <h1>{t("title")}</h1>
@@ -299,82 +398,231 @@ export function InterviewWorkspace() {
         </p>
       </header>
 
-      <div className="interview-layout">
-        <form className="tool-panel interview-config" onSubmit={handleStart}>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">{t("setup_eyebrow")}</p>
-              <h2>{t("setup_title")}</h2>
-            </div>
+      <div className="chat-transcript" ref={transcriptRef}>
+        {turns.length === 0 ? (
+          <section className="chat-empty" aria-label={t("empty_label")}>
+            <Sparkles aria-hidden="true" size={30} />
+            <h2>{t("empty_title")}</h2>
+            <p>{t("empty_body")}</p>
+          </section>
+        ) : (
+          <div className="chat-thread">
+            {turns.map((item) => (
+              <div className="chat-turn" key={item.id}>
+                <ChatMessage meta={t("question", { index: item.round_index })}>
+                  <p>{item.question}</p>
+                </ChatMessage>
+                {item.answer ? (
+                  <ChatMessage tone="user" meta={t("your_answer")}>
+                    <p>{item.answer}</p>
+                  </ChatMessage>
+                ) : null}
+                {item.feedback ? (
+                  <ChatMessage meta={t("feedback")}>
+                    <p>{item.feedback}</p>
+                    {item.missing_points.length > 0 ? (
+                      <>
+                        <h3>{t("missing_points")}</h3>
+                        <ul>
+                          {item.missing_points.map((point) => (
+                            <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.weaknesses.length > 0 ? (
+                      <>
+                        <h3>{t("weaknesses")}</h3>
+                        <ul>
+                          {item.weaknesses.map((weakness) => (
+                            <li key={weakness}>{weakness}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.review_suggestions.length > 0 ? (
+                      <>
+                        <h3>{t("review_suggestions")}</h3>
+                        <ul>
+                          {item.review_suggestions.map((suggestion) => (
+                            <li key={suggestion}>{suggestion}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                  </ChatMessage>
+                ) : null}
+                {item.follow_up_question ? (
+                  <ChatMessage meta={t("follow_up")}>
+                    <p>{item.follow_up_question}</p>
+                  </ChatMessage>
+                ) : null}
+                {item.follow_up_answer ? (
+                  <ChatMessage tone="user" meta={t("follow_up_answer")}>
+                    <p>{item.follow_up_answer}</p>
+                  </ChatMessage>
+                ) : null}
+                {item.follow_up_feedback ? (
+                  <ChatMessage meta={t("follow_up_feedback")}>
+                    <p>{item.follow_up_feedback}</p>
+                    {item.follow_up_missing_points.length > 0 ? (
+                      <>
+                        <h3>{t("missing_points")}</h3>
+                        <ul>
+                          {item.follow_up_missing_points.map((point) => (
+                            <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                  </ChatMessage>
+                ) : null}
+              </div>
+            ))}
           </div>
+        )}
 
-          <label>
-            <span className="field-label">{t("target_company")}</span>
-            <input
-              disabled={session?.status === "active"}
-              onChange={(event) => updateConfig("target_company", event.target.value)}
-              required
-              value={config.target_company}
-            />
-          </label>
-          <label>
-            <span className="field-label">{t("target_role")}</span>
-            <input
-              disabled={session?.status === "active"}
-              onChange={(event) => updateConfig("target_role", event.target.value)}
-              required
-              value={config.target_role}
-            />
-          </label>
-          <label>
-            <span className="field-label">{t("job_description")}</span>
-            <textarea
-              disabled={session?.status === "active"}
-              onChange={(event) => updateConfig("job_description", event.target.value)}
-              rows={5}
-              value={config.job_description}
-            />
-          </label>
-          <label>
-            <span className="field-label">{t("extra_prompt")}</span>
-            <textarea
-              disabled={session?.status === "active"}
-              onChange={(event) => updateConfig("extra_prompt", event.target.value)}
-              rows={3}
-              value={config.extra_prompt}
-            />
-          </label>
-          <label>
-            <span className="field-label">{t("mode")}</span>
-            <select
-              disabled={session?.status === "active"}
-              onChange={(event) => updateConfig("mode", event.target.value as InterviewMode)}
-              value={config.mode}
-            >
-              {modeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="form-grid">
+        {busyAction ? (
+          <ChatMessage meta={t("streaming.label")} tone="assistant">
+            <p className="typing-line">
+              <Loader2 aria-hidden="true" size={16} />
+              {busyAction === "answer"
+                ? t("streaming.feedback")
+                : busyAction === "follow-up"
+                  ? t("streaming.follow_up")
+                  : busyAction === "next"
+                    ? t("streaming.question")
+                    : busyAction === "finish"
+                      ? t("finish_busy")
+                      : t("streaming.start")}
+            </p>
+          </ChatMessage>
+        ) : null}
+
+        {error ? (
+          <ChatMessage meta={t("error_title")} tone="system">
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          </ChatMessage>
+        ) : null}
+
+        {report ? (
+          <ChatMessage meta={t("report_generated")} tone="system">
+            <div className="completion-inline">
+              <CheckCircle2 aria-hidden="true" size={18} />
+              <p>{report.summary}</p>
+            </div>
+          </ChatMessage>
+        ) : null}
+      </div>
+
+      <div className="chat-composer-wrap">
+        <button
+          aria-expanded={showAdvanced}
+          className="button settings-toggle"
+          onClick={() => setShowAdvanced((current) => !current)}
+          type="button"
+        >
+          <Settings2 aria-hidden="true" size={17} />
+          {showAdvanced ? t("hide_advanced") : t("show_advanced")}
+        </button>
+
+        {showAdvanced ? (
+          <form className="advanced-settings" onSubmit={(event) => void handleStart(event)}>
             <label>
-              <span className="field-label">{t("provider")}</span>
-              <select
-                disabled={session?.status === "active" || providers.length === 0}
-                onChange={(event) => selectProvider(event.target.value as ProviderName)}
-                value={selectedProvider ? config.chat_model_provider : ""}
-              >
-                {providers.length === 0 ? <option value="">{t("no_providers")}</option> : null}
-                {providers.map((provider) => (
-                  <option key={provider.provider} value={provider.provider}>
-                    {provider.provider}
-                  </option>
-                ))}
-              </select>
+              <span className="field-label">{t("target_company")}</span>
+              <input
+                disabled={session?.status === "active"}
+                onChange={(event) => updateConfig("target_company", event.target.value)}
+                required
+                value={config.target_company}
+              />
             </label>
             <label>
+              <span className="field-label">{t("target_role")}</span>
+              <input
+                disabled={session?.status === "active"}
+                onChange={(event) => updateConfig("target_role", event.target.value)}
+                required
+                value={config.target_role}
+              />
+            </label>
+            <label>
+              <span className="field-label">{t("job_description")}</span>
+              <textarea
+                disabled={session?.status === "active"}
+                onChange={(event) => updateConfig("job_description", event.target.value)}
+                rows={4}
+                value={config.job_description}
+              />
+            </label>
+            <label>
+              <span className="field-label">{t("extra_prompt")}</span>
+              <textarea
+                disabled={session?.status === "active"}
+                onChange={(event) => updateConfig("extra_prompt", event.target.value)}
+                rows={3}
+                value={config.extra_prompt}
+              />
+            </label>
+            <div className="form-grid">
+              <label>
+                <span className="field-label">{t("mode")}</span>
+                <select
+                  disabled={session?.status === "active"}
+                  onChange={(event) => updateConfig("mode", event.target.value as InterviewMode)}
+                  value={config.mode}
+                >
+                  {modeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="field-label">{t("provider")}</span>
+                <select
+                  disabled={session?.status === "active" || providers.length === 0}
+                  onChange={(event) => selectProvider(event.target.value as ProviderName)}
+                  value={selectedProvider ? config.chat_model_provider : ""}
+                >
+                  {providers.length === 0 ? <option value="">{t("no_providers")}</option> : null}
+                  {providers.map((provider) => (
+                    <option key={provider.provider} value={provider.provider}>
+                      {provider.provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label>
+              <span className="field-label">{t("target_rounds")}</span>
+              <input
+                disabled={session?.status === "active"}
+                max={12}
+                min={1}
+                onChange={(event) =>
+                  updateConfig("target_rounds", Math.max(1, Number(event.target.value)))
+                }
+                type="number"
+                value={config.target_rounds}
+              />
+            </label>
+            <button
+              className="button button-primary"
+              disabled={!canStart || session?.status === "active"}
+              type="submit"
+            >
+              {busyAction === "start" ? `${t("common:actions.start")}...` : t("common:actions.start")}
+            </button>
+          </form>
+        ) : null}
+
+        <section className="chat-composer" aria-label={t("composer.label")}>
+          <div className="composer-toolbar">
+            <label className="model-picker">
               <span className="field-label">{t("model")}</span>
               <select
                 disabled={session?.status === "active" || !selectedProvider}
@@ -389,187 +637,89 @@ export function InterviewWorkspace() {
                 ))}
               </select>
             </label>
-          </div>
-          <label>
-            <span className="field-label">{t("target_rounds")}</span>
-            <input
-              disabled={session?.status === "active"}
-              max={12}
-              min={1}
-              onChange={(event) =>
-                updateConfig("target_rounds", Math.max(1, Number(event.target.value)))
-              }
-              type="number"
-              value={config.target_rounds}
-            />
-          </label>
-
-          <button
-            className="button button-primary"
-            disabled={!canStart || session?.status === "active"}
-            type="submit"
-          >
-            <Play aria-hidden="true" size={17} />
-            {busyAction === "start" ? `${t("common:actions.start")}...` : t("common:actions.start")}
-          </button>
-        </form>
-
-        <section className="session-panel" aria-labelledby="session-heading">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">{t("session_eyebrow")}</p>
-              <h2 id="session-heading">{t("session_title")}</h2>
-            </div>
             {session?.status === "completed" ? (
               <span className="session-complete">
-                <CheckCircle2 aria-hidden="true" size={17} />
+                <CheckCircle2 aria-hidden="true" size={16} />
                 {t("completed")}
               </span>
             ) : null}
           </div>
 
-          {!turn ? (
-            <div className="empty-session">
-              <MessageSquareText aria-hidden="true" size={24} />
-              <p>{t("session_empty")}</p>
-            </div>
-          ) : (
-            <div className="session-content">
-              <div className="question-block">
-                <p className="eyebrow">{t("question", { index: turn.round_index })}</p>
-                <h3>{turn.question}</h3>
-              </div>
-
-              <label>
-                <span className="field-label">{t("your_answer")}</span>
-                <textarea
-                  disabled={Boolean(turn.answer) || session?.status !== "active"}
-                  onChange={(event) => setAnswer(event.target.value)}
-                  rows={7}
-                  value={answer}
-                />
-              </label>
-              <button
-                className="button button-primary"
-                disabled={
-                  !answer.trim() ||
-                  Boolean(turn.answer) ||
-                  Boolean(busyAction) ||
-                  session?.status !== "active"
+          <div className="composer-box">
+            <button className="icon-button" disabled type="button" aria-label={t("composer.attach")}>
+              <Paperclip aria-hidden="true" size={18} />
+            </button>
+            <label className="sr-only" htmlFor="interview-composer">
+              {t("composer.input_label")}
+            </label>
+            <textarea
+              aria-label={t("composer.input_label")}
+              disabled={composerMode === "start" || composerMode === "idle"}
+              id="interview-composer"
+              onChange={(event) => setComposerValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  handleComposerSubmit();
                 }
-                onClick={() => void handleAnswer()}
-                type="button"
-              >
-                {busyAction === "answer" ? t("submit_answer_busy") : t("submit_answer")}
-              </button>
+              }}
+              placeholder={composerPlaceholder}
+              rows={1}
+              value={composerValue}
+            />
+            <button
+              aria-label={
+                composerMode === "follow-up" ? t("composer.send_follow_up") : t("composer.send_answer")
+              }
+              className="send-button"
+              disabled={!canSend}
+              onClick={handleComposerSubmit}
+              type="button"
+            >
+              <Send aria-hidden="true" size={18} />
+            </button>
+          </div>
 
-              {feedback ? (
-                <div className="feedback-panel">
-                  <div>
-                    <p className="eyebrow">{t("feedback")}</p>
-                    <p>{feedback.feedback}</p>
-                  </div>
-                  {feedback.missing_points.length > 0 ? (
-                    <div>
-                      <h4>{t("missing_points")}</h4>
-                      <ul>
-                        {feedback.missing_points.map((point) => (
-                          <li key={point}>{point}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  <div>
-                    <p className="eyebrow">{t("follow_up")}</p>
-                    <p>{feedback.follow_up_question}</p>
-                  </div>
-                  <label>
-                    <span className="field-label">{t("follow_up_answer")}</span>
-                    <textarea
-                      disabled={Boolean(turn.follow_up_answer) || session?.status !== "active"}
-                      onChange={(event) => setFollowUpAnswer(event.target.value)}
-                      rows={5}
-                      value={followUpAnswer}
-                    />
-                  </label>
-                  <button
-                    className="button"
-                    disabled={
-                      !followUpAnswer.trim() ||
-                      Boolean(turn.follow_up_answer) ||
-                      Boolean(busyAction) ||
-                      session?.status !== "active"
-                    }
-                    onClick={() => void handleFollowUp()}
-                    type="button"
-                  >
-                    {busyAction === "follow-up" ? t("submit_follow_up_busy") : t("submit_follow_up")}
-                  </button>
-                  {followUpFeedback ? (
-                    <div className="follow-up-feedback-panel">
-                      <div>
-                        <p className="eyebrow">{t("follow_up_feedback")}</p>
-                        <p>{followUpFeedback.feedback}</p>
-                      </div>
-                      {followUpFeedback.missing_points.length > 0 ? (
-                        <div>
-                          <h4>{t("missing_points")}</h4>
-                          <ul>
-                            {followUpFeedback.missing_points.map((point) => (
-                              <li key={point}>{point}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {statusHint ? <p className="session-guidance">{statusHint}</p> : null}
-
-              <div className="button-row session-actions">
-                <button
-                  className="button"
-                  disabled={
-                    !turn.answer ||
-                    Boolean(busyAction) ||
-                    reachedTargetRounds ||
-                    session?.status !== "active"
-                  }
-                  onClick={() => void handleNextQuestion()}
-                  type="button"
-                >
-                  <SkipForward aria-hidden="true" size={17} />
-                  {busyAction === "next" ? t("next_question_busy") : t("next_question")}
-                </button>
-                <button
-                  className="button button-danger"
-                  disabled={Boolean(busyAction) || session?.status !== "active"}
-                  onClick={() => void handleFinish()}
-                  type="button"
-                >
-                  <Square aria-hidden="true" size={15} />
-                  {busyAction === "finish" ? t("finish_busy") : t("common:actions.finish")}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {report ? (
-            <div className="completion-panel">
-              <CheckCircle2 aria-hidden="true" size={20} />
-              <div>
-                <strong>{t("report_generated")}</strong>
-                <p>{report.summary}</p>
-              </div>
-            </div>
-          ) : null}
+          <div className="composer-actions">
+            <button
+              className="button"
+              disabled={
+                !currentTurn?.answer ||
+                Boolean(busyAction) ||
+                reachedTargetRounds ||
+                session?.status !== "active"
+              }
+              onClick={() => void handleNextQuestion()}
+              type="button"
+            >
+              <SkipForward aria-hidden="true" size={17} />
+              {busyAction === "next" ? t("next_question_busy") : t("next_question")}
+            </button>
+            <button
+              className="button"
+              disabled={!session || Boolean(busyAction)}
+              onClick={() => {
+                setSession(null);
+                setTurns([]);
+                setReport(null);
+                setComposerValue("");
+                setError(null);
+              }}
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" size={17} />
+              {t("reset_session")}
+            </button>
+            <button
+              className="button button-danger"
+              disabled={Boolean(busyAction) || session?.status !== "active"}
+              onClick={() => void handleFinish()}
+              type="button"
+            >
+              <Square aria-hidden="true" size={15} />
+              {busyAction === "finish" ? t("finish_busy") : t("common:actions.finish")}
+            </button>
+          </div>
         </section>
       </div>
     </div>

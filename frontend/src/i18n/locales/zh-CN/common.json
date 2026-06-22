@@ -1,13 +1,19 @@
 {
   "app": {
     "title": "Auto Reign",
-    "language": "语言"
+    "language": "语言",
+    "settings": "设置",
+    "user": "本地用户"
   },
   "nav": {
     "dashboard": "总览",
     "library": "资料库",
     "interview": "面试",
-    "review": "复盘"
+    "review": "复盘",
+    "more": "更多",
+    "recent_sessions": "最近",
+    "current_session": "当前面试",
+    "latest_review": "最近复盘"
   },
   "states": {
     "loading": "加载中...",
@@ -21,6 +27,7 @@
     "finish": "结束面试",
     "upload": "上传",
     "start": "开始面试",
+    "new_interview": "新建面试",
     "open_report": "打开报告",
     "save_and_reindex": "保存并重建索引",
     "review_memory": "查看记忆"
