@@ -1,65 +1,65 @@
-# CLAUDE.md
+# Claude Code Instructions
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+## Required Context
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+Before implementing the next Auto Reign development cycle, read these files in
+order:
 
-## 1. Think Before Coding
+1. `AGENTS.md`
+2. `README.md`
+3. `docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md`
+4. The current backend, frontend, Alembic migrations, startup scripts, and tests
+   relevant to the phase being planned.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+`README.md` describes the currently runnable v1. The filesystem-first design is
+the canonical target behavior and intentionally replaces the v1 document,
+memory, retrieval, and review assumptions.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## Implementation Gate
 
-## 2. Simplicity First
+Do not start by implementing the entire design. First create a detailed,
+phased plan under `docs/superpowers/plans/`. The plan must:
 
-**Minimum code that solves the problem. Nothing speculative.**
+- follow the four phases in the canonical design;
+- name every file to create, modify, rename, or delete;
+- define exact Pydantic contracts, database columns, API requests/responses,
+  background job transitions, and filesystem update rules;
+- include a failing test before each behavioral implementation task;
+- list focused and phase-level verification commands;
+- identify the explicit local data reset required by incompatible schema or
+  workspace changes;
+- keep the application runnable after every phase.
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+Implement only after the plan is coherent and internally reviewed. Work through
+the plan task by task, verify each task, and make small intentional commits.
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+## Non-Negotiable Product Rules
 
-## 3. Surgical Changes
+- The user spends time uploading real material and practicing answers, not
+  maintaining tags, document roles, trust levels, chunks, or indexes.
+- Original sources and answers are immutable evidence. Corrections and generated
+  material are separate artifacts.
+- Uploaded notes personalize questions but are not authoritative correctness
+  references.
+- Only observed interview answers can change mastery state.
+- Files are the durable learning assets. MySQL stores operational state and
+  rebuildable projections; Qdrant is a rebuildable retrieval index.
+- LLMs return validated structured proposals. Application code owns filesystem,
+  database, and vector mutations.
+- User-visible Markdown is editable according to the artifact-specific rules in
+  the design and is reprocessed automatically.
+- The active learning plan contains no more than three priorities.
+- Do not preserve v1 behavior through compatibility branches when it conflicts
+  with the target design.
+- Never silently delete existing local data.
 
-**Touch only what you must. Clean up only your own mess.**
+## Engineering Discipline
 
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+- Prefer the simplest implementation that satisfies the approved design.
+- State assumptions in the implementation plan instead of making hidden choices.
+- Keep changes scoped to the current task and remove only code made obsolete by
+  that task.
+- Use test-driven development for behavior changes.
+- Run the canonical checks in `AGENTS.md` before declaring a phase complete.
+- Do not claim completion based on code inspection alone; report fresh command
+  output and any checks that could not run.

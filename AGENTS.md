@@ -1,38 +1,106 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Product Direction
 
-This repository currently has no source tree, tests, or build configuration checked in. As code is added, keep the layout predictable:
+Auto Reign is a local-first, single-user AI interview learning workbench. The
+current codebase is a working v1 built with FastAPI, Next.js, MySQL, and Qdrant.
+The canonical target design for the next development cycle is:
 
-- `src/` for application or library source code.
-- `tests/` for automated tests that mirror the source structure.
-- `assets/` for static files such as images, fixtures, or sample data.
-- `docs/` for design notes, setup guides, and user-facing documentation.
+- `docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md`
 
-Avoid placing implementation files at the repository root except for project metadata and configuration files.
+Read that specification before changing product behavior, storage, ingestion,
+interview flow, memory, retrieval, or the main UI. `README.md` documents the
+currently runnable implementation; the target design intentionally supersedes
+parts of the current behavior.
 
-## Build, Test, and Development Commands
+The target design does not require compatibility with existing MySQL records,
+Qdrant points, or runtime files. Do not add dual-read, dual-write, data-copy, or
+legacy prompt branches. Never delete local user data automatically; destructive
+reset commands must remain explicit.
 
-No build or test commands are currently defined. When a toolchain is added, document the canonical commands here and prefer repository scripts over ad hoc commands. Examples:
+## Project Structure
 
-- `npm test` or `pytest` to run the full test suite.
-- `npm run build` or `make build` to produce distributable artifacts.
-- `npm run dev` or equivalent to start a local development server.
+- `backend/app/`: FastAPI application, APIs, services, repositories, schemas,
+  database models, and prompts.
+- `backend/alembic/`: MySQL schema migrations.
+- `backend/tests/`: backend unit and integration tests.
+- `frontend/src/`: Next.js application, components, i18n resources, and tests.
+- `scripts/`: repository lifecycle tooling used by `start.sh`.
+- `docs/superpowers/specs/`: approved product and architecture specifications.
+- `docs/superpowers/plans/`: implementation plans created from approved specs.
+- `data/`: local runtime data; it is not source code and must remain ignored.
 
-Keep command names stable so contributors and automation can rely on them.
+Do not introduce a parallel `src/` tree at the repository root. Follow the
+existing backend and frontend organization.
 
-## Coding Style & Naming Conventions
+## Development Workflow
 
-Use the style conventions of the language or framework introduced in `src/`. Add formatter and linter configuration with the first substantial code contribution. Prefer clear, descriptive names: modules and files should use lowercase names with separators appropriate to the language, such as `task-runner.ts` or `task_runner.py`. Keep functions focused, avoid hidden side effects, and place shared utilities in a clearly named module rather than duplicating logic.
+For the filesystem-first workbench redesign:
 
-## Testing Guidelines
+1. Inspect the current implementation and the canonical design.
+2. Write a phased implementation plan under `docs/superpowers/plans/` before
+   changing application code.
+3. Map each task to exact files, tests, migration effects, and verification
+   commands.
+4. Implement one independently verifiable phase at a time.
+5. Keep the application runnable and tests passing at each phase boundary.
 
-Add tests with each behavioral change. Test files should live under `tests/` and use names that identify the unit or workflow being verified, such as `test_scheduler.py` or `task-runner.test.ts`. Cover expected behavior, edge cases, and failure paths. If coverage tooling is introduced, document the required threshold and command in this file.
+Do not attempt the entire redesign as one unreviewable rewrite. Reuse existing
+code where it fits the target boundaries, and delete obsolete code when its
+replacement is complete.
 
-## Commit & Pull Request Guidelines
+## Canonical Commands
 
-This directory does not currently expose Git history, so no repository-specific commit convention can be inferred. Use short, imperative commit messages such as `Add scheduler tests` or `Document setup steps`. Pull requests should include a concise summary, test evidence, linked issues when applicable, and screenshots for user-facing UI changes.
+Start or manage the local stack from the repository root:
 
-## Security & Configuration Tips
+```sh
+./start.sh
+./start.sh --status
+./start.sh --stop
+./start.sh --restart
+```
 
-Do not commit secrets, local credentials, generated dependency folders, or machine-specific configuration. Provide sample environment files such as `.env.example` when configuration is required, and document every required variable.
+Run repository checks before committing:
+
+```sh
+cd backend
+uv run pytest -v
+uv run ruff check .
+
+cd ../frontend
+npm test
+npm run build
+
+cd ..
+docker compose config
+```
+
+Prefer these commands over ad hoc alternatives. Add focused tests first for
+behavioral changes, then run the broader relevant suite.
+
+## Coding Conventions
+
+- Python targets 3.12+, uses type hints, Pydantic models, SQLAlchemy 2, Ruff,
+  and pytest. Keep services focused and keep provider or persistence details
+  behind explicit interfaces.
+- TypeScript follows the existing Next.js and React patterns. Preserve i18n,
+  loading, empty, and error states for user-facing changes.
+- LLM calls return validated structured output. LLMs do not write files or
+  databases directly; deterministic application code applies changes.
+- Preserve original user sources and answers. Generated content, personal
+  facts, and observed practice evidence must retain distinct provenance.
+- Keep prompts concise, task-specific, language-aware, and resistant to prompt
+  injection from uploaded content.
+- Do not commit secrets, `.env`, dependency directories, runtime data, logs, or
+  machine-specific configuration.
+
+## Testing Expectations
+
+Every behavioral change requires tests for expected behavior, edge cases, and
+failure paths. Use deterministic model and vector test doubles unless a test is
+explicitly an integration check. Storage changes must cover MySQL migrations,
+filesystem failure behavior, and Qdrant recovery. Frontend changes must cover
+the primary user flow, not only isolated presentation components.
+
+Pull requests should state scope, design phase, test evidence, data reset
+effects, and screenshots for visible UI changes.
