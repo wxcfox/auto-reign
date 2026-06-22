@@ -13,6 +13,11 @@ import type {
   ModelListResponse,
   ReportDetailResponse,
   ReportListResponse,
+  UploadMaterialsResponse,
+  WorkspaceArtifactDetail,
+  WorkspaceArtifactListResponse,
+  WorkspaceArtifactSummary,
+  WorkspaceStatusResponse,
 } from "./types";
 import { throwApiError } from "./api-error";
 
@@ -39,6 +44,50 @@ export async function uploadDocument(file: File): Promise<DocumentRecord> {
     await throwApiError(response, `Upload failed with ${response.status}`);
   }
   return response.json() as Promise<DocumentRecord>;
+}
+
+export async function uploadMaterials(files: File[]): Promise<UploadMaterialsResponse> {
+  const body = new FormData();
+  for (const file of files) {
+    body.append("files", file);
+  }
+  const response = await fetch(`${API_BASE_URL}/api/workspace/materials/upload`, {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) {
+    await throwApiError(response, `Upload failed with ${response.status}`);
+  }
+  return response.json() as Promise<UploadMaterialsResponse>;
+}
+
+export function getWorkspaceStatus(): Promise<WorkspaceStatusResponse> {
+  return apiJson<WorkspaceStatusResponse>("/api/workspace");
+}
+
+export function getWorkspaceArtifacts(): Promise<WorkspaceArtifactListResponse> {
+  return apiJson<WorkspaceArtifactListResponse>("/api/workspace/artifacts");
+}
+
+export function getWorkspaceArtifact(artifactId: string): Promise<WorkspaceArtifactDetail> {
+  return apiJson<WorkspaceArtifactDetail>(`/api/workspace/artifacts/${artifactId}`);
+}
+
+export function replaceWorkspaceArtifactBody(
+  artifactId: string,
+  expectedRevision: number,
+  body: string,
+): Promise<WorkspaceArtifactSummary> {
+  return apiJson<WorkspaceArtifactSummary>(`/api/workspace/artifacts/${artifactId}/body`, {
+    method: "PUT",
+    body: JSON.stringify({ expected_revision: expectedRevision, body }),
+  });
+}
+
+export function rebuildWorkspaceIndex(): Promise<{ status: string; collection: string }> {
+  return apiJson<{ status: string; collection: string }>("/api/workspace/rebuild-index", {
+    method: "POST",
+  });
 }
 
 export function getDocuments(): Promise<DocumentListResponse> {

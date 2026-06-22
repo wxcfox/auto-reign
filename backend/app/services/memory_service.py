@@ -14,6 +14,7 @@ from app.repositories.database import (
 )
 from app.repositories.vector_store import VectorChunk, stable_vector_id
 from app.services.model_service import MemoryUpdateRequest, ModelService, ReportGenerationRequest
+from app.services.learning_artifact_service import LearningArtifactService
 from app.services.rag_service import RagService
 
 def memory_layout(language: str) -> dict[str, dict[str, str]]:
@@ -144,6 +145,13 @@ class MemoryService:
             config.language,
             config.chat_model_provider,
             config.chat_model,
+        )
+        LearningArtifactService(self.settings).archive_finished_session(
+            session,
+            interview_session,
+            config,
+            turns,
+            report_markdown,
         )
         interview_session.status = "completed"
         interview_session.ended_at = datetime.now(UTC)

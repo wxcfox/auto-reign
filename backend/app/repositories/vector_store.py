@@ -3,7 +3,7 @@ from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 
-VectorMetadataValue = str | int | float | bool
+VectorMetadataValue = str | int | float | bool | list[str]
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,10 @@ class VectorStore(Protocol):
     def upsert_chunks(self, collection_name: str, chunks: list[VectorChunk]) -> None: ...
 
     def delete_document_chunks(self, collection_name: str, document_id: str) -> None: ...
+
+    def delete_collection(self, collection_name: str) -> None: ...
+
+    def list_collections(self) -> list[str]: ...
 
     def has_searchable_content(self, collection_name: str) -> bool: ...
 

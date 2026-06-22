@@ -16,6 +16,7 @@ from app.services.model_service import (
 )
 from app.services.memory_service import MemoryService
 from app.services.rag_service import RagService
+from app.services.workspace_retrieval_service import WorkspaceRetrievalService
 
 
 class InterviewService:
@@ -26,12 +27,14 @@ class InterviewService:
         turn_repository: InterviewTurnRepository | None = None,
         model_service: ModelService | None = None,
         rag_service: RagService | None = None,
+        retrieval_service: WorkspaceRetrievalService | None = None,
     ) -> None:
         self.config_repository = config_repository or InterviewConfigRepository()
         self.session_repository = session_repository or InterviewSessionRepository()
         self.turn_repository = turn_repository or InterviewTurnRepository()
         self.model_service = model_service or ModelService()
         self.rag_service = rag_service or RagService()
+        self.retrieval_service = retrieval_service or WorkspaceRetrievalService()
 
     def get_last_config(self, session: Session) -> InterviewConfig:
         config = self.config_repository.get_last(session)
@@ -62,7 +65,7 @@ class InterviewService:
     ) -> tuple[InterviewSession, InterviewTurn]:
         config = InterviewConfig(**config_in.model_dump(), is_last_used=False)
         self.config_repository.add(session, config)
-        context_hits = self.rag_service.search(
+        context_hits = self.retrieval_service.search(
             session,
             f"{config_in.target_role} {config_in.job_description}",
             limit=4,
@@ -74,6 +77,7 @@ class InterviewService:
                 target_role=config_in.target_role,
                 job_description=config_in.job_description,
                 extra_prompt=config_in.extra_prompt,
+                language=config_in.language,
                 mode=config_in.mode,
                 context=context,
                 provider=config_in.chat_model_provider,
@@ -124,6 +128,7 @@ class InterviewService:
             AnswerEvaluationRequest(
                 question=turn.question,
                 answer=answer,
+                language=config.language,
                 context=[],
                 provider=config.chat_model_provider,
                 model=config.chat_model,
@@ -157,6 +162,7 @@ class InterviewService:
             AnswerEvaluationRequest(
                 question=turn.follow_up_question,
                 answer=answer,
+                language=config.language,
                 context=[],
                 provider=config.chat_model_provider,
                 model=config.chat_model,
@@ -183,7 +189,7 @@ class InterviewService:
         if interview_session.current_round >= config.target_rounds:
             raise conflict("target_rounds_reached", "The configured target round count was reached.")
         next_round = interview_session.current_round + 1
-        context_hits = self.rag_service.search(
+        context_hits = self.retrieval_service.search(
             session,
             f"{config.target_role} {config.job_description} round {next_round}",
             limit=4,
@@ -194,6 +200,7 @@ class InterviewService:
                 target_role=config.target_role,
                 job_description=config.job_description,
                 extra_prompt=config.extra_prompt,
+                language=config.language,
                 mode=config.mode,
                 context=[str(hit["content"]) for hit in context_hits],
                 provider=config.chat_model_provider,

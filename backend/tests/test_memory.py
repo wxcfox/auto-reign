@@ -44,3 +44,19 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     assert memory.status_code == 200
     assert "# 薄弱项记忆" in memory.json()["files"]["weakness"]["content"]
     assert "## 当前薄弱项总结" in weakness_path.read_text(encoding="utf-8")
+
+    workspace = settings.data_dir / "workspace"
+    practice_files = list((workspace / "practice").glob("**/*.md"))
+    report_files = list((workspace / "reports").glob("*.md"))
+    mastery_path = workspace / "state" / "mastery.md"
+    plan_path = workspace / "state" / "plan.md"
+    assert len(practice_files) == 1
+    assert len(report_files) == 1
+    practice_text = practice_files[0].read_text(encoding="utf-8")
+    assert "# 练习记录" in practice_text
+    assert "I use tests and clear services." in practice_text
+    assert "# 掌握状态" in mastery_path.read_text(encoding="utf-8")
+    plan_text = plan_path.read_text(encoding="utf-8")
+    assert "# 当前计划" in plan_text
+    assert plan_text.count("- ") <= 3
+    assert "# 面试复盘报告" in report_files[0].read_text(encoding="utf-8")

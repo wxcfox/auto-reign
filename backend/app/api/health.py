@@ -19,4 +19,7 @@ def health() -> dict[str, object]:
             "deepseek": bool(settings.deepseek_api_key),
             "qwen": bool(settings.qwen_api_key),
         },
+        "workspace": {
+            "initialized": (settings.data_dir / "workspace" / "workspace.md").exists(),
+        },
     }

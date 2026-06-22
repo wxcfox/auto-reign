@@ -14,7 +14,7 @@
   "updated": "Updated {{value}}",
   "uploader": {
     "label": "Document",
-    "hint": "Markdown/TXT, processed and indexed locally.",
+    "hint": "Markdown/TXT/PDF/DOCX, organized automatically.",
     "uploading": "Uploading..."
   },
   "detail": {

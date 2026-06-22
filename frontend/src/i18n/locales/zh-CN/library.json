@@ -14,7 +14,7 @@
   "updated": "更新于 {{value}}",
   "uploader": {
     "label": "文档",
-    "hint": "支持 Markdown/TXT，本地处理并建立索引。",
+    "hint": "支持 Markdown/TXT/PDF/DOCX，系统会自动整理。",
     "uploading": "上传中..."
   },
   "detail": {

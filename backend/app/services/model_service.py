@@ -34,6 +34,7 @@ class QuestionGenerationRequest(ProviderRequest):
     target_role: str
     job_description: str = ""
     extra_prompt: str = ""
+    language: str = "en"
     mode: str = "comprehensive"
     context: list[str] = Field(default_factory=list)
 
@@ -41,6 +42,7 @@ class QuestionGenerationRequest(ProviderRequest):
 class AnswerEvaluationRequest(ProviderRequest):
     question: str
     answer: str
+    language: str = "en"
     context: list[str] = Field(default_factory=list)
 
 
@@ -91,6 +93,10 @@ class ModelService:
 
     def generate_question(self, request: QuestionGenerationRequest) -> str:
         if self.settings.deterministic_model_fallback:
+            if request.language == "zh-CN":
+                role = request.target_role or "目标岗位"
+                company = request.target_company or "目标公司"
+                return f"请结合你的经历，说明你会如何胜任{company}的{role}岗位？"
             return (
                 f"How would you explain your {request.target_role} experience "
                 f"for {request.target_company}?"
@@ -104,6 +110,14 @@ class ModelService:
 
     def evaluate_answer(self, request: AnswerEvaluationRequest) -> AnswerEvaluationResult:
         if self.settings.deterministic_model_fallback:
+            if request.language == "zh-CN":
+                return AnswerEvaluationResult(
+                    feedback="回答有基本结构，可以继续补充具体取舍、失败场景和量化结果。",
+                    missing_points=["具体失败处理", "可观测性指标"],
+                    follow_up_question="在真实生产流量下，你会优先做哪些取舍？",
+                    weaknesses=["需要更深入的工程细节"],
+                    review_suggestions=["准备一个包含故障处理和指标的项目案例"],
+                )
             return AnswerEvaluationResult(
                 feedback=(
                     "The answer shows relevant structure and can be strengthened with "

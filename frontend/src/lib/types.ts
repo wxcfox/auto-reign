@@ -24,6 +24,45 @@ export interface HealthResponse {
     qdrant: string;
   };
   providers: Record<ProviderName, boolean>;
+  workspace?: {
+    initialized: boolean;
+  };
+}
+
+export interface WorkspaceStatusResponse {
+  schema_version: number;
+  language: "en" | "zh-CN";
+  artifact_count: number;
+  initialized: boolean;
+}
+
+export interface UploadedSourceRecord {
+  artifact_id: string;
+  relative_path: string;
+  duplicate: boolean;
+}
+
+export interface UploadMaterialsResponse {
+  sources: UploadedSourceRecord[];
+}
+
+export interface WorkspaceArtifactSummary {
+  id: string;
+  kind: string;
+  relative_path: string;
+  revision: number;
+  processing_status: string;
+  index_status: string;
+  recovery_required: boolean;
+  allowed_operations: string[];
+}
+
+export interface WorkspaceArtifactListResponse {
+  artifacts: WorkspaceArtifactSummary[];
+}
+
+export interface WorkspaceArtifactDetail extends WorkspaceArtifactSummary {
+  body: string | null;
 }
 
 export interface DocumentRecord {
