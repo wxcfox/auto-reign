@@ -7,22 +7,20 @@ import {
   RotateCcw,
   Send,
   Settings2,
-  SkipForward,
   Square,
-  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import {
-  createInterviewSession,
+  createInterviewSessionStream,
   finishInterview,
   getLastInterviewConfig,
   getModels,
-  nextQuestion,
+  nextQuestionStream,
   saveLastInterviewConfig,
-  submitAnswer,
-  submitFollowUpAnswer,
+  submitAnswerStream,
+  submitFollowUpAnswerStream,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type {
@@ -51,6 +49,13 @@ const defaultConfig: InterviewConfig = {
 
 type ComposerMode = "start" | "answer" | "follow-up" | "idle";
 
+type StreamingDraft = {
+  kind: "question" | "feedback" | "follow-up-feedback";
+  meta: string;
+  text: string;
+  turnId?: string;
+};
+
 type ChatMessageProps = {
   children: ReactNode;
   meta?: string;
@@ -60,9 +65,6 @@ type ChatMessageProps = {
 function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
   return (
     <article className="chat-message" data-tone={tone}>
-      <div className="chat-avatar" aria-hidden="true">
-        {tone === "user" ? "You" : "AR"}
-      </div>
       <div className="chat-bubble">
         {meta ? <p className="chat-meta">{meta}</p> : null}
         <div className="chat-copy">{children}</div>
@@ -89,6 +91,7 @@ export function InterviewWorkspace() {
   const [composerValue, setComposerValue] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [streamingDraft, setStreamingDraft] = useState<StreamingDraft | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
@@ -227,6 +230,10 @@ export function InterviewWorkspace() {
     }));
   }
 
+  function appendStreamingDelta(text: string) {
+    setStreamingDraft((current) => (current ? { ...current, text: current.text + text } : current));
+  }
+
   async function handleStart(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     if (!canStart) {
@@ -236,6 +243,7 @@ export function InterviewWorkspace() {
     setBusyAction("start");
     setError(null);
     setReport(null);
+    setStreamingDraft({ kind: "question", meta: t("question", { index: 1 }), text: "" });
     try {
       const activeConfig: InterviewConfig = {
         ...config,
@@ -243,7 +251,9 @@ export function InterviewWorkspace() {
       };
       setConfig(activeConfig);
       await saveLastInterviewConfig(activeConfig);
-      const created = await createInterviewSession(activeConfig);
+      const created = await createInterviewSessionStream(activeConfig, {
+        onDelta: appendStreamingDelta,
+      });
       setSession(created.session);
       setTurns([created.turn]);
       setComposerValue("");
@@ -251,6 +261,7 @@ export function InterviewWorkspace() {
     } catch (startError) {
       setError(getErrorMessage(startError, t, "interview:errors.start"));
     } finally {
+      setStreamingDraft(null);
       setBusyAction(null);
     }
   }
@@ -263,6 +274,12 @@ export function InterviewWorkspace() {
     setComposerValue("");
     setBusyAction("answer");
     setError(null);
+    setStreamingDraft({
+      kind: "feedback",
+      meta: t("feedback"),
+      text: "",
+      turnId: currentTurn.id,
+    });
     setTurns((current) =>
       updateTurn(current, currentTurn.id, (item) => ({
         ...item,
@@ -270,11 +287,14 @@ export function InterviewWorkspace() {
       })),
     );
     try {
-      const response = await submitAnswer(session.id, submittedAnswer);
+      const response = await submitAnswerStream(session.id, submittedAnswer, {
+        onDelta: appendStreamingDelta,
+      });
       applyMainFeedback(currentTurn.id, response);
     } catch (answerError) {
       setError(getErrorMessage(answerError, t, "interview:errors.answer"));
     } finally {
+      setStreamingDraft(null);
       setBusyAction(null);
     }
   }
@@ -300,6 +320,12 @@ export function InterviewWorkspace() {
     setComposerValue("");
     setBusyAction("follow-up");
     setError(null);
+    setStreamingDraft({
+      kind: "follow-up-feedback",
+      meta: t("follow_up_feedback"),
+      text: "",
+      turnId: currentTurn.id,
+    });
     setTurns((current) =>
       updateTurn(current, currentTurn.id, (item) => ({
         ...item,
@@ -307,11 +333,17 @@ export function InterviewWorkspace() {
       })),
     );
     try {
-      const response = await submitFollowUpAnswer(session.id, submittedAnswer);
+      const response = await submitFollowUpAnswerStream(session.id, submittedAnswer, {
+        onDelta: appendStreamingDelta,
+      });
       applyFollowUpFeedback(currentTurn.id, response);
+      if (session.current_round < config.target_rounds) {
+        await handleNextQuestion();
+      }
     } catch (followUpError) {
       setError(getErrorMessage(followUpError, t, "interview:errors.follow_up"));
     } finally {
+      setStreamingDraft(null);
       setBusyAction(null);
     }
   }
@@ -334,14 +366,22 @@ export function InterviewWorkspace() {
     }
     setBusyAction("next");
     setError(null);
+    setStreamingDraft({
+      kind: "question",
+      meta: t("question", { index: session.current_round + 1 }),
+      text: "",
+    });
     try {
-      const response = await nextQuestion(session.id);
+      const response = await nextQuestionStream(session.id, {
+        onDelta: appendStreamingDelta,
+      });
       setSession(response.session);
       setTurns((current) => [...current, response.turn]);
       setComposerValue("");
     } catch (nextError) {
       setError(getErrorMessage(nextError, t, "interview:errors.next"));
     } finally {
+      setStreamingDraft(null);
       setBusyAction(null);
     }
   }
@@ -387,21 +427,17 @@ export function InterviewWorkspace() {
   return (
     <div className="chat-workspace">
       <header className="chat-topbar">
-        <div>
-          <p className="eyebrow">{t("eyebrow")}</p>
-          <h1>{t("title")}</h1>
-        </div>
-        <p className="page-summary">
+        <span className="chat-topbar-title">
           {session
             ? t("round_summary", { current: session.current_round, total: config.target_rounds })
             : t("not_started")}
-        </p>
+        </span>
+        <span className="chat-topbar-model">{config.chat_model || t("model_unavailable")}</span>
       </header>
 
       <div className="chat-transcript" ref={transcriptRef}>
-        {turns.length === 0 ? (
+        {turns.length === 0 && !streamingDraft ? (
           <section className="chat-empty" aria-label={t("empty_label")}>
-            <Sparkles aria-hidden="true" size={30} />
             <h2>{t("empty_title")}</h2>
             <p>{t("empty_body")}</p>
           </section>
@@ -415,6 +451,14 @@ export function InterviewWorkspace() {
                 {item.answer ? (
                   <ChatMessage tone="user" meta={t("your_answer")}>
                     <p>{item.answer}</p>
+                  </ChatMessage>
+                ) : null}
+                {streamingDraft?.turnId === item.id &&
+                streamingDraft.kind === "feedback" &&
+                !item.feedback &&
+                streamingDraft.text ? (
+                  <ChatMessage meta={streamingDraft.meta}>
+                    <p>{streamingDraft.text}</p>
                   </ChatMessage>
                 ) : null}
                 {item.feedback ? (
@@ -462,6 +506,14 @@ export function InterviewWorkspace() {
                     <p>{item.follow_up_answer}</p>
                   </ChatMessage>
                 ) : null}
+                {streamingDraft?.turnId === item.id &&
+                streamingDraft.kind === "follow-up-feedback" &&
+                !item.follow_up_feedback &&
+                streamingDraft.text ? (
+                  <ChatMessage meta={streamingDraft.meta}>
+                    <p>{streamingDraft.text}</p>
+                  </ChatMessage>
+                ) : null}
                 {item.follow_up_feedback ? (
                   <ChatMessage meta={t("follow_up_feedback")}>
                     <p>{item.follow_up_feedback}</p>
@@ -479,10 +531,15 @@ export function InterviewWorkspace() {
                 ) : null}
               </div>
             ))}
+            {streamingDraft?.kind === "question" && !streamingDraft.turnId && streamingDraft.text ? (
+              <ChatMessage meta={streamingDraft.meta}>
+                <p>{streamingDraft.text}</p>
+              </ChatMessage>
+            ) : null}
           </div>
         )}
 
-        {busyAction ? (
+        {busyAction && !streamingDraft?.text ? (
           <ChatMessage meta={t("streaming.label")} tone="assistant">
             <p className="typing-line">
               <Loader2 aria-hidden="true" size={16} />
@@ -683,20 +740,6 @@ export function InterviewWorkspace() {
           <div className="composer-actions">
             <button
               className="button"
-              disabled={
-                !currentTurn?.answer ||
-                Boolean(busyAction) ||
-                reachedTargetRounds ||
-                session?.status !== "active"
-              }
-              onClick={() => void handleNextQuestion()}
-              type="button"
-            >
-              <SkipForward aria-hidden="true" size={17} />
-              {busyAction === "next" ? t("next_question_busy") : t("next_question")}
-            </button>
-            <button
-              className="button"
               disabled={!session || Boolean(busyAction)}
               onClick={() => {
                 setSession(null);
@@ -704,6 +747,7 @@ export function InterviewWorkspace() {
                 setReport(null);
                 setComposerValue("");
                 setError(null);
+                setStreamingDraft(null);
               }}
               type="button"
             >

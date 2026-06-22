@@ -140,11 +140,124 @@ export function createInterviewSession(
   });
 }
 
+export type StreamCallbacks = {
+  onDelta: (text: string) => void;
+};
+
+type StreamErrorPayload = {
+  code?: string;
+  message?: string;
+};
+
+async function apiStream<T>(
+  path: string,
+  body: unknown,
+  callbacks: StreamCallbacks,
+): Promise<T> {
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    await throwApiError(response, `Request failed with ${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error("Streaming response did not include a body.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: T | null = null;
+
+  const processFrame = (frame: string) => {
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of frame.split(/\r?\n/)) {
+      if (line.startsWith("event:")) {
+        event = line.slice("event:".length).trim();
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trimStart());
+      }
+    }
+    if (dataLines.length === 0) {
+      return;
+    }
+
+    const data = JSON.parse(dataLines.join("\n")) as unknown;
+    if (event === "delta") {
+      const delta = data as { text?: unknown };
+      if (typeof delta.text === "string" && delta.text.length > 0) {
+        callbacks.onDelta(delta.text);
+      }
+      return;
+    }
+    if (event === "result") {
+      result = data as T;
+      return;
+    }
+    if (event === "error") {
+      const error = data as StreamErrorPayload;
+      throw new Error(error.message || error.code || "Streaming request failed.");
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.indexOf("\n\n");
+    while (separatorIndex >= 0) {
+      const frame = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      processFrame(frame);
+      separatorIndex = buffer.indexOf("\n\n");
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    processFrame(buffer);
+  }
+  if (result === null) {
+    throw new Error("Streaming response completed without a result.");
+  }
+  return result;
+}
+
+export function createInterviewSessionStream(
+  config: InterviewConfig,
+  callbacks: StreamCallbacks,
+): Promise<InterviewSessionCreatedResponse> {
+  return apiStream<InterviewSessionCreatedResponse>(
+    "/api/interview-sessions/stream",
+    config,
+    callbacks,
+  );
+}
+
 export function submitAnswer(sessionId: string, answer: string): Promise<AnswerFeedback> {
   return apiJson<AnswerFeedback>(`/api/interview-sessions/${sessionId}/answer`, {
     method: "POST",
     body: JSON.stringify({ answer }),
   });
+}
+
+export function submitAnswerStream(
+  sessionId: string,
+  answer: string,
+  callbacks: StreamCallbacks,
+): Promise<AnswerFeedback> {
+  return apiStream<AnswerFeedback>(
+    `/api/interview-sessions/${sessionId}/answer/stream`,
+    { answer },
+    callbacks,
+  );
 }
 
 export function submitFollowUpAnswer(
@@ -157,10 +270,33 @@ export function submitFollowUpAnswer(
   });
 }
 
+export function submitFollowUpAnswerStream(
+  sessionId: string,
+  answer: string,
+  callbacks: StreamCallbacks,
+): Promise<FollowUpFeedback> {
+  return apiStream<FollowUpFeedback>(
+    `/api/interview-sessions/${sessionId}/follow-up-answer/stream`,
+    { answer },
+    callbacks,
+  );
+}
+
 export function nextQuestion(sessionId: string): Promise<InterviewSessionCreatedResponse> {
   return apiJson<InterviewSessionCreatedResponse>(
     `/api/interview-sessions/${sessionId}/next-question`,
     { method: "POST" },
+  );
+}
+
+export function nextQuestionStream(
+  sessionId: string,
+  callbacks: StreamCallbacks,
+): Promise<InterviewSessionCreatedResponse> {
+  return apiStream<InterviewSessionCreatedResponse>(
+    `/api/interview-sessions/${sessionId}/next-question/stream`,
+    undefined,
+    callbacks,
   );
 }
 

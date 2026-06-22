@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
@@ -17,7 +17,10 @@ describe("AppShell", () => {
 
     expect(screen.getByRole("link", { name: /New interview/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /Primary/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /More/i })).toBeInTheDocument();
+    const moreButton = screen.getByRole("button", { name: /More/i });
+    expect(moreButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(moreButton);
+    expect(moreButton).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(/Settings/i)).toBeInTheDocument();
   });
 });
