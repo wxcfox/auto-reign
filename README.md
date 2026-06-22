@@ -49,7 +49,14 @@ Lifecycle commands:
 ./start.sh --stop
 ./start.sh --restart
 ./start.sh --help
+./reset-data.sh --dry-run
+./reset-data.sh --yes
 ```
+
+`./reset-data.sh --yes` is destructive: it stops the local Auto Reign processes,
+removes the MySQL and Qdrant Docker volumes, and deletes local runtime data such
+as `data/`, `.pids/`, and `logs/`. It keeps source code, dependencies, and local
+configuration files such as `.env`.
 
 Default host ports:
 
