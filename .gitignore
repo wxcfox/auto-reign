@@ -11,6 +11,7 @@ backend/__pycache__/
 backend/**/*.pyc
 frontend/node_modules/
 frontend/.next/
+frontend/next-env.d.ts
 frontend/coverage/
 frontend/.turbo/
 .pids/
