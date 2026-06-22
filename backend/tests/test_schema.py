@@ -8,13 +8,16 @@ from app.core.config import get_settings
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 APPLICATION_TABLES = {
+    "artifacts",
     "documents",
     "document_chunks",
     "interview_configs",
     "interview_sessions",
     "interview_turns",
+    "processing_jobs",
     "reports",
     "memory_files",
+    "workspace_settings",
 }
 
 
@@ -46,6 +49,17 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
         }.issubset(turn_columns)
         config_columns = {column["name"] for column in inspector.get_columns("interview_configs")}
         assert "language" in config_columns
+
+        artifact_columns = {column["name"] for column in inspector.get_columns("artifacts")}
+        assert {
+            "kind",
+            "relative_path",
+            "source_refs",
+            "evidence_refs",
+            "processing_status",
+            "index_status",
+            "recovery_required",
+        }.issubset(artifact_columns)
 
         chunk_uniques = {
             tuple(constraint["column_names"])
@@ -106,3 +120,5 @@ def test_mysql_offline_migration_does_not_set_json_defaults(monkeypatch, capsys)
     assert "follow_up_weaknesses JSON NOT NULL" in stdout
     assert "follow_up_review_suggestions JSON NOT NULL" in stdout
     assert "JSON NOT NULL DEFAULT '[]'" not in stdout
+    assert "relative_path VARCHAR(1024)" not in stdout
+    assert "relative_path VARCHAR(512)" in stdout

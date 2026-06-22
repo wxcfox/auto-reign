@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import not_found
 from app.db.session import session_scope
+from app.repositories.artifact_repository import ArtifactRepository
 from app.schemas.interviews import (
     AnswerFeedbackResponse,
     AnswerRequest,
@@ -15,6 +16,7 @@ from app.schemas.interviews import (
     InterviewSessionDetailResponse,
 )
 from app.schemas.reports import ReportResponse
+from app.services.index_service import IndexService
 from app.services.interview_service import InterviewService
 
 router = APIRouter(prefix="/api")
@@ -41,8 +43,13 @@ def save_last_config(
 
 @router.post("/interview-sessions", response_model=InterviewSessionCreatedResponse)
 def create_session(
-    config_in: InterviewConfigIn, session: Session = Depends(get_session)
+    config_in: InterviewConfigIn, request: Request, session: Session = Depends(get_session)
 ) -> InterviewSessionCreatedResponse:
+    IndexService().ensure_current(
+        request.app.state.session_factory,
+        request.app.state.workspace_service,
+        ArtifactRepository(),
+    )
     interview_session, turn = InterviewService().create_session(session, config_in)
     return InterviewSessionCreatedResponse(
         session=interview_session,
@@ -82,8 +89,13 @@ def submit_follow_up_answer(
 
 @router.post("/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse)
 def next_question(
-    session_id: str, session: Session = Depends(get_session)
+    session_id: str, request: Request, session: Session = Depends(get_session)
 ) -> InterviewSessionCreatedResponse:
+    IndexService().ensure_current(
+        request.app.state.session_factory,
+        request.app.state.workspace_service,
+        ArtifactRepository(),
+    )
     interview_session, turn = InterviewService().next_question(session, session_id)
     return InterviewSessionCreatedResponse(session=interview_session, turn=turn)
 

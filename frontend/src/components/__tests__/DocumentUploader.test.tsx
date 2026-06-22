@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import { DocumentUploader } from "../DocumentUploader";
 
 describe("DocumentUploader", () => {
-  it("shows markdown and txt upload guidance", () => {
+  it("shows workspace material upload guidance", () => {
     render(<DocumentUploader onUploaded={() => undefined} />);
-    expect(screen.getByText(/Markdown\/TXT/i)).toBeInTheDocument();
+    expect(screen.getByText(/Markdown\/TXT\/PDF\/DOCX/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Upload/i })).toBeDisabled();
   });
 });

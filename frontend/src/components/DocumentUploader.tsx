@@ -4,28 +4,28 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Upload } from "lucide-react";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { uploadDocument } from "@/lib/api";
+import { uploadMaterials } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
-import type { DocumentRecord } from "@/lib/types";
+import type { UploadMaterialsResponse } from "@/lib/types";
 
 type DocumentUploaderProps = {
-  onUploaded: (document: DocumentRecord) => void;
+  onUploaded: (response: UploadMaterialsResponse) => void;
 };
 
 export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
   const { t } = useTranslation("library");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setFile(event.target.files?.[0] ?? null);
+    setFiles(Array.from(event.target.files ?? []));
     setError(null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file || uploading) {
+    if (files.length === 0 || uploading) {
       return;
     }
 
@@ -33,9 +33,9 @@ export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
     setUploading(true);
     setError(null);
     try {
-      const document = await uploadDocument(file);
-      onUploaded(document);
-      setFile(null);
+      const response = await uploadMaterials(files);
+      onUploaded(response);
+      setFiles([]);
       form.reset();
     } catch (uploadError) {
       setError(getErrorMessage(uploadError, t, "common:errors.generic_upload"));
@@ -51,14 +51,15 @@ export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
           {t("uploader.label")}
         </label>
         <input
-          accept=".md,.txt,text/markdown,text/plain"
+          accept=".md,.txt,.pdf,.docx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           id="document-file"
+          multiple
           onChange={handleFileChange}
           type="file"
         />
-        <p className="field-hint">{t("uploader.hint")}</p>
+        <p className="field-hint">{t("uploader.hint", "Markdown/TXT/PDF/DOCX files are organized automatically.")}</p>
       </div>
-      <button className="button button-primary" disabled={!file || uploading} type="submit">
+      <button className="button button-primary" disabled={files.length === 0 || uploading} type="submit">
         <Upload aria-hidden="true" size={17} />
         {uploading ? t("uploader.uploading") : t("common:actions.upload")}
       </button>

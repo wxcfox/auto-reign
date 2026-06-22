@@ -160,3 +160,59 @@ class MemoryFile(Base):
     summary_hash: Mapped[str] = mapped_column(String(128), default="")
     last_indexed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+
+
+class WorkspaceSettings(Base):
+    __tablename__ = "workspace_settings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="default")
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    language: Mapped[str] = mapped_column(String(16), default="zh-CN")
+    embedding_config: Mapped[str] = mapped_column(String(255), default="")
+    active_collection: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+
+
+class Artifact(Base):
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(128), default="")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    source_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    processing_status: Mapped[str] = mapped_column(String(32), default="completed")
+    index_status: Mapped[str] = mapped_column(String(32), default="pending")
+    language: Mapped[str] = mapped_column(String(16), default="zh-CN")
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    media_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    origin: Mapped[str] = mapped_column(String(16), default="llm")
+    edited_by: Mapped[str] = mapped_column(String(16), default="system")
+    recovery_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    recovery_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+
+
+class ProcessingJob(Base):
+    __tablename__ = "processing_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="CASCADE"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

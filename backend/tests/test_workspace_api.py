@@ -1,0 +1,117 @@
+def test_workspace_status_is_initialized_on_startup(client) -> None:
+    response = client.get("/api/workspace")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["language"] == "zh-CN"
+    assert body["schema_version"] == 1
+    assert body["artifact_count"] == 0
+
+
+def test_workspace_rebuild_projection_endpoint(client) -> None:
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown("knowledge/api.md", kind="knowledge", body="# API\n")
+
+    response = client.post("/api/workspace/rebuild-projection")
+
+    assert response.status_code == 200
+    assert response.json()["artifact_count"] == 1
+
+
+def test_workspace_upload_materials_endpoint(client) -> None:
+    response = client.post(
+        "/api/workspace/materials/upload",
+        files={"files": ("redis.md", b"# Redis\n\ncache", "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sources"][0]["duplicate"] is False
+    status = client.get("/api/workspace").json()
+    assert status["artifact_count"] == 2
+
+
+def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch) -> None:
+    calls: list[tuple[object, object, object]] = []
+
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            calls.append((session_factory, workspace, repository))
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    response = client.post(
+        "/api/workspace/materials/upload",
+        files={"files": ("redis.md", b"# Redis\n\ncache", "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert calls[0][0] is client.app.state.session_factory
+    assert calls[0][1] is client.app.state.workspace_service
+
+
+def test_workspace_artifact_read_and_replace_body(client) -> None:
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown("knowledge/edit.md", kind="knowledge", body="# Edit\n\nold")
+    client.post("/api/workspace/rebuild-projection")
+    listed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    artifact_id = listed[0]["id"]
+    assert listed[0]["allowed_operations"] == ["replace_body"]
+
+    detail = client.get(f"/api/workspace/artifacts/{artifact_id}").json()
+    assert detail["body"] == "# Edit\n\nold"
+
+    response = client.put(
+        f"/api/workspace/artifacts/{artifact_id}/body",
+        json={"expected_revision": 1, "body": "# Edit\n\nnew"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == 2
+    assert artifacts.read_markdown("knowledge/edit.md").body == "# Edit\n\nnew"
+
+    conflict = client.put(
+        f"/api/workspace/artifacts/{artifact_id}/body",
+        json={"expected_revision": 1, "body": "# stale"},
+    )
+    assert conflict.status_code == 409
+
+
+def test_workspace_artifact_permissions_are_enforced(client) -> None:
+    upload = client.post(
+        "/api/workspace/materials/upload",
+        files={"files": ("source.txt", b"source", "text/plain")},
+    ).json()
+    source_id = upload["sources"][0]["artifact_id"]
+
+    response = client.put(
+        f"/api/workspace/artifacts/{source_id}/body",
+        json={"expected_revision": 1, "body": "changed"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_workspace_plan_edit_limits_to_three_tasks(client) -> None:
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown("state/plan.md", kind="plan", body="# Plan\n\n- a\n")
+    client.post("/api/workspace/rebuild-projection")
+    plan = client.get("/api/workspace/artifacts").json()["artifacts"][0]
+
+    response = client.put(
+        f"/api/workspace/artifacts/{plan['id']}/body",
+        json={"expected_revision": 1, "body": "# Plan\n\n- a\n- b\n- c\n- d\n"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_health_includes_workspace_without_exposing_paths(client) -> None:
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace"]["initialized"] is True
+    assert "path" not in body["workspace"]

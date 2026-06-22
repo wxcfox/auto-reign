@@ -66,6 +66,61 @@ def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monk
     assert body["turn"]["retrieved_context_refs"] == []
 
 
+def test_create_session_uses_workspace_indexed_artifacts(client: TestClient) -> None:
+    client.post(
+        "/api/workspace/materials/upload",
+        files={"files": ("redis.md", b"# Redis\n\nRedis cache stampede", "text/markdown")},
+    )
+    rebuild = client.post("/api/workspace/rebuild-index")
+    assert rebuild.status_code == 200
+
+    created = client.post(
+        "/api/interview-sessions",
+        json={**CONFIG, "target_role": "Redis Backend Engineer", "job_description": "Redis cache"},
+    )
+
+    assert created.status_code == 200
+    refs = created.json()["turn"]["retrieved_context_refs"]
+    assert refs
+    assert refs[0]["source_type"] == "artifact"
+
+
+def test_create_session_auto_indexes_pending_workspace_artifacts(
+    client: TestClient, monkeypatch
+) -> None:
+    class UploadNoopIndexService:
+        def rebuild_index(self, _session_factory, _workspace, _repository) -> str:
+            return "not-built"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", UploadNoopIndexService)
+    upload = client.post(
+        "/api/workspace/materials/upload",
+        files={
+            "files": (
+                "redis.md",
+                b"# Redis\n\nRedis cache stampede and hot key mitigation",
+                "text/markdown",
+            )
+        },
+    )
+    assert upload.status_code == 200
+
+    listed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    assert any(artifact["index_status"] == "pending" for artifact in listed)
+
+    created = client.post(
+        "/api/interview-sessions",
+        json={**CONFIG, "target_role": "Redis Backend Engineer", "job_description": "Redis hot key"},
+    )
+
+    assert created.status_code == 200
+    refs = created.json()["turn"]["retrieved_context_refs"]
+    assert refs
+    assert refs[0]["source_type"] == "artifact"
+    indexed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    assert any(artifact["index_status"] == "completed" for artifact in indexed)
+
+
 def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None:
     created = client.post("/api/interview-sessions", json=CONFIG).json()
     session_id = created["session"]["id"]
@@ -96,6 +151,25 @@ def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None
     next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
     assert next_question.status_code == 200
     assert next_question.json()["turn"]["round_index"] == 2
+
+
+def test_chinese_session_uses_chinese_question_and_feedback(client: TestClient) -> None:
+    config = {**CONFIG, "language": "zh-CN", "target_role": "后端工程师", "target_company": "字节"}
+    created = client.post("/api/interview-sessions", json=config)
+    assert created.status_code == 200
+    body = created.json()
+    assert "请" in body["turn"]["question"] or "如何" in body["turn"]["question"]
+    session_id = body["session"]["id"]
+
+    answer = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "我会先明确边界，再设计服务和故障处理。"},
+    )
+
+    assert answer.status_code == 200
+    feedback = answer.json()
+    assert "回答" in feedback["feedback"]
+    assert "？" in feedback["follow_up_question"]
 
 
 def test_completed_session_rejects_answer(client: TestClient) -> None:

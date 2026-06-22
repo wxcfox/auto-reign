@@ -34,6 +34,7 @@ class FakeQdrantClient:
         self.failure = failure or RuntimeError("Qdrant client failed")
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.query_response = QueryResponse(points=[])
+        self.collection_names = ["documents"] if collection_exists else []
 
     def collection_exists(self, **kwargs: Any) -> bool:
         self._record("collection_exists", kwargs)
@@ -55,6 +56,18 @@ class FakeQdrantClient:
 
     def delete(self, **kwargs: Any) -> None:
         self._record("delete", kwargs)
+
+    def delete_collection(self, **kwargs: Any) -> None:
+        self._record("delete_collection", kwargs)
+        self.has_collection = False
+        collection_name = kwargs["collection_name"]
+        self.collection_names = [name for name in self.collection_names if name != collection_name]
+
+    def get_collections(self) -> SimpleNamespace:
+        self._record("get_collections", {})
+        return SimpleNamespace(
+            collections=[SimpleNamespace(name=name) for name in self.collection_names]
+        )
 
     def query_points(self, **kwargs: Any) -> QueryResponse:
         self._record("query_points", kwargs)
@@ -215,6 +228,31 @@ def test_delete_document_chunks_uses_document_id_filter_and_waits() -> None:
     condition = selector.filter.must[0]
     assert condition.key == "document_id"
     assert condition.match.value == "document-1"
+
+
+def test_delete_collection_is_a_no_op_when_collection_is_absent() -> None:
+    client = FakeQdrantClient()
+
+    QdrantVectorStore(client).delete_collection("documents")
+
+    assert client.calls == [("collection_exists", {"collection_name": "documents"})]
+
+
+def test_delete_collection_deletes_existing_collection() -> None:
+    client = FakeQdrantClient(collection_exists=True, dimension=2)
+
+    QdrantVectorStore(client).delete_collection("documents")
+
+    assert [name for name, _ in client.calls] == ["collection_exists", "delete_collection"]
+    assert client.calls[1][1] == {"collection_name": "documents"}
+
+
+def test_list_collections_returns_collection_names() -> None:
+    client = FakeQdrantClient(collection_exists=True, dimension=2)
+    client.collection_names = ["a", "b"]
+
+    assert QdrantVectorStore(client).list_collections() == ["a", "b"]
+    assert client.calls == [("get_collections", {})]
 
 
 def test_search_is_empty_when_collection_is_absent() -> None:

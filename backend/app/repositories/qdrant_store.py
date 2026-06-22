@@ -105,6 +105,15 @@ class QdrantVectorStore:
             wait=True,
         )
 
+    def delete_collection(self, collection_name: str) -> None:
+        if not _call_qdrant(self._client.collection_exists, collection_name=collection_name):
+            return
+        _call_qdrant(self._client.delete_collection, collection_name=collection_name)
+
+    def list_collections(self) -> list[str]:
+        response = _call_qdrant(self._client.get_collections)
+        return [collection.name for collection in response.collections]
+
     def search(
         self, collection_name: str, query_embedding: list[float], limit: int
     ) -> list[VectorSearchHit]:
