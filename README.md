@@ -5,6 +5,19 @@
 **Local-first AI mock interviews grounded in your own knowledge base, with
 automatic weakness tracking and review reports.**
 
+## Development Direction
+
+This README documents the currently runnable v1 implementation. The canonical
+design for the next development cycle is the
+[filesystem-first interview workbench specification](docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md).
+
+That redesign makes user-visible Markdown files the durable learning assets,
+automates document organization and learning-state maintenance, and treats
+MySQL and Qdrant as operational or rebuildable infrastructure. It intentionally
+does not preserve existing runtime data formats. Contributors implementing the
+redesign must first create a phased plan from the specification and keep the
+application runnable at each phase boundary.
+
 Auto Reign ingests Markdown and TXT source documents, indexes their vectors in
 Qdrant, runs written mock interviews, and stores interview history and review
 memory locally.
