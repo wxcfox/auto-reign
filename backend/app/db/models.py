@@ -85,6 +85,7 @@ class InterviewConfig(Base):
     target_role: Mapped[str] = mapped_column(String(255))
     job_description: Mapped[str] = mapped_column(Text, default="")
     extra_prompt: Mapped[str] = mapped_column(Text, default="")
+    language: Mapped[str] = mapped_column(String(16), default="en")
     mode: Mapped[str] = mapped_column(String(64))
     chat_model_provider: Mapped[str] = mapped_column(String(64))
     chat_model: Mapped[str] = mapped_column(String(120))

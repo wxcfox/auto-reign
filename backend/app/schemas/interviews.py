@@ -10,6 +10,7 @@ InterviewMode = Literal[
     "weakness_reinforcement",
 ]
 SessionStatus = Literal["active", "completed", "cancelled"]
+InterviewLanguage = Literal["en", "zh-CN"]
 
 
 class InterviewConfigIn(BaseModel):
@@ -17,6 +18,7 @@ class InterviewConfigIn(BaseModel):
     target_role: str
     job_description: str = ""
     extra_prompt: str = ""
+    language: InterviewLanguage = "en"
     mode: InterviewMode = "comprehensive"
     chat_model_provider: str
     chat_model: str

@@ -44,6 +44,7 @@ class InterviewService:
                 target_role="",
                 job_description="",
                 extra_prompt="",
+                language="en",
                 mode="comprehensive",
                 chat_model_provider="qwen",
                 chat_model="qwen3.7-plus",

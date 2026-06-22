@@ -11,6 +11,7 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
         "target_role": "Backend Engineer",
         "job_description": "Build AI app infrastructure.",
         "extra_prompt": "Focus on weakness reinforcement.",
+        "language": "zh-CN",
         "mode": "weakness_reinforcement",
         "chat_model_provider": "openai",
         "chat_model": "gpt-4.1-mini",
@@ -29,11 +30,17 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     assert body["report"]["report_path"].endswith(".md")
 
     settings = get_settings()
-    assert Path(body["report"]["report_path"]).exists()
-    assert (settings.data_dir / "memory" / "weakness_memory.md").exists()
-    assert (settings.data_dir / "memory" / "interview_history.md").exists()
-    assert (settings.data_dir / "memory" / "learning_profile.md").exists()
+    report_path = Path(body["report"]["report_path"])
+    weakness_path = settings.data_dir / "memory" / "weakness_memory.md"
+    interview_history_path = settings.data_dir / "memory" / "interview_history.md"
+    learning_profile_path = settings.data_dir / "memory" / "learning_profile.md"
+    assert report_path.exists()
+    assert weakness_path.exists()
+    assert interview_history_path.exists()
+    assert learning_profile_path.exists()
+    assert "# 面试复盘报告" in report_path.read_text(encoding="utf-8")
 
     memory = client.get("/api/memory")
     assert memory.status_code == 200
-    assert "Weakness Memory" in memory.json()["files"]["weakness"]["content"]
+    assert "# 薄弱项记忆" in memory.json()["files"]["weakness"]["content"]
+    assert "## 当前薄弱项总结" in weakness_path.read_text(encoding="utf-8")
