@@ -16,7 +16,6 @@ from app.core.artifact_permissions import (
     ALLOWED_OPERATIONS,
     ArtifactPermissionError,
     assert_operation_allowed,
-    validate_plan_task_count,
 )
 from app.core.errors import bad_request
 from app.core.errors import conflict as conflict_error
@@ -63,6 +62,7 @@ class LearningNoteResponse(BaseModel):
     source: UploadedSourceResponse
     artifact: "ArtifactSummaryResponse"
     summary: LearningNoteSummaryResult
+    card_markdown: str
 
 
 class RealInterviewRecordRequest(BaseModel):
@@ -73,7 +73,7 @@ class RealInterviewRecordRequest(BaseModel):
 class RealInterviewRecordResponse(BaseModel):
     raw_artifact: "ArtifactSummaryResponse"
     high_frequency_artifact: "ArtifactSummaryResponse"
-    plan_artifact: "ArtifactSummaryResponse"
+    status_artifact: "ArtifactSummaryResponse"
     questions: list[str]
     weak_points: list[str]
 
@@ -150,22 +150,28 @@ def preparation_tasks(
     session: Session = Depends(get_session),
 ) -> PreparationTasksResponse:
     repository = ArtifactRepository()
-    plan = repository.get_by_relative_path(session, "state/plan.md")
-    if plan is None:
+    status = repository.get_by_relative_path(session, "review/status.md")
+    if status is None:
         return PreparationTasksResponse(tasks=[])
     try:
-        body = request.app.state.artifact_service.read_markdown(plan.relative_path).body
+        body = request.app.state.artifact_service.read_markdown(status.relative_path).body
     except Exception:
         return PreparationTasksResponse(tasks=[])
+    sections = _markdown_sections(body)
+    task_items = (
+        _markdown_list_items(sections.get("当前重点") or "")
+        or _markdown_list_items(sections.get("最近练习") or "")
+        or _markdown_list_items(sections.get("最近整理") or "")
+    )
     return PreparationTasksResponse(
         tasks=[
             PreparationTaskResponse(
                 title=task,
-                reason="来自当前学习计划",
-                source_artifact_id=plan.id,
-                source_relative_path=plan.relative_path,
+                reason="来自复习状态",
+                source_artifact_id=status.id,
+                source_relative_path=status.relative_path,
             )
-            for task in _extract_plan_tasks(body)[:3]
+            for task in task_items[:3]
         ]
     )
 
@@ -199,8 +205,6 @@ def replace_artifact_body(
         raise not_found("artifact_not_found", "Artifact not found.")
     try:
         assert_operation_allowed(artifact.kind, "replace_body")
-        if artifact.kind == "plan":
-            validate_plan_task_count(_extract_plan_tasks(payload.body))
     except ArtifactPermissionError as exc:
         if artifact.kind in {"source", "extracted", "practice", "mastery"}:
             raise HTTPException(status_code=403, detail={"code": "artifact_read_only", "message": str(exc)}) from exc
@@ -418,7 +422,7 @@ def _persist_real_interview_record(
     )
     raw_ref = f"artifact:{raw_document.front_matter.id}"
     high_frequency_path = "review/high-frequency.md"
-    plan_path = "state/plan.md"
+    status_path = "review/status.md"
     _create_or_merge_high_frequency_card(
         request.app.state.artifact_service,
         high_frequency_path,
@@ -428,9 +432,9 @@ def _persist_real_interview_record(
         source_ref=raw_ref,
         timestamp=timestamp,
     )
-    _create_or_replace_plan_from_real_interview(
+    _create_or_merge_review_status_from_real_interview(
         request.app.state.artifact_service,
-        plan_path,
+        status_path,
         questions=questions,
         weak_points=weak_points,
         language=language,
@@ -447,8 +451,8 @@ def _persist_real_interview_record(
         )
         raw_artifact = repository.get(session, raw_document.front_matter.id)
         high_frequency_artifact = repository.get_by_relative_path(session, high_frequency_path)
-        plan_artifact = repository.get_by_relative_path(session, plan_path)
-        if raw_artifact is None or high_frequency_artifact is None or plan_artifact is None:
+        status_artifact = repository.get_by_relative_path(session, status_path)
+        if raw_artifact is None or high_frequency_artifact is None or status_artifact is None:
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -459,7 +463,7 @@ def _persist_real_interview_record(
         response = RealInterviewRecordResponse(
             raw_artifact=_summary(raw_artifact),
             high_frequency_artifact=_summary(high_frequency_artifact),
-            plan_artifact=_summary(plan_artifact),
+            status_artifact=_summary(status_artifact),
             questions=questions,
             weak_points=weak_points,
         )
@@ -481,23 +485,32 @@ def _persist_learning_note(
     background_tasks: BackgroundTasks,
 ) -> LearningNoteResponse:
     timestamp = datetime.now(UTC)
-    source = request.app.state.artifact_service.store_source(
-        source_filename=f"learning-note-{timestamp.strftime('%Y%m%d-%H%M%S')}.md",
+    source = request.app.state.artifact_service.append_source(
+        f"inbox/{timestamp.strftime('%Y-%m-%d')}.md",
+        source_filename=f"{timestamp.strftime('%Y-%m-%d')}.md",
         media_type="text/markdown",
-        content=note.encode("utf-8"),
+        content=_learning_note_inbox_entry(note, timestamp).encode("utf-8"),
         language=language,
-        directory="inbox",
         uploaded_at=timestamp,
     )
     source_ref = f"source:{source.artifact_id}"
     knowledge_path = f"knowledge/{_slug(summary.title)}.md"
+    card_markdown = _learning_note_card(note, summary)
     _create_or_merge_learning_card(
         request.app.state.artifact_service,
         knowledge_path,
-        note=note,
+        card_markdown=card_markdown,
         summary=summary,
         language=language,
         source_ref=source_ref,
+        timestamp=timestamp,
+    )
+    _create_or_merge_review_status_from_learning(
+        request.app.state.artifact_service,
+        "review/status.md",
+        title=summary.title,
+        source_ref=source_ref,
+        language=language,
         timestamp=timestamp,
     )
 
@@ -526,6 +539,7 @@ def _persist_learning_note(
             ),
             artifact=_summary(knowledge_artifact),
             summary=summary,
+            card_markdown=card_markdown,
         )
 
     background_tasks.add_task(
@@ -579,16 +593,15 @@ def _owner(artifact) -> str:
     return parts[0] if parts else artifact.kind
 
 
-def _extract_plan_tasks(body: str) -> list[str]:
-    tasks: list[str] = []
-    for line in body.splitlines():
-        if re.match(r"^\s*(?:[-*]|\d+[.)])\s+\S", line):
-            tasks.append(re.sub(r"^\s*(?:[-*]|\d+[.)])\s+", "", line).strip())
-    return tasks
+def _learning_note_body(card_markdown: str, summary: LearningNoteSummaryResult) -> str:
+    return f"# {summary.title}\n\n{card_markdown.strip()}\n"
 
 
-def _learning_note_body(note: str, summary: LearningNoteSummaryResult) -> str:
-    return f"# {summary.title}\n\n{_learning_note_card(note, summary)}\n"
+def _learning_note_inbox_entry(note: str, timestamp: datetime) -> str:
+    return (
+        f"## {timestamp.strftime('%H:%M:%S')} 学习输入\n\n"
+        f"{note.strip()}\n"
+    )
 
 
 def _real_interview_record_body(
@@ -660,7 +673,7 @@ def _create_or_merge_high_frequency_card(
     )
 
 
-def _create_or_replace_plan_from_real_interview(
+def _create_or_merge_review_status_from_real_interview(
     artifact_service,
     relative_path: str,
     *,
@@ -670,17 +683,30 @@ def _create_or_replace_plan_from_real_interview(
     evidence_ref: str,
     timestamp: datetime,
 ) -> None:
-    tasks = _real_interview_plan_tasks(questions, weak_points)
-    body = "# 当前计划\n\n## 未来 1-3 天\n\n" + "\n".join(
-        f"{index}. {task}" for index, task in enumerate(tasks, start=1)
-    )
-    body = f"{body}\n"
+    tasks = _real_interview_focus_items(questions, weak_points)
     try:
         current = artifact_service.read_markdown(relative_path)
+        sections = _markdown_sections(current.body)
+        recent_learning = _markdown_list_items(sections.get("最近整理") or "")
+        recent_practice = _markdown_list_items(sections.get("最近练习") or "")
     except FileNotFoundError:
+        current = None
+        recent_learning = []
+        recent_practice = []
+
+    body = (
+        "# 复习状态\n\n"
+        "## 当前重点\n\n"
+        f"{_plain_bullet_list(tasks)}\n\n"
+        "## 最近整理\n\n"
+        f"{_plain_bullet_list(recent_learning)}\n\n"
+        "## 最近练习\n\n"
+        f"{_plain_bullet_list(recent_practice)}\n"
+    )
+    if current is None:
         artifact_service.create_markdown(
             relative_path,
-            kind="plan",
+            kind="review_status",
             language=language,
             body=body,
             evidence_refs=[evidence_ref],
@@ -729,7 +755,7 @@ def _extract_real_interview_weak_points(record: str) -> list[str]:
     return _unique_card_items(weak_points)
 
 
-def _real_interview_plan_tasks(questions: list[str], weak_points: list[str]) -> list[str]:
+def _real_interview_focus_items(questions: list[str], weak_points: list[str]) -> list[str]:
     tasks: list[str] = []
     if questions:
         tasks.append(f"复盘真实面试题：{questions[0]}")
@@ -756,7 +782,6 @@ def _learning_note_card(note: str, summary: LearningNoteSummaryResult) -> str:
     interview_items = summary.interview_takeaways or [summary.summary]
     follow_up_items = summary.follow_up_questions[:3] or ["这个知识点在真实项目中如何落地？"]
     return (
-        f"### {summary.title}\n\n"
         "- 我的理解：\n"
         f"{_indented_card_text(note)}\n"
         "- 修正/补充：\n"
@@ -774,7 +799,7 @@ def _create_or_merge_learning_card(
     artifact_service,
     knowledge_path: str,
     *,
-    note: str,
+    card_markdown: str,
     summary: LearningNoteSummaryResult,
     language: str,
     source_ref: str,
@@ -787,20 +812,70 @@ def _create_or_merge_learning_card(
             knowledge_path,
             kind="knowledge",
             language=language,
-            body=_learning_note_body(note, summary),
+            body=_learning_note_body(card_markdown, summary),
             source_refs=[source_ref],
             origin="llm",
             edited_by="system",
             now=timestamp,
         )
         return
-    merged_body = f"{current.body.rstrip()}\n\n{_learning_note_card(note, summary)}\n"
+    merged_body = f"{current.body.rstrip()}\n\n---\n\n{card_markdown.strip()}\n"
     artifact_service.replace_body(
         knowledge_path,
         expected_revision=current.front_matter.revision,
         body=merged_body,
         edited_by="system",
         source_refs=_unique_card_items([*current.front_matter.source_refs, source_ref]),
+        now=timestamp,
+    )
+
+
+def _create_or_merge_review_status_from_learning(
+    artifact_service,
+    relative_path: str,
+    *,
+    title: str,
+    source_ref: str,
+    language: str,
+    timestamp: datetime,
+) -> None:
+    line = f"整理知识卡：{title.strip()}"
+    try:
+        current = artifact_service.read_markdown(relative_path)
+        sections = _markdown_sections(current.body)
+        recent_items = _markdown_list_items(sections.get("最近整理") or "")
+        source_refs = _unique_card_items([*current.front_matter.source_refs, source_ref])
+    except FileNotFoundError:
+        current = None
+        recent_items = []
+        source_refs = [source_ref]
+
+    recent = _unique_card_items([line, *recent_items])[:8]
+    body = (
+        "# 复习状态\n\n"
+        "## 当前重点\n\n"
+        "- 通过模拟面试暴露薄弱点后自动更新。\n\n"
+        "## 最近整理\n\n"
+        f"{_plain_bullet_list(recent)}\n"
+    )
+    if current is None:
+        artifact_service.create_markdown(
+            relative_path,
+            kind="review_status",
+            language=language,
+            body=body,
+            source_refs=source_refs,
+            origin="llm",
+            edited_by="system",
+            now=timestamp,
+        )
+        return
+    artifact_service.replace_body(
+        relative_path,
+        expected_revision=current.front_matter.revision,
+        body=body,
+        edited_by="system",
+        source_refs=source_refs,
         now=timestamp,
     )
 

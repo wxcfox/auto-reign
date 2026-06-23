@@ -33,7 +33,6 @@
   },
   "actions": {
     "save": "Save",
-    "finish": "Finish",
     "upload": "Upload",
     "start": "Start interview",
     "new_interview": "New interview",

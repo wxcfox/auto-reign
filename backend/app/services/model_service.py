@@ -522,7 +522,7 @@ class ModelService:
                     + "\n".join(
                         f"- {weakness}" for weakness in weaknesses or ["当前未记录明显薄弱项。"]
                     ),
-                    "## 复习计划\n- 针对缺失点各准备一个具体案例，并补齐关键取舍说明。",
+                    "## 复习重点\n- 针对缺失点各准备一个具体案例，并补齐关键取舍说明。",
                     "## 参考上下文\n- 内容基于本次面试轮次记录与长期记忆生成。",
                 ]
             )
@@ -541,7 +541,7 @@ class ModelService:
                     f"- {weakness}"
                     for weakness in weaknesses or ["No major weaknesses recorded."]
                 ),
-                "## Review Plan\n- Revisit feedback and prepare one concrete example per gap.",
+                "## Review Focus\n- Revisit feedback and prepare one concrete example per gap.",
                 "## Source Context\n- Generated from local interview turns and memory.",
             ]
         )

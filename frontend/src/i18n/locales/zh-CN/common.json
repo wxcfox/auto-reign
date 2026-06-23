@@ -33,7 +33,6 @@
   },
   "actions": {
     "save": "保存",
-    "finish": "结束面试",
     "upload": "上传",
     "start": "开始面试",
     "new_interview": "新面试",

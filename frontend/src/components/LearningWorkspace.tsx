@@ -40,57 +40,9 @@ function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
 }
 
 function responseToMarkdown(response: LearningNoteResponse, language: "en" | "zh-CN") {
-  const labels = language === "zh-CN"
-    ? {
-        myUnderstanding: "我的理解",
-        correction: "修正/补充",
-        interviewExpression: "30 秒面试说法",
-        confusion: "易混点",
-        followUpQuestions: "追问",
-        inboxSaved: `原始记录已保存到 ${response.source.relative_path}。`,
-        noConfusion: "暂无明确易混点，后续练习中补充。",
-      }
-    : {
-        myUnderstanding: "My understanding",
-        correction: "Correction / supplement",
-        interviewExpression: "30-second interview answer",
-        confusion: "Common confusion",
-        followUpQuestions: "Follow-up questions",
-        inboxSaved: `Original note saved to ${response.source.relative_path}.`,
-        noConfusion: "No clear confusion point yet; add one after practice.",
-      };
-  const correctionItems = uniqueItems([response.summary.summary, ...response.summary.key_points]);
-  const interviewItems = response.summary.interview_takeaways.length > 0
-    ? response.summary.interview_takeaways
-    : [response.summary.summary];
-  const followUpItems = response.summary.follow_up_questions.length > 0
-    ? response.summary.follow_up_questions
-    : [
-        language === "zh-CN"
-          ? "这个知识点在真实项目中如何落地？"
-          : "How would this topic apply in a real project?",
-      ];
-  return [
-    `# ${response.summary.title}`,
-    `### ${response.summary.title}`,
-    `- ${labels.myUnderstanding}：${labels.inboxSaved}`,
-    `- ${labels.correction}：\n${correctionItems.map((item) => `  - ${item}`).join("\n")}`,
-    `- ${labels.interviewExpression}：\n${interviewItems.map((item) => `  - ${item}`).join("\n")}`,
-    `- ${labels.confusion}：\n  - ${labels.noConfusion}`,
-    `- ${labels.followUpQuestions}：\n${followUpItems.map((item) => `  - ${item}`).join("\n")}`,
-  ].join("\n\n");
-}
-
-function uniqueItems(items: string[]) {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const stripped = item.trim();
-    if (!stripped || seen.has(stripped)) {
-      return false;
-    }
-    seen.add(stripped);
-    return true;
-  });
+  const title = response.summary.title.trim()
+    || (language === "zh-CN" ? "学习记录" : "Learning note");
+  return `# ${title}\n\n${response.card_markdown.trim()}`;
 }
 
 export function LearningWorkspace() {

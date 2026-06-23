@@ -373,12 +373,12 @@ a:focus-visible {
   transform: rotate(180deg);
 }
 
-.sidebar-user[aria-expanded="true"] .sidebar-more-chevron {
-  transform: rotate(180deg);
-}
-
 .sidebar-user {
   font: inherit;
+}
+
+.sidebar-user-chevron {
+  margin-left: auto;
 }
 
 .sidebar-settings-menu {

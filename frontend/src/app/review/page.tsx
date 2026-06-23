@@ -148,7 +148,7 @@ export default function ReviewPage() {
               <div className="tag-row">
                 <span className="tag">{recordResult.raw_artifact.relative_path}</span>
                 <span className="tag">{recordResult.high_frequency_artifact.relative_path}</span>
-                <span className="tag">{recordResult.plan_artifact.relative_path}</span>
+                <span className="tag">{recordResult.status_artifact.relative_path}</span>
               </div>
             </div>
           ) : null}

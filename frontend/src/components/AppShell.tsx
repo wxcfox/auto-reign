@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
+  ChevronUp,
   Database,
   LayoutDashboard,
   Languages,
@@ -146,6 +147,7 @@ export function AppShell({ children }: AppShellProps) {
   const nextLanguageLabel = currentLanguage === "zh-CN" ? "English" : "简体中文";
   const ThemeIcon = darkMode ? Sun : Moon;
   const SidebarIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
+  const UserMenuIcon = settingsOpen ? ChevronDown : ChevronUp;
 
   return (
     <div className="app-shell" data-sidebar-collapsed={sidebarCollapsed}>
@@ -185,6 +187,32 @@ export function AppShell({ children }: AppShellProps) {
             );
           })}
         </nav>
+        <section className="sidebar-more" aria-label={t("nav.more")}>
+          <button
+            className="sidebar-more-button"
+            type="button"
+            aria-expanded={moreOpen}
+            aria-label={t("nav.more")}
+            onClick={() => setMoreOpen((current) => !current)}
+          >
+            <MoreHorizontal size={18} aria-hidden="true" />
+            <span className="sidebar-label">{t("nav.more")}</span>
+            <ChevronDown className="sidebar-more-chevron sidebar-label" size={16} aria-hidden="true" />
+          </button>
+          <div className="sidebar-more-list" data-open={moreOpen}>
+            {secondaryNavItems.map((item) => {
+              const Icon = item.icon;
+              const active =
+                item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href);
+              return (
+                <Link href={item.href} key={item.href} data-active={active} aria-label={item.label}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span className="sidebar-label">{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
         <section className="sidebar-history" aria-labelledby="sidebar-history-heading">
           <h2 id="sidebar-history-heading">{t("nav.history")}</h2>
           {sessions.length === 0 ? (
@@ -215,32 +243,6 @@ export function AppShell({ children }: AppShellProps) {
             );
           })}
         </section>
-        <section className="sidebar-more" aria-label={t("nav.more")}>
-          <button
-            className="sidebar-more-button"
-            type="button"
-            aria-expanded={moreOpen}
-            aria-label={t("nav.more")}
-            onClick={() => setMoreOpen((current) => !current)}
-          >
-            <MoreHorizontal size={18} aria-hidden="true" />
-            <span className="sidebar-label">{t("nav.more")}</span>
-            <ChevronDown className="sidebar-more-chevron sidebar-label" size={16} aria-hidden="true" />
-          </button>
-          <div className="sidebar-more-list" data-open={moreOpen}>
-            {secondaryNavItems.map((item) => {
-              const Icon = item.icon;
-              const active =
-                item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href);
-              return (
-                <Link href={item.href} key={item.href} data-active={active} aria-label={item.label}>
-                  <Icon size={18} aria-hidden="true" />
-                  <span className="sidebar-label">{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
         <div className="app-sidebar-footer">
           <button
             aria-expanded={settingsOpen}
@@ -251,7 +253,7 @@ export function AppShell({ children }: AppShellProps) {
           >
             <UserCircle size={18} aria-hidden="true" />
             <span className="sidebar-label">{t("app.user")}</span>
-            <ChevronDown className="sidebar-more-chevron sidebar-label" size={16} aria-hidden="true" />
+            <UserMenuIcon className="sidebar-user-chevron sidebar-label" size={16} aria-hidden="true" />
           </button>
           {settingsOpen ? (
             <div className="sidebar-settings-menu">

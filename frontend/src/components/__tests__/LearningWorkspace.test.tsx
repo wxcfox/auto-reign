@@ -19,6 +19,7 @@ const learningResponse = {
   artifact: {
     id: "artifact-1",
     kind: "knowledge",
+    owner: "knowledge",
     relative_path: "knowledge/redis.md",
     display_name: "redis.md",
     revision: 1,
@@ -26,6 +27,8 @@ const learningResponse = {
     index_status: "completed",
     recovery_required: false,
     allowed_operations: ["replace_body"],
+    created_at: "2026-06-24T00:00:00Z",
+    updated_at: "2026-06-24T00:00:00Z",
   },
   summary: {
     title: "Redis cache",
@@ -34,6 +37,18 @@ const learningResponse = {
     interview_takeaways: ["Explain cache protection clearly."],
     follow_up_questions: ["How do you avoid stale cache?"],
   },
+  card_markdown: [
+    "- 我的理解：",
+    "  今天学习了 Redis 缓存穿透和布隆过滤器。",
+    "- 修正/补充：",
+    "  - Redis cache penetration and Bloom filters.",
+    "- 30 秒面试说法：",
+    "  - Explain cache protection clearly.",
+    "- 易混点：",
+    "  - 暂无明确易混点，后续练习中补充。",
+    "- 追问：",
+    "  - How do you avoid stale cache?",
+  ].join("\n"),
 };
 
 describe("LearningWorkspace", () => {

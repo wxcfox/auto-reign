@@ -20,10 +20,10 @@
   },
   "prep": {
     "eyebrow": "Current prep",
-    "title": "Current plan",
-    "empty": "After a mock interview, Auto Reign will keep the three most important prep actions here.",
+    "title": "Current focus",
+    "empty": "After practice or review, Auto Reign keeps the most useful drill focus here.",
     "start_drill": "Start drill",
-    "view_plan": "View plan"
+    "view_status": "View status"
   },
   "actions": {
     "upload_title": "Upload documents",

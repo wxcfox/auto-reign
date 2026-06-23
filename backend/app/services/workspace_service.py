@@ -175,6 +175,8 @@ class WorkspaceService:
             return "interview_record"
         if relative_path == "review/high-frequency.md":
             return "high_frequency"
+        if relative_path == "review/status.md":
+            return "review_status"
         if parts[0] == "practice":
             return "practice"
         if parts[0] == "reports":

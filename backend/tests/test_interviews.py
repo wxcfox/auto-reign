@@ -175,9 +175,9 @@ def test_create_session_reads_workspace_state_before_question_generation(
         body="# 掌握状态\n\n薄弱点：Redis 缓存击穿表达不稳定。",
     )
     artifacts.create_markdown(
-        "state/plan.md",
-        kind="plan",
-        body="# 当前计划\n\n- 用 30 秒讲清缓存击穿治理。\n",
+        "review/status.md",
+        kind="review_status",
+        body="# 复习状态\n\n## 当前重点\n\n- 用 30 秒讲清缓存击穿治理。\n",
     )
     client.post("/api/workspace/rebuild-projection")
 
@@ -218,7 +218,7 @@ def test_create_session_reads_workspace_state_before_question_generation(
     assert "字节后端" in context_text
     assert "掌握状态" in context_text
     assert "Redis 缓存击穿表达不稳定" in context_text
-    assert "当前计划" in context_text
+    assert "复习状态" in context_text
     assert "30 秒讲清缓存击穿治理" in context_text
     assert "题卡：Redis 缓存击穿" in context_text
 
@@ -419,6 +419,21 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     assert "Use mutex locks and logical expiration for cache breakdown." in context_text
     assert any("Redis cache stampede" in query for query in captured_queries)
 
+    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    kinds = {artifact["kind"] for artifact in artifacts}
+    assert {"practice", "review_status", "high_frequency"}.issubset(kinds)
+    practice = next(artifact for artifact in artifacts if artifact["kind"] == "practice")
+    practice_detail = client.get(f"/api/workspace/artifacts/{practice['id']}").json()
+    assert "I use mutex locks and logical expiration." in practice_detail["body"]
+    assert "Uses retrieved context." in practice_detail["body"]
+    status = next(artifact for artifact in artifacts if artifact["kind"] == "review_status")
+    status_detail = client.get(f"/api/workspace/artifacts/{status['id']}").json()
+    assert "## 当前重点" in status_detail["body"]
+    assert "## 最近练习" in status_detail["body"]
+    high_frequency = next(artifact for artifact in artifacts if artifact["kind"] == "high_frequency")
+    high_frequency_detail = client.get(f"/api/workspace/artifacts/{high_frequency['id']}").json()
+    assert "Redis Backend Engineer" in high_frequency_detail["body"]
+
 
 def test_weak_answer_feedback_creates_question_bank_entry(
     client: TestClient,
@@ -591,6 +606,45 @@ def test_stream_next_question_returns_delta_and_result(client: TestClient) -> No
     assert '"round_index":2' in body
 
 
+def test_next_question_accepts_empty_body_with_non_json_content_type(client: TestClient) -> None:
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I would design clear service boundaries."},
+    )
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/next-question",
+        content=b"",
+        headers={"content-type": "text/plain;charset=UTF-8"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["turn"]["round_index"] == 2
+
+
+def test_stream_next_question_accepts_empty_body_with_non_json_content_type(
+    client: TestClient,
+) -> None:
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I would design clear service boundaries."},
+    )
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/next-question/stream",
+        content=b"",
+        headers={"content-type": "text/plain;charset=UTF-8"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"round_index":2' in response.text
+
+
 def test_chinese_session_uses_chinese_question_and_feedback(client: TestClient) -> None:
     config = {**CONFIG, "language": "zh-CN", "target_role": "后端工程师", "target_company": "字节"}
     created = client.post("/api/interview-sessions", json=config)
@@ -618,7 +672,7 @@ def test_completed_session_rejects_answer(client: TestClient) -> None:
     assert response.status_code == 409
 
 
-def test_next_question_requires_answer_and_respects_target_rounds(client: TestClient) -> None:
+def test_next_question_requires_answer_but_does_not_force_finish(client: TestClient) -> None:
     config = {**CONFIG, "target_rounds": 1}
     created = client.post("/api/interview-sessions", json=config).json()
     session_id = created["session"]["id"]
@@ -631,9 +685,9 @@ def test_next_question_requires_answer_and_respects_target_rounds(client: TestCl
         f"/api/interview-sessions/{session_id}/answer",
         json={"answer": "A concrete answer."},
     )
-    target_reached = client.post(f"/api/interview-sessions/{session_id}/next-question")
-    assert target_reached.status_code == 409
-    assert target_reached.json()["detail"]["code"] == "target_rounds_reached"
+    next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
+    assert next_question.status_code == 200
+    assert next_question.json()["turn"]["round_index"] == 2
 
 
 def test_answers_cannot_be_submitted_twice(client: TestClient) -> None:

@@ -2,9 +2,7 @@
   "eyebrow": "模拟面试",
   "title": "面试",
   "not_started": "未开始",
-  "round_summary": "第 {{current}} / {{total}} 轮",
-  "setup_eyebrow": "设置",
-  "setup_title": "配置",
+  "round_current": "第 {{current}} 题",
   "target_company": "目标公司",
   "target_role": "目标岗位",
   "job_description": "职位描述",
@@ -12,7 +10,6 @@
   "mode": "模式",
   "provider": "模型提供方",
   "model": "模型",
-  "target_rounds": "目标轮数",
   "no_providers": "暂无可用提供方",
   "model_unavailable": "不可用",
   "session_eyebrow": "当前会话",
@@ -43,15 +40,8 @@
   "follow_up_feedback": "追问反馈",
   "next_question": "下一题",
   "next_question_busy": "下一题生成中...",
-  "finish_busy": "报告生成中...",
-  "report_generated": "报告已生成",
   "completed": "已完成",
-  "show_advanced": "显示高级设置",
-  "hide_advanced": "隐藏高级设置",
-  "interview_settings": "面试设置",
   "select_model": "选择模型",
-  "reset_session": "清空对话",
-  "retry_report": "重试报告",
   "error_title": "出现问题",
   "composer": {
     "label": "面试输入框",
@@ -60,9 +50,11 @@
     "start_interview": "开始面试",
     "send_answer": "发送回答",
     "send_follow_up": "发送追问回答",
+    "next_question": "继续下一题",
     "answer_placeholder": "写下你的回答...",
     "follow_up_placeholder": "回答这次追问...",
     "start_placeholder": "公司、岗位、JD 或面试重点，直接发送即可开始。",
+    "next_placeholder": "直接发送继续下一题，或写下新的出题要求...",
     "idle_placeholder": "本轮已完成。"
   },
   "streaming": {
@@ -74,21 +66,13 @@
   },
   "guidance": {
     "continue": "主回答已保存。如助手提出追问，请继续作答。",
-    "follow_up_complete": "追问反馈已生成。",
-    "final_round": "最后一轮已完成，报告将自动生成。"
-  },
-  "mode_options": {
-    "comprehensive": "综合面试",
-    "project_deep_dive": "项目深挖",
-    "knowledge_drill": "知识追问",
-    "weakness_reinforcement": "薄弱项强化"
+    "follow_up_complete": "追问反馈已生成。"
   },
   "errors": {
     "load": "加载上次配置或模型可用性失败。",
     "start": "开始面试失败。",
     "answer": "提交回答失败。",
     "follow_up": "提交追问失败。",
-    "next": "加载下一题失败。",
-    "finish": "结束面试失败。"
+    "next": "加载下一题失败。"
   }
 }

@@ -306,6 +306,54 @@ class ArtifactService:
         )
         return meta
 
+    def append_source(
+        self,
+        relative_path: str,
+        *,
+        source_filename: str,
+        media_type: str,
+        content: bytes,
+        language: str = "zh-CN",
+        uploaded_at: datetime | None = None,
+    ) -> SourceMeta:
+        path = self.workspace.resolve_path(relative_path)
+        if path.suffix.lower() not in {".md", ".txt"}:
+            raise ValueError("appendable sources must be Markdown or plain text")
+        if not path.is_relative_to(self.workspace.resolve_path("inbox")):
+            raise ValueError("appendable sources must live under inbox")
+
+        sidecar_path = path.with_name(f"{path.name}.meta.json")
+        timestamp = self._coerce_utc(uploaded_at or datetime.now(UTC))
+        artifact_id = str(uuid4())
+        if sidecar_path.exists():
+            artifact_id = SourceMeta.model_validate_json(
+                sidecar_path.read_text(encoding="utf-8")
+            ).artifact_id
+
+        existing = path.read_bytes() if path.exists() else b""
+        separator = b""
+        if existing:
+            separator = b"\n" if existing.endswith(b"\n") else b"\n\n"
+        combined = existing + separator + content
+        content_hash = hashlib.sha256(combined).hexdigest()
+        meta = SourceMeta(
+            artifact_id=artifact_id,
+            source_filename=source_filename,
+            media_type=media_type,
+            size_bytes=len(combined),
+            content_hash=content_hash,
+            uploaded_at=timestamp,
+            relative_path=self.workspace.to_relative_path(path),
+            language=language,
+        )
+        self.atomic_write_bytes(path, combined)
+        self.atomic_write_bytes(
+            sidecar_path,
+            json.dumps(self._json_ready(meta.model_dump()), ensure_ascii=False, indent=2)
+            .encode("utf-8"),
+        )
+        return meta
+
     def atomic_write_bytes(self, path: Path, content: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")

@@ -90,6 +90,10 @@ class AnswerRequest(BaseModel):
     answer: str
 
 
+class NextQuestionRequest(BaseModel):
+    intent: str = ""
+
+
 class FeedbackResponse(BaseModel):
     feedback: str
     missing_points: list[str] = Field(default_factory=list)
