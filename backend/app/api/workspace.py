@@ -21,6 +21,7 @@ from app.core.artifact_permissions import (
 from app.core.errors import bad_request
 from app.core.errors import conflict as conflict_error
 from app.core.errors import not_found
+from app.core.errors import service_unavailable
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.vector_store import VectorStoreError
@@ -182,7 +183,16 @@ def delete_artifact(
     artifact = repository.get(session, artifact_id)
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
-    active_collection = WorkspaceSettingsRepository().get_or_create(session).active_collection
+    workspace_settings = WorkspaceSettingsRepository().get_or_create(session)
+    index_service = IndexService()
+    target_collection = workspace_settings.active_collection or index_service.settings.qdrant_collection
+    try:
+        index_service.vector_store.delete_document_chunks(target_collection, artifact_id)
+    except VectorStoreError as exc:
+        raise service_unavailable(
+            "vector_delete_failed",
+            "Artifact chunks could not be removed from the vector index.",
+        ) from exc
     try:
         request.app.state.artifact_service.delete_artifact_files(
             artifact.relative_path,
@@ -196,11 +206,6 @@ def delete_artifact(
         repository,
         request.app.state.artifact_service,
     )
-    if active_collection:
-        try:
-            IndexService().vector_store.delete_document_chunks(active_collection, artifact_id)
-        except VectorStoreError:
-            pass
     return ArtifactDeleteResponse(id=artifact_id, status="deleted")
 
 

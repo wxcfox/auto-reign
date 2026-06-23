@@ -1,4 +1,7 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+from app.repositories.vector_store import VectorStoreUnavailable
 
 
 def test_workspace_status_is_initialized_on_startup(client) -> None:
@@ -231,6 +234,35 @@ def test_workspace_source_delete_removes_original_and_sidecar(client) -> None:
     assert response.status_code == 200
     assert not source_path.exists()
     assert not sidecar_path.exists()
+
+
+def test_workspace_artifact_delete_keeps_file_when_vector_delete_fails(
+    client, monkeypatch
+) -> None:
+    artifacts = client.app.state.artifact_service
+    workspace = client.app.state.workspace_service
+    artifacts.create_markdown("knowledge/keep-me.md", kind="knowledge", body="# Keep\n")
+    client.post("/api/workspace/rebuild-projection")
+    listed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    artifact_id = listed[0]["id"]
+    artifact_path = workspace.resolve_path("knowledge/keep-me.md")
+
+    class FailingVectorStore:
+        def delete_document_chunks(self, collection_name: str, document_id: str) -> None:
+            raise VectorStoreUnavailable(f"{collection_name}:{document_id}")
+
+    class FailingIndexService:
+        settings = SimpleNamespace(qdrant_collection="auto_reign_test")
+        vector_store = FailingVectorStore()
+
+    monkeypatch.setattr("app.api.workspace.IndexService", FailingIndexService)
+
+    response = client.delete(f"/api/workspace/artifacts/{artifact_id}")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "vector_delete_failed"
+    assert artifact_path.exists()
+    assert client.get(f"/api/workspace/artifacts/{artifact_id}").status_code == 200
 
 
 def test_workspace_artifact_permissions_are_enforced(client) -> None:
