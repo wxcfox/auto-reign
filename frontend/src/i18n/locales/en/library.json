@@ -4,6 +4,10 @@
   "summary": "{{count}} documents available for interview context.",
   "rebuild_index": "Rebuild index",
   "rebuild_success": "Index rebuilt.",
+  "delete_success": "File deleted.",
+  "delete_confirm": "Delete \"{{name}}\"? This removes the matching local workspace file.",
+  "edit_named": "Edit {{name}}",
+  "delete_named": "Delete {{name}}",
   "indexed_eyebrow": "Indexed material",
   "documents_title": "Documents",
   "browser_title": "Files",
@@ -24,9 +28,28 @@
   "preview_title": "Preview",
   "preview_empty": "Select a category to browse its files.",
   "file_count": "{{count}} files",
+  "table": {
+    "name": "Name",
+    "owner": "Owner",
+    "created_at": "Created",
+    "updated_at": "Updated",
+    "actions": "Actions"
+  },
+  "actions": {
+    "edit": "Edit",
+    "delete": "Delete"
+  },
   "categories": {
     "title": "Categories",
     "all": "All files"
+  },
+  "owners": {
+    "sources": "Sources",
+    "knowledge": "Knowledge",
+    "profile": "Profile",
+    "practice": "Practice",
+    "state": "State",
+    "reports": "Reports"
   },
   "kinds": {
     "source": "Sources",

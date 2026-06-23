@@ -6,7 +6,9 @@
     "user": "Local user",
     "dark_mode": "Dark mode",
     "light_mode": "Light mode",
-    "switch_language_to": "Switch to {{language}}"
+    "switch_language_to": "Switch to {{language}}",
+    "collapse_sidebar": "Collapse sidebar",
+    "expand_sidebar": "Expand sidebar"
   },
   "nav": {
     "dashboard": "Dashboard",

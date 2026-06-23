@@ -1,8 +1,5 @@
 import type {
   AnswerFeedback,
-  DocumentListResponse,
-  DocumentRecord,
-  DocumentUpdate,
   FinishInterviewResponse,
   FollowUpFeedback,
   HealthResponse,
@@ -35,19 +32,6 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
     await throwApiError(response, `Request failed with ${response.status}`);
   }
   return response.json() as Promise<T>;
-}
-
-export async function uploadDocument(file: File): Promise<DocumentRecord> {
-  const body = new FormData();
-  body.set("file", file);
-  const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
-    method: "POST",
-    body,
-  });
-  if (!response.ok) {
-    await throwApiError(response, `Upload failed with ${response.status}`);
-  }
-  return response.json() as Promise<DocumentRecord>;
 }
 
 export async function uploadMaterials(files: File[]): Promise<UploadMaterialsResponse> {
@@ -88,6 +72,14 @@ export function replaceWorkspaceArtifactBody(
   });
 }
 
+export function deleteWorkspaceArtifact(
+  artifactId: string,
+): Promise<{ id: string; status: string }> {
+  return apiJson<{ id: string; status: string }>(`/api/workspace/artifacts/${artifactId}`, {
+    method: "DELETE",
+  });
+}
+
 export function rebuildWorkspaceIndex(): Promise<{ status: string; collection: string }> {
   return apiJson<{ status: string; collection: string }>("/api/workspace/rebuild-index", {
     method: "POST",
@@ -103,30 +95,6 @@ export function recordLearningNoteStream(
     payload,
     callbacks,
   );
-}
-
-export function getDocuments(): Promise<DocumentListResponse> {
-  return apiJson<DocumentListResponse>("/api/documents");
-}
-
-export function getDocument(documentId: string): Promise<DocumentRecord> {
-  return apiJson<DocumentRecord>(`/api/documents/${documentId}`);
-}
-
-export function updateDocument(
-  documentId: string,
-  update: DocumentUpdate,
-): Promise<DocumentRecord> {
-  return apiJson<DocumentRecord>(`/api/documents/${documentId}`, {
-    method: "PATCH",
-    body: JSON.stringify(update),
-  });
-}
-
-export function reindexDocument(documentId: string): Promise<DocumentRecord> {
-  return apiJson<DocumentRecord>(`/api/documents/${documentId}/reindex`, {
-    method: "POST",
-  });
 }
 
 export function getModels(): Promise<ModelListResponse> {

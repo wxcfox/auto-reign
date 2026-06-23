@@ -70,6 +70,7 @@ export interface UploadMaterialsResponse {
 export interface WorkspaceArtifactSummary {
   id: string;
   kind: string;
+  owner: string;
   relative_path: string;
   display_name: string;
   revision: number;
@@ -77,6 +78,8 @@ export interface WorkspaceArtifactSummary {
   index_status: string;
   recovery_required: boolean;
   allowed_operations: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WorkspaceArtifactListResponse {
@@ -85,32 +88,6 @@ export interface WorkspaceArtifactListResponse {
 
 export interface WorkspaceArtifactDetail extends WorkspaceArtifactSummary {
   body: string | null;
-}
-
-export interface DocumentRecord {
-  id: string;
-  collection: string;
-  source_filename: string;
-  file_path: string;
-  file_type: "markdown" | "txt";
-  title: string;
-  summary: string;
-  tags: string[];
-  knowledge_points: string[];
-  weakness_candidates: string[];
-  analysis_status: "pending" | "completed" | "failed";
-  index_status: "pending" | "completed" | "failed";
-  created_at: string;
-  updated_at: string;
-}
-
-export type DocumentUpdate = Pick<
-  DocumentRecord,
-  "title" | "summary" | "tags" | "knowledge_points" | "weakness_candidates"
->;
-
-export interface DocumentListResponse {
-  documents: DocumentRecord[];
 }
 
 export interface InterviewConfig {

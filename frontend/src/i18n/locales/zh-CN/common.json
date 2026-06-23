@@ -6,7 +6,9 @@
     "user": "本地用户",
     "dark_mode": "深色模式",
     "light_mode": "浅色模式",
-    "switch_language_to": "切换到{{language}}"
+    "switch_language_to": "切换到{{language}}",
+    "collapse_sidebar": "收起侧边栏",
+    "expand_sidebar": "展开侧边栏"
   },
   "nav": {
     "dashboard": "总览",

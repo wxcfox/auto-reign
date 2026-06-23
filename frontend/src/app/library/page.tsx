@@ -1,13 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { FileText, Pencil, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { StatusPill } from "@/components/StatusPill";
 import { useTranslation } from "@/hooks/useTranslation";
-import { getWorkspaceArtifacts, rebuildWorkspaceIndex } from "@/lib/api";
+import {
+  deleteWorkspaceArtifact,
+  getWorkspaceArtifacts,
+  rebuildWorkspaceIndex,
+} from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type { WorkspaceArtifactSummary } from "@/lib/types";
 
@@ -24,26 +28,29 @@ const CATEGORY_ORDER = [
 ];
 
 export default function LibraryPage() {
-  const { t } = useTranslation("library");
+  const { getCurrentLanguage, t } = useTranslation("library");
   const [artifacts, setArtifacts] = useState<WorkspaceArtifactSummary[]>([]);
   const [keyword, setKeyword] = useState("");
   const [selectedKind, setSelectedKind] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  function loadArtifacts() {
+  async function loadArtifacts() {
     setLoading(true);
-    getWorkspaceArtifacts()
-      .then((response) => setArtifacts(response.artifacts))
-      .catch((loadError) =>
-        setError(getErrorMessage(loadError, t, "common:errors.generic_load")),
-      )
-      .finally(() => setLoading(false));
+    try {
+      const response = await getWorkspaceArtifacts();
+      setArtifacts(response.artifacts);
+    } catch (loadError) {
+      setError(getErrorMessage(loadError, t, "common:errors.generic_load"));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    loadArtifacts();
+    void loadArtifacts();
   }, []);
 
   const filteredArtifacts = useMemo(() => {
@@ -82,6 +89,17 @@ export default function LibraryPage() {
 
   const previewArtifact = filteredArtifacts[0] ?? null;
 
+  function formatDate(value: string) {
+    try {
+      return new Intl.DateTimeFormat(getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value));
+    } catch {
+      return value;
+    }
+  }
+
   async function handleRebuildIndex() {
     setError(null);
     setMessage(null);
@@ -91,6 +109,25 @@ export default function LibraryPage() {
       setMessage(t("rebuild_success"));
     } catch (rebuildError) {
       setError(getErrorMessage(rebuildError, t, "common:errors.generic_save"));
+    }
+  }
+
+  async function handleDelete(artifact: WorkspaceArtifactSummary) {
+    const confirmed = window.confirm(t("delete_confirm", { name: artifact.display_name }));
+    if (!confirmed) {
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    setDeletingId(artifact.id);
+    try {
+      await deleteWorkspaceArtifact(artifact.id);
+      await loadArtifacts();
+      setMessage(t("delete_success"));
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError, t, "common:errors.generic_save"));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -110,7 +147,7 @@ export default function LibraryPage() {
       </header>
 
       <section className="tool-panel library-upload-panel" aria-label={t("upload_label")}>
-        <DocumentUploader onUploaded={() => loadArtifacts()} />
+        <DocumentUploader onUploaded={() => void loadArtifacts()} />
       </section>
 
       <section className="library-browser" aria-labelledby="artifact-list-heading">
@@ -170,18 +207,63 @@ export default function LibraryPage() {
             </p>
           ) : null}
 
-          <div className="library-file-list">
+          <div className="library-table" role="table" aria-label={t("browser_title")}>
+            <div className="library-table-row library-table-head" role="row">
+              <span role="columnheader">{t("table.name")}</span>
+              <span role="columnheader">{t("table.owner")}</span>
+              <span role="columnheader">{t("table.created_at")}</span>
+              <span role="columnheader">{t("table.updated_at")}</span>
+              <span role="columnheader">{t("table.actions")}</span>
+            </div>
             {filteredArtifacts.map((artifact) => (
-              <Link className="library-file-row" href={`/library/${artifact.id}`} key={artifact.id}>
-                <div>
-                  <p className="document-source">{t(`kinds.${artifact.kind}`, artifact.kind)}</p>
-                  <h3>{artifact.display_name}</h3>
+              <div className="library-table-row" key={artifact.id} role="row">
+                <div className="library-file-name" role="cell">
+                  <span className="library-file-icon" aria-hidden="true">
+                    <FileText size={18} />
+                  </span>
+                  <div>
+                    <Link href={`/library/${artifact.id}`}>{artifact.display_name}</Link>
+                    <span>{t(`kinds.${artifact.kind}`, artifact.kind)}</span>
+                  </div>
+                  <StatusPill
+                    label={
+                      artifact.recovery_required
+                        ? t("common:states.checking")
+                        : artifact.index_status
+                    }
+                    tone={artifact.recovery_required ? "warning" : "success"}
+                  />
                 </div>
-                <StatusPill
-                  label={artifact.recovery_required ? t("common:states.checking") : artifact.processing_status}
-                  tone={artifact.recovery_required ? "warning" : "success"}
-                />
-              </Link>
+                <span className="library-muted-cell" role="cell">
+                  {t(`owners.${artifact.owner}`, artifact.owner)}
+                </span>
+                <time className="library-muted-cell" dateTime={artifact.created_at} role="cell">
+                  {formatDate(artifact.created_at)}
+                </time>
+                <time className="library-muted-cell" dateTime={artifact.updated_at} role="cell">
+                  {formatDate(artifact.updated_at)}
+                </time>
+                <div className="library-actions" role="cell">
+                  <Link
+                    aria-label={t("edit_named", { name: artifact.display_name })}
+                    className="library-action-button"
+                    href={`/library/${artifact.id}`}
+                  >
+                    <Pencil size={15} aria-hidden="true" />
+                    <span>{t("actions.edit")}</span>
+                  </Link>
+                  <button
+                    aria-label={t("delete_named", { name: artifact.display_name })}
+                    className="library-action-button library-action-danger"
+                    disabled={deletingId === artifact.id}
+                    onClick={() => void handleDelete(artifact)}
+                    type="button"
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                    <span>{t("actions.delete")}</span>
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -194,6 +276,9 @@ export default function LibraryPage() {
           {previewArtifact ? (
             <div className="library-preview-meta">
               <span className="tag">{t(`kinds.${previewArtifact.kind}`, previewArtifact.kind)}</span>
+              <span className="tag">
+                {t(`owners.${previewArtifact.owner}`, previewArtifact.owner)}
+              </span>
               <span className="tag">{previewArtifact.index_status}</span>
               <span className="tag">{t("revision", { value: previewArtifact.revision })}</span>
               <span className="tag">
