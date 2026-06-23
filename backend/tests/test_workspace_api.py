@@ -1,3 +1,6 @@
+from pathlib import Path
+
+
 def test_workspace_status_is_initialized_on_startup(client) -> None:
     response = client.get("/api/workspace")
 
@@ -142,6 +145,22 @@ def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch
     kinds = {artifact["kind"] for artifact in artifacts}
     assert {"source", "knowledge"}.issubset(kinds)
     assert len(calls) == 1
+
+
+def test_learning_note_stream_prompt_uses_requested_language_headings() -> None:
+    prompt = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "prompts"
+        / "learning_note_summary_stream.md"
+    ).read_text(encoding="utf-8")
+
+    assert "language == \"zh-CN\"" in prompt
+    assert "## 摘要" in prompt
+    assert "## 关键点" in prompt
+    assert "## 面试表达" in prompt
+    assert "## 可追问问题" in prompt
+    assert "## Summary" in prompt
 
 
 def test_workspace_artifact_read_and_replace_body(client) -> None:

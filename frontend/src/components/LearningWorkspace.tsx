@@ -39,25 +39,39 @@ function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
   );
 }
 
-function responseToMarkdown(response: LearningNoteResponse) {
+function responseToMarkdown(response: LearningNoteResponse, language: "en" | "zh-CN") {
+  const headings = language === "zh-CN"
+    ? {
+        summary: "摘要",
+        keyPoints: "关键点",
+        interviewExpression: "面试表达",
+        followUpQuestions: "可追问问题",
+      }
+    : {
+        summary: "Summary",
+        keyPoints: "Key points",
+        interviewExpression: "Interview expression",
+        followUpQuestions: "Follow-up questions",
+      };
   const sections = [
     `# ${response.summary.title}`,
-    `## Summary\n\n${response.summary.summary}`,
+    `## ${headings.summary}\n\n${response.summary.summary}`,
   ];
   if (response.summary.key_points.length > 0) {
     sections.push(
-      "## Key points\n\n" + response.summary.key_points.map((point) => `- ${point}`).join("\n"),
+      `## ${headings.keyPoints}\n\n`
+        + response.summary.key_points.map((point) => `- ${point}`).join("\n"),
     );
   }
   if (response.summary.interview_takeaways.length > 0) {
     sections.push(
-      "## Interview expression\n\n"
+      `## ${headings.interviewExpression}\n\n`
         + response.summary.interview_takeaways.map((item) => `- ${item}`).join("\n"),
     );
   }
   if (response.summary.follow_up_questions.length > 0) {
     sections.push(
-      "## Follow-up questions\n\n"
+      `## ${headings.followUpQuestions}\n\n`
         + response.summary.follow_up_questions.map((item) => `- ${item}`).join("\n"),
     );
   }
@@ -134,6 +148,7 @@ export function LearningWorkspace() {
       return;
     }
 
+    const responseLanguage = getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en";
     let streamed = "";
     const userMessage: LearningMessage = {
       id: `user-${Date.now()}`,
@@ -150,7 +165,7 @@ export function LearningWorkspace() {
       const response = await recordLearningNoteStream(
         {
           text,
-          language: getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en",
+          language: responseLanguage,
           provider: selectedProvider,
           model: selectedModel,
         },
@@ -167,7 +182,7 @@ export function LearningWorkspace() {
           id: `assistant-${Date.now()}`,
           tone: "assistant",
           meta: t("summary_meta"),
-          content: streamed || responseToMarkdown(response),
+          content: responseToMarkdown(response, responseLanguage),
           artifactPath: response.artifact.relative_path,
         },
       ]);

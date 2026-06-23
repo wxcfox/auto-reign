@@ -5,17 +5,18 @@ import {
   ChevronDown,
   Database,
   LayoutDashboard,
+  Languages,
   MessageSquareText,
   MoreHorizontal,
   Moon,
   PencilLine,
   Plus,
+  Sun,
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslation } from "@/hooks/useTranslation";
 import { listInterviewSessions } from "@/lib/api";
 import { INTERVIEW_SESSIONS_CHANGED_EVENT } from "@/lib/interview-events";
@@ -25,12 +26,34 @@ type AppShellProps = {
   children: ReactNode;
 };
 
+function readPreferredDarkMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.localStorage?.getItem("preferred-theme") === "dark";
+  } catch {
+    return false;
+  }
+}
+
+function writePreferredTheme(darkMode: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage?.setItem("preferred-theme", darkMode ? "dark" : "light");
+  } catch {
+    // Theme changes should still work in restricted storage environments.
+  }
+}
+
 export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
-  const { t } = useTranslation("common");
+  const { changeLanguage, getCurrentLanguage, t } = useTranslation("common");
   const [sessions, setSessions] = useState<InterviewSessionHistoryItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const sessionRefreshId = useRef(0);
   const primaryNavItems = [
     { href: "/library", label: t("nav.library"), icon: Database },
@@ -74,6 +97,7 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    writePreferredTheme(darkMode);
   }, [darkMode]);
 
   function sessionTitle(item: InterviewSessionHistoryItem) {
@@ -87,6 +111,11 @@ export function AppShell({ children }: AppShellProps) {
       .join(" ");
     return structured || t("nav.untitled_session");
   }
+
+  const currentLanguage = getCurrentLanguage();
+  const nextLanguage = currentLanguage === "zh-CN" ? "en" : "zh-CN";
+  const nextLanguageLabel = currentLanguage === "zh-CN" ? "English" : "简体中文";
+  const ThemeIcon = darkMode ? Sun : Moon;
 
   return (
     <div className="app-shell">
@@ -185,16 +214,24 @@ export function AppShell({ children }: AppShellProps) {
           </button>
           {settingsOpen ? (
             <div className="sidebar-settings-menu">
-              <LanguageSwitcher />
-              <label className="sidebar-settings-row">
-                <Moon size={17} aria-hidden="true" />
-                <span>{t("app.dark_mode")}</span>
-                <input
-                  checked={darkMode}
-                  onChange={(event) => setDarkMode(event.target.checked)}
-                  type="checkbox"
-                />
-              </label>
+              <button
+                aria-label={t("app.switch_language_to", { language: nextLanguageLabel })}
+                className="sidebar-settings-action"
+                onClick={() => changeLanguage(nextLanguage)}
+                type="button"
+              >
+                <Languages size={17} aria-hidden="true" />
+                <span>{nextLanguageLabel}</span>
+              </button>
+              <button
+                aria-label={darkMode ? t("app.light_mode") : t("app.dark_mode")}
+                className="sidebar-settings-action"
+                onClick={() => setDarkMode((current) => !current)}
+                type="button"
+              >
+                <ThemeIcon size={17} aria-hidden="true" />
+                <span>{darkMode ? t("app.light_mode") : t("app.dark_mode")}</span>
+              </button>
             </div>
           ) : null}
         </div>

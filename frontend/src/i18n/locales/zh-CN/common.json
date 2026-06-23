@@ -4,7 +4,9 @@
     "language": "语言",
     "settings": "设置",
     "user": "本地用户",
-    "dark_mode": "深色模式"
+    "dark_mode": "深色模式",
+    "light_mode": "浅色模式",
+    "switch_language_to": "切换到{{language}}"
   },
   "nav": {
     "dashboard": "总览",

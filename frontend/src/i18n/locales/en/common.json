@@ -4,7 +4,9 @@
     "language": "Language",
     "settings": "Settings",
     "user": "Local user",
-    "dark_mode": "Dark mode"
+    "dark_mode": "Dark mode",
+    "light_mode": "Light mode",
+    "switch_language_to": "Switch to {{language}}"
   },
   "nav": {
     "dashboard": "Dashboard",
