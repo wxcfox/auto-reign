@@ -18,6 +18,10 @@ does not preserve existing runtime data formats. Contributors implementing the
 redesign must first create a phased plan from the specification and keep the
 application runnable at each phase boundary.
 
+See [docs/README.md](docs/README.md) for the documentation map and lifecycle
+rules. Completed implementation plans should not remain in the repository unless
+their durable decisions have been promoted into canonical docs.
+
 Auto Reign ingests Markdown, TXT, PDF, DOCX, and free-form learning notes into a
 local workspace, indexes searchable chunks in Qdrant, runs written mock
 interviews in a chat-style flow, and stores interview history and review memory
