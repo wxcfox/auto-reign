@@ -60,7 +60,7 @@ describe("LibraryPage", () => {
   });
 
   it("groups library files by category before showing table rows", async () => {
-    render(<LibraryPage />);
+    const { container } = render(<LibraryPage />);
 
     expect(await screen.findByRole("button", { name: /Knowledge cards\s+1/i })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Name/i })).toBeInTheDocument();
@@ -74,6 +74,9 @@ describe("LibraryPage", () => {
     fireEvent.click(sources);
 
     expect(screen.getAllByText("resume.md").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "resume.md" })).toHaveAttribute("title", "resume.md");
+    expect(container.querySelector(".library-table-scroll")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Preview/i)).not.toBeInTheDocument();
     expect(screen.queryByText("229ca53a-resume.md")).not.toBeInTheDocument();
     expect(screen.queryByText("knowledge/redis.md")).not.toBeInTheDocument();
   });
