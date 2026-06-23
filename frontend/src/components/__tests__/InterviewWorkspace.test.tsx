@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InterviewWorkspace } from "../InterviewWorkspace";
 import {
   createInterviewSessionStream,
+  finishInterviewStream,
+  getInterviewSession,
   getLastInterviewConfig,
   getModels,
   nextQuestionStream,
@@ -16,6 +18,8 @@ vi.mock("@/lib/api", () => ({
   createInterviewSession: vi.fn(),
   createInterviewSessionStream: vi.fn(),
   finishInterview: vi.fn(),
+  finishInterviewStream: vi.fn(),
+  getInterviewSession: vi.fn(),
   getLastInterviewConfig: vi.fn(),
   getModels: vi.fn(),
   nextQuestion: vi.fn(),
@@ -91,6 +95,18 @@ describe("InterviewWorkspace", () => {
     });
     vi.mocked(getLastInterviewConfig).mockResolvedValue(baseConfig);
     vi.mocked(saveLastInterviewConfig).mockResolvedValue(baseConfig);
+    vi.mocked(getInterviewSession).mockRejectedValue(new Error("not used"));
+    vi.mocked(finishInterviewStream).mockResolvedValue({
+      session: { ...baseSession, status: "completed", ended_at: "2026-06-23T00:10:00Z" },
+      report: {
+        id: "report-1",
+        session_id: "session-1",
+        report_path: "reports/session-1.md",
+        summary: "Backend Engineer interview for OpenAI",
+        weaknesses: [],
+        created_at: "2026-06-23T00:10:00Z",
+      },
+    });
     vi.mocked(submitFollowUpAnswerStream).mockResolvedValue({
       feedback: "Follow-up feedback",
       missing_points: [],
@@ -226,6 +242,124 @@ describe("InterviewWorkspace", () => {
     expect(screen.getByText(/I would monitor stale reads/i)).toBeInTheDocument();
     expect(screen.getByText("Follow-up feedback.")).toBeInTheDocument();
     expect(nextQuestionStream).toHaveBeenCalledWith("session-1", expect.any(Object));
+  });
+
+  it("automatically streams the next question when the model does not ask a follow-up", async () => {
+    vi.mocked(getLastInterviewConfig).mockResolvedValue({ ...baseConfig, target_rounds: 2 });
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
+      session: { ...baseSession, current_round: 1 },
+      turn: firstTurn,
+    });
+    vi.mocked(submitAnswerStream).mockResolvedValue({
+      feedback: "Good answer; no follow-up needed.",
+      missing_points: [],
+      follow_up_question: "",
+      weaknesses: [],
+      review_suggestions: [],
+    });
+    vi.mocked(nextQuestionStream).mockImplementation(async (_sessionId, handlers) => {
+      handlers.onDelta(secondTurn.question);
+      return {
+        session: { ...baseSession, current_round: 2 },
+        turn: secondTurn,
+      };
+    });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I would use TTLs and cache metrics." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
+
+    expect(await screen.findByText(secondTurn.question)).toBeInTheDocument();
+    expect(screen.getByText(firstTurn.question)).toBeInTheDocument();
+    expect(nextQuestionStream).toHaveBeenCalledWith("session-1", expect.any(Object));
+  });
+
+  it("automatically finishes the final round and renders the streamed report in the chat", async () => {
+    vi.mocked(getLastInterviewConfig).mockResolvedValue({ ...baseConfig, target_rounds: 1 });
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
+      session: { ...baseSession, current_round: 1 },
+      turn: firstTurn,
+    });
+    vi.mocked(submitAnswerStream).mockResolvedValue({
+      feedback: "Final feedback.",
+      missing_points: [],
+      follow_up_question: "",
+      weaknesses: [],
+      review_suggestions: [],
+    });
+    vi.mocked(finishInterviewStream).mockImplementation(async (_sessionId, handlers) => {
+      handlers.onDelta("Backend Engineer interview for OpenAI");
+      return {
+        session: { ...baseSession, status: "completed", ended_at: "2026-06-23T00:10:00Z" },
+        report: {
+          id: "report-1",
+          session_id: "session-1",
+          report_path: "reports/session-1.md",
+          summary: "Backend Engineer interview for OpenAI",
+          weaknesses: [],
+          created_at: "2026-06-23T00:10:00Z",
+        },
+      };
+    });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I would give a concise final answer." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
+
+    expect(await screen.findByText(/Backend Engineer interview for OpenAI/i)).toBeInTheDocument();
+    expect(finishInterviewStream).toHaveBeenCalledWith("session-1", expect.any(Object));
+    expect(screen.queryByText(/Continue to the next question/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Finish/i })).not.toBeInTheDocument();
+  });
+
+  it("loads an existing active interview session from history", async () => {
+    vi.mocked(getInterviewSession).mockResolvedValue({
+      session: baseSession,
+      config: baseConfig,
+      turns: [
+        {
+          ...firstTurn,
+          answer: "I would use Redis with careful invalidation.",
+          feedback: "Good detail.",
+        },
+      ],
+    });
+
+    render(<InterviewWorkspace sessionId="session-1" />);
+
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    expect(screen.getByText(/I would use Redis/i)).toBeInTheDocument();
+    expect(screen.getByText(/Good detail/i)).toBeInTheDocument();
+    expect(getInterviewSession).toHaveBeenCalledWith("session-1");
+  });
+
+  it("loads a completed interview from history without enabling new chat input", async () => {
+    vi.mocked(getInterviewSession).mockResolvedValue({
+      session: { ...baseSession, status: "completed", ended_at: "2026-06-23T00:10:00Z" },
+      config: baseConfig,
+      turns: [
+        {
+          ...firstTurn,
+          answer: "I would use Redis with careful invalidation.",
+          feedback: "Good detail.",
+        },
+      ],
+    });
+
+    render(<InterviewWorkspace sessionId="session-1" />);
+
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Message Auto Reign/i)).toBeDisabled();
   });
 
   it("shows an assistant loading state while feedback is being generated", async () => {

@@ -69,6 +69,15 @@ class InterviewSessionRepository:
     def get(self, session: Session, session_id: str) -> models.InterviewSession | None:
         return session.get(models.InterviewSession, session_id)
 
+    def list_recent(self, session: Session, limit: int = 50) -> list[models.InterviewSession]:
+        return list(
+            session.scalars(
+                select(models.InterviewSession)
+                .order_by(models.InterviewSession.started_at.desc())
+                .limit(limit)
+            )
+        )
+
 
 class InterviewTurnRepository:
     def add(self, session: Session, turn: models.InterviewTurn) -> models.InterviewTurn:

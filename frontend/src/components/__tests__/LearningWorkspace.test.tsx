@@ -19,6 +19,7 @@ const learningResponse = {
     id: "artifact-1",
     kind: "knowledge",
     relative_path: "knowledge/redis.md",
+    display_name: "redis.md",
     revision: 1,
     processing_status: "completed",
     index_status: "completed",

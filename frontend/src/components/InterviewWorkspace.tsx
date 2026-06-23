@@ -8,7 +8,6 @@ import {
   RotateCcw,
   Send,
   Settings2,
-  Square,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -16,7 +15,8 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   createInterviewSessionStream,
-  finishInterview,
+  finishInterviewStream,
+  getInterviewSession,
   getLastInterviewConfig,
   getModels,
   nextQuestionStream,
@@ -51,7 +51,7 @@ const defaultConfig: InterviewConfig = {
 type ComposerMode = "start" | "answer" | "follow-up" | "idle";
 
 type StreamingDraft = {
-  kind: "question" | "feedback" | "follow-up-feedback";
+  kind: "question" | "feedback" | "follow-up-feedback" | "report";
   meta: string;
   text: string;
   turnId?: string;
@@ -82,7 +82,11 @@ function updateTurn(
   return turns.map((item) => (item.id === turnId ? updater(item) : item));
 }
 
-export function InterviewWorkspace() {
+type InterviewWorkspaceProps = {
+  sessionId?: string;
+};
+
+export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) {
   const { t, getCurrentLanguage, i18n } = useTranslation("interview");
   const [config, setConfig] = useState<InterviewConfig>(defaultConfig);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
@@ -114,63 +118,107 @@ export function InterviewWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([getModels(), getLastInterviewConfig()]).then(([modelsResult, configResult]) => {
-      if (cancelled) {
-        return;
-      }
-
-      const availableProviders =
-        modelsResult.status === "fulfilled" ? modelsResult.value.providers : [];
-
-      if (modelsResult.status === "fulfilled") {
-        setProviders(availableProviders);
-      }
-      if (configResult.status === "fulfilled") {
-        const { id: _id, is_last_used: _isLastUsed, updated_at: _updatedAt, ...lastConfig } =
-          configResult.value;
-        const matchedProvider = availableProviders.find(
-          (provider) => provider.provider === lastConfig.chat_model_provider,
-        );
-        if (matchedProvider?.models.includes(lastConfig.chat_model)) {
-          setConfig(lastConfig);
-        } else if (availableProviders.length > 0) {
-          setConfig((current) => ({
-            ...current,
-            ...lastConfig,
-            chat_model_provider: availableProviders[0].provider,
-            chat_model: availableProviders[0].models[0] ?? "",
-          }));
-        } else {
-          setConfig(lastConfig);
+    const configPromise = sessionId ? Promise.resolve(null) : getLastInterviewConfig();
+    Promise.allSettled([getModels(), configPromise]).then(
+      ([modelsResult, configResult]) => {
+        if (cancelled) {
+          return;
         }
-      } else if (availableProviders.length > 0) {
-        setConfig((current) => {
+
+        const availableProviders =
+          modelsResult.status === "fulfilled" ? modelsResult.value.providers : [];
+
+        if (modelsResult.status === "fulfilled") {
+          setProviders(availableProviders);
+        }
+        if (configResult.status === "fulfilled" && configResult.value) {
+          const { id: _id, is_last_used: _isLastUsed, updated_at: _updatedAt, ...lastConfig } =
+            configResult.value;
           const matchedProvider = availableProviders.find(
-            (provider) => provider.provider === current.chat_model_provider,
+            (provider) => provider.provider === lastConfig.chat_model_provider,
           );
-          if (matchedProvider?.models.includes(current.chat_model)) {
-            return current;
+          if (matchedProvider?.models.includes(lastConfig.chat_model)) {
+            setConfig(lastConfig);
+          } else if (availableProviders.length > 0) {
+            setConfig((current) => ({
+              ...current,
+              ...lastConfig,
+              chat_model_provider: availableProviders[0].provider,
+              chat_model: availableProviders[0].models[0] ?? "",
+            }));
+          } else {
+            setConfig(lastConfig);
           }
-          return {
-            ...current,
-            chat_model_provider: availableProviders[0].provider,
-            chat_model: availableProviders[0].models[0] ?? "",
-          };
-        });
-      }
-      if (modelsResult.status === "rejected" || configResult.status === "rejected") {
-        const rejection = modelsResult.status === "rejected"
-          ? modelsResult.reason
-          : configResult.status === "rejected"
-            ? configResult.reason
-            : null;
-        setError(getErrorMessage(rejection, t, "interview:errors.load"));
-      }
-    });
+        } else if (availableProviders.length > 0 && !sessionId) {
+          setConfig((current) => {
+            const matchedProvider = availableProviders.find(
+              (provider) => provider.provider === current.chat_model_provider,
+            );
+            if (matchedProvider?.models.includes(current.chat_model)) {
+              return current;
+            }
+            return {
+              ...current,
+              chat_model_provider: availableProviders[0].provider,
+              chat_model: availableProviders[0].models[0] ?? "",
+            };
+          });
+        }
+        if (modelsResult.status === "rejected" || configResult.status === "rejected") {
+          const rejection = modelsResult.status === "rejected"
+            ? modelsResult.reason
+            : configResult.status === "rejected"
+              ? configResult.reason
+              : null;
+          setError(getErrorMessage(rejection, t, "interview:errors.load"));
+        }
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionId, t]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+    let cancelled = false;
+    setBusyAction("load");
+    setError(null);
+    getInterviewSession(sessionId)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+        const {
+          id: _id,
+          is_last_used: _isLastUsed,
+          updated_at: _updatedAt,
+          ...loadedConfig
+        } = detail.config;
+        setConfig(loadedConfig);
+        setSession(detail.session);
+        setTurns(detail.turns);
+        setReport(null);
+        setOpeningContext(loadedConfig.extra_prompt.trim() || null);
+        setComposerValue("");
+        setStreamingDraft(null);
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(getErrorMessage(loadError, t, "interview:errors.load"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBusyAction(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, t]);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -267,6 +315,7 @@ export function InterviewWorkspace() {
     if (!session || !currentTurn || !composerValue.trim()) {
       return;
     }
+    const activeSession = session;
     const submittedAnswer = composerValue.trim();
     setComposerValue("");
     setBusyAction("answer");
@@ -288,6 +337,13 @@ export function InterviewWorkspace() {
         onDelta: appendStreamingDelta,
       });
       applyMainFeedback(currentTurn.id, response);
+      if (!response.follow_up_question.trim()) {
+        if (activeSession.current_round >= config.target_rounds) {
+          await handleFinish(activeSession);
+        } else {
+          await handleNextQuestion(activeSession);
+        }
+      }
     } catch (answerError) {
       setError(getErrorMessage(answerError, t, "interview:errors.answer"));
     } finally {
@@ -313,6 +369,7 @@ export function InterviewWorkspace() {
     if (!session || !currentTurn || !composerValue.trim()) {
       return;
     }
+    const activeSession = session;
     const submittedAnswer = composerValue.trim();
     setComposerValue("");
     setBusyAction("follow-up");
@@ -334,8 +391,10 @@ export function InterviewWorkspace() {
         onDelta: appendStreamingDelta,
       });
       applyFollowUpFeedback(currentTurn.id, response);
-      if (session.current_round < config.target_rounds) {
-        await handleNextQuestion();
+      if (activeSession.current_round < config.target_rounds) {
+        await handleNextQuestion(activeSession);
+      } else {
+        await handleFinish(activeSession);
       }
     } catch (followUpError) {
       setError(getErrorMessage(followUpError, t, "interview:errors.follow_up"));
@@ -357,19 +416,19 @@ export function InterviewWorkspace() {
     );
   }
 
-  async function handleNextQuestion() {
-    if (!session) {
+  async function handleNextQuestion(activeSession = session) {
+    if (!activeSession) {
       return;
     }
     setBusyAction("next");
     setError(null);
     setStreamingDraft({
       kind: "question",
-      meta: t("question", { index: session.current_round + 1 }),
+      meta: t("question", { index: activeSession.current_round + 1 }),
       text: "",
     });
     try {
-      const response = await nextQuestionStream(session.id, {
+      const response = await nextQuestionStream(activeSession.id, {
         onDelta: appendStreamingDelta,
       });
       setSession(response.session);
@@ -383,19 +442,27 @@ export function InterviewWorkspace() {
     }
   }
 
-  async function handleFinish() {
-    if (!session) {
+  async function handleFinish(activeSession = session) {
+    if (!activeSession) {
       return;
     }
     setBusyAction("finish");
     setError(null);
+    setStreamingDraft({
+      kind: "report",
+      meta: t("report_generated"),
+      text: "",
+    });
     try {
-      const response = await finishInterview(session.id);
+      const response = await finishInterviewStream(activeSession.id, {
+        onDelta: appendStreamingDelta,
+      });
       setSession(response.session);
       setReport(response.report);
     } catch (finishError) {
       setError(getErrorMessage(finishError, t, "interview:errors.finish"));
     } finally {
+      setStreamingDraft(null);
       setBusyAction(null);
     }
   }
@@ -540,6 +607,11 @@ export function InterviewWorkspace() {
                 <p>{streamingDraft.text}</p>
               </ChatMessage>
             ) : null}
+            {streamingDraft?.kind === "report" && streamingDraft.text ? (
+              <ChatMessage meta={streamingDraft.meta}>
+                <p>{streamingDraft.text}</p>
+              </ChatMessage>
+            ) : null}
           </div>
         )}
 
@@ -569,11 +641,8 @@ export function InterviewWorkspace() {
         ) : null}
 
         {report ? (
-          <ChatMessage meta={t("report_generated")} tone="system">
-            <div className="completion-inline">
-              <CheckCircle2 aria-hidden="true" size={18} />
-              <p>{report.summary}</p>
-            </div>
+          <ChatMessage meta={t("report_generated")} tone="assistant">
+            <p>{report.summary}</p>
           </ChatMessage>
         ) : null}
       </div>
@@ -736,15 +805,6 @@ export function InterviewWorkspace() {
             >
               <RotateCcw aria-hidden="true" size={17} />
               {t("reset_session")}
-            </button>
-            <button
-              className="button button-danger"
-              disabled={Boolean(busyAction) || session?.status !== "active"}
-              onClick={() => void handleFinish()}
-              type="button"
-            >
-              <Square aria-hidden="true" size={15} />
-              {busyAction === "finish" ? t("finish_busy") : t("common:actions.finish")}
             </button>
           </div>
         </section>

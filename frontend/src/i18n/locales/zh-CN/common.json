@@ -3,14 +3,19 @@
     "title": "Auto Reign",
     "language": "语言",
     "settings": "设置",
-    "user": "本地用户"
+    "user": "本地用户",
+    "dark_mode": "深色模式"
   },
   "nav": {
     "dashboard": "总览",
+    "workbench": "工作台",
     "library": "资料库",
     "interview": "面试",
     "review": "复盘",
     "more": "更多",
+    "history": "历史对话",
+    "empty_history": "暂无面试记录",
+    "untitled_session": "未命名面试",
     "recent_sessions": "最近",
     "current_session": "当前面试",
     "latest_review": "最近复盘"
@@ -27,7 +32,7 @@
     "finish": "结束面试",
     "upload": "上传",
     "start": "开始面试",
-    "new_interview": "新建面试",
+    "new_interview": "新面试",
     "new_learning": "新学习",
     "open_report": "打开报告",
     "save_and_reindex": "保存并重建索引",

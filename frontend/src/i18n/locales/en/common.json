@@ -3,14 +3,19 @@
     "title": "Auto Reign",
     "language": "Language",
     "settings": "Settings",
-    "user": "Local user"
+    "user": "Local user",
+    "dark_mode": "Dark mode"
   },
   "nav": {
     "dashboard": "Dashboard",
+    "workbench": "Workbench",
     "library": "Library",
     "interview": "Interview",
     "review": "Review",
     "more": "More",
+    "history": "History",
+    "empty_history": "No interviews yet",
+    "untitled_session": "Untitled interview",
     "recent_sessions": "Recent",
     "current_session": "Current interview",
     "latest_review": "Latest review"

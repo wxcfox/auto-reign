@@ -31,6 +31,28 @@ def test_workspace_upload_materials_endpoint(client) -> None:
     assert status["artifact_count"] == 2
 
 
+def test_workspace_artifacts_include_source_display_name(client) -> None:
+    client.app.state.artifact_service.create_markdown(
+        "knowledge/redis.md",
+        kind="knowledge",
+        body="# Redis\n",
+    )
+    client.post("/api/workspace/rebuild-projection")
+    upload = client.post(
+        "/api/workspace/materials/upload",
+        files={"files": ("resume-final.md", b"# Resume\n\nBackend work", "text/markdown")},
+    )
+    assert upload.status_code == 200
+
+    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    source = next(artifact for artifact in artifacts if artifact["kind"] == "source")
+    knowledge = next(artifact for artifact in artifacts if artifact["kind"] == "knowledge")
+
+    assert source["display_name"] == "resume-final.md"
+    assert source["relative_path"].startswith(f"sources/documents/{source['id']}-")
+    assert knowledge["display_name"] == knowledge["relative_path"].split("/")[-1]
+
+
 def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch) -> None:
     calls: list[tuple[object, object, object]] = []
 
