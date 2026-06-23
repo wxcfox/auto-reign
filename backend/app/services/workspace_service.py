@@ -21,11 +21,16 @@ class WorkspaceService:
     def initialize(self, *, language: str = "zh-CN") -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
         for relative in (
+            "inbox",
             "sources/documents",
             "sources/extracted",
             "profile",
             "knowledge",
+            "questions",
+            "projects",
+            "raw",
             "practice",
+            "review",
             "state",
             "reports",
             "archive",
@@ -68,33 +73,34 @@ class WorkspaceService:
         existing_by_path = {artifact.relative_path: artifact for artifact in repository.list(session)}
         scanned_paths: set[str] = set()
 
-        for sidecar_path in sorted((self.root / "sources" / "documents").glob("*.meta.json")):
-            source = SourceMeta.model_validate_json(sidecar_path.read_text(encoding="utf-8"))
-            source_path = self.resolve_path(source.relative_path)
-            if not source_path.exists():
-                continue
-            scanned_paths.add(source.relative_path)
-            repository.upsert(
-                session,
-                artifact_id=source.artifact_id,
-                kind="source",
-                relative_path=source.relative_path,
-                content_hash=source.content_hash,
-                revision=1,
-                processing_status="completed",
-                index_status=self._next_index_status(
-                    existing_by_path.get(source.relative_path), source.content_hash
-                ),
-                language=source.language,
-                source_filename=source.source_filename,
-                media_type=source.media_type,
-                size_bytes=source.size_bytes,
-                origin="human",
-                edited_by="user",
-                uploaded_at=source.uploaded_at,
-                created_at=source.uploaded_at,
-                updated_at=source.uploaded_at,
-            )
+        for source_dir in (self.root / "inbox", self.root / "sources" / "documents"):
+            for sidecar_path in sorted(source_dir.glob("*.meta.json")):
+                source = SourceMeta.model_validate_json(sidecar_path.read_text(encoding="utf-8"))
+                source_path = self.resolve_path(source.relative_path)
+                if not source_path.exists():
+                    continue
+                scanned_paths.add(source.relative_path)
+                repository.upsert(
+                    session,
+                    artifact_id=source.artifact_id,
+                    kind="source",
+                    relative_path=source.relative_path,
+                    content_hash=source.content_hash,
+                    revision=1,
+                    processing_status="completed",
+                    index_status=self._next_index_status(
+                        existing_by_path.get(source.relative_path), source.content_hash
+                    ),
+                    language=source.language,
+                    source_filename=source.source_filename,
+                    media_type=source.media_type,
+                    size_bytes=source.size_bytes,
+                    origin="human",
+                    edited_by="user",
+                    uploaded_at=source.uploaded_at,
+                    created_at=source.uploaded_at,
+                    updated_at=source.uploaded_at,
+                )
 
         for markdown_path in sorted(self.root.rglob("*.md")):
             relative_path = self.to_relative_path(markdown_path)
@@ -161,6 +167,14 @@ class WorkspaceService:
             return "plan"
         if parts[0] == "knowledge":
             return "knowledge"
+        if parts[0] == "questions":
+            return "question_bank"
+        if parts[0] == "projects":
+            return "project"
+        if parts[0] == "raw":
+            return "interview_record"
+        if relative_path == "review/high-frequency.md":
+            return "high_frequency"
         if parts[0] == "practice":
             return "practice"
         if parts[0] == "reports":

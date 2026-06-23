@@ -192,6 +192,11 @@ describe("InterviewWorkspace", () => {
         follow_up_question: "How would you handle stale data?",
         weaknesses: ["Needs operational detail"],
         review_suggestions: ["Prepare one production cache incident"],
+        better_answer: "I would explain cache stampede with mutex locks and logical expiration.",
+        mastery_change: "basic",
+        should_write_weakness: true,
+        should_write_high_frequency: true,
+        tested_points: ["Cache stampede", "Operational tradeoffs"],
       };
     });
     vi.mocked(submitFollowUpAnswerStream).mockImplementation(async (_sessionId, _answer, handlers) => {
@@ -229,6 +234,10 @@ describe("InterviewWorkspace", () => {
     await waitFor(() =>
       expect(screen.getByText(/Use concrete cache invalidation examples/i)).toBeInTheDocument(),
     );
+    expect(screen.getByText(/I would explain cache stampede/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Cache stampede/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/basic/i)).toBeInTheDocument();
+    expect(screen.getByText(/write weakness/i)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
       target: { value: "I would monitor stale reads and cache hit rate." },

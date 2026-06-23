@@ -1,15 +1,16 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { ClipboardList, FileText, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { MarkdownView } from "@/components/MarkdownView";
-import { getMemory, getReport, getReports } from "@/lib/api";
+import { getMemory, getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type {
   MemoryKind,
   MemoryResponse,
+  RealInterviewRecordResponse,
   ReportDetailResponse,
   ReportRecord,
 } from "@/lib/types";
@@ -21,6 +22,9 @@ export default function ReviewPage() {
   const [reportDetail, setReportDetail] = useState<ReportDetailResponse | null>(null);
   const [memory, setMemory] = useState<MemoryResponse | null>(null);
   const [memoryTab, setMemoryTab] = useState<MemoryKind>("weakness");
+  const [recordText, setRecordText] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [recordResult, setRecordResult] = useState<RealInterviewRecordResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const memoryTabs: Array<{ value: MemoryKind; label: string }> = [
     { value: "weakness", label: t("tabs.weakness") },
@@ -50,8 +54,27 @@ export default function ReviewPage() {
       .then(setReportDetail)
       .catch((loadError) =>
         setError(getErrorMessage(loadError, t, "review:errors.report_load")),
-      );
+    );
   }, [selectedReportId]);
+
+  const submitRealInterviewRecord = async () => {
+    const text = recordText.trim();
+    if (!text || recording) {
+      return;
+    }
+    setRecording(true);
+    setError(null);
+    try {
+      const language = getCurrentLanguage() === "en" ? "en" : "zh-CN";
+      const result = await recordRealInterviewRecord({ text, language });
+      setRecordResult(result);
+      setRecordText("");
+    } catch (submitError) {
+      setError(getErrorMessage(submitError, t, "review:errors.real_interview_save"));
+    } finally {
+      setRecording(false);
+    }
+  };
 
   return (
     <div className="page-stack">
@@ -68,6 +91,69 @@ export default function ReviewPage() {
           {error}
         </p>
       ) : null}
+
+      <section className="page-section" aria-labelledby="real-interview-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">{t("real_interview_eyebrow")}</p>
+            <h2 id="real-interview-heading">{t("real_interview_title")}</h2>
+          </div>
+        </div>
+        <div className="real-interview-panel">
+          <label className="field-label" htmlFor="real-interview-record">
+            {t("real_interview_label")}
+          </label>
+          <textarea
+            id="real-interview-record"
+            minLength={1}
+            onChange={(event) => setRecordText(event.target.value)}
+            rows={8}
+            value={recordText}
+          />
+          <div className="button-row">
+            <button
+              className="button button-primary"
+              disabled={!recordText.trim() || recording}
+              onClick={submitRealInterviewRecord}
+              type="button"
+            >
+              <Save aria-hidden="true" size={16} />
+              {recording ? t("real_interview_saving") : t("real_interview_submit")}
+            </button>
+          </div>
+          {recordResult ? (
+            <div className="real-interview-result">
+              <div className="real-interview-result-heading">
+                <ClipboardList aria-hidden="true" size={18} />
+                <strong>{t("real_interview_result_title")}</strong>
+              </div>
+              <div className="real-interview-result-grid">
+                <div>
+                  <h3>{t("real_interview_questions")}</h3>
+                  <ul>
+                    {recordResult.questions.map((question) => (
+                      <li key={question}>{question}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3>{t("real_interview_weak_points")}</h3>
+                  <ul>
+                    {recordResult.weak_points.map((weakPoint) => (
+                      <li key={weakPoint}>{weakPoint}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="tag-row">
+                <span className="tag">{recordResult.raw_artifact.relative_path}</span>
+                <span className="tag">{recordResult.high_frequency_artifact.relative_path}</span>
+                <span className="tag">{recordResult.plan_artifact.relative_path}</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
 
       <section className="review-layout" aria-labelledby="reports-heading">
         <div className="report-list">

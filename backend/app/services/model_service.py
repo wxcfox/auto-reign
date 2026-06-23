@@ -60,6 +60,11 @@ class AnswerEvaluationResult(BaseModel):
     follow_up_question: str
     weaknesses: list[str] = Field(default_factory=list)
     review_suggestions: list[str] = Field(default_factory=list)
+    better_answer: str = ""
+    mastery_change: str = "unchanged"
+    should_write_weakness: bool = False
+    should_write_high_frequency: bool = False
+    tested_points: list[str] = Field(default_factory=list)
 
 
 class ReportGenerationRequest(ProviderRequest):
@@ -201,6 +206,14 @@ class ModelService:
                     follow_up_question="在真实生产流量下，你会优先做哪些取舍？",
                     weaknesses=["需要更深入的工程细节"],
                     review_suggestions=["准备一个包含故障处理和指标的项目案例"],
+                    better_answer=(
+                        "我会先说明方案边界，再结合真实流量下的失败处理、监控指标和降级预案，"
+                        "把技术取舍讲清楚。"
+                    ),
+                    mastery_change="basic",
+                    should_write_weakness=True,
+                    should_write_high_frequency=False,
+                    tested_points=["工程取舍", "失败处理", "可观测性"],
                 )
             return AnswerEvaluationResult(
                 feedback=(
@@ -211,6 +224,14 @@ class ModelService:
                 follow_up_question="What tradeoffs would you make under production traffic?",
                 weaknesses=["Needs deeper operational detail"],
                 review_suggestions=["Prepare one concrete architecture incident example"],
+                better_answer=(
+                    "I would start with the system boundary, then explain concrete failure "
+                    "handling, observability, and degradation tradeoffs."
+                ),
+                mastery_change="basic",
+                should_write_weakness=True,
+                should_write_high_frequency=False,
+                tested_points=["Tradeoffs", "Failure handling", "Observability"],
             )
         return self._structured_chat(
             "answer_feedback.md",

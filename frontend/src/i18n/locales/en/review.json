@@ -6,6 +6,14 @@
   "reports_title": "Reports",
   "reports_empty": "No reports yet.",
   "select_report": "Select a report to preview it.",
+  "real_interview_eyebrow": "Real interview",
+  "real_interview_title": "Real interview review",
+  "real_interview_label": "Paste the raw real interview record",
+  "real_interview_submit": "Save real interview review",
+  "real_interview_saving": "Saving...",
+  "real_interview_result_title": "Review materials updated",
+  "real_interview_questions": "Extracted questions",
+  "real_interview_weak_points": "Weak signals",
   "memory_eyebrow": "Persistent context",
   "memory_title": "Memory",
   "memory_loading": "Loading memory...",
@@ -16,6 +24,7 @@
   },
   "errors": {
     "review_load": "Failed to load review data.",
-    "report_load": "Failed to load report."
+    "report_load": "Failed to load report.",
+    "real_interview_save": "Failed to save real interview review."
   }
 }

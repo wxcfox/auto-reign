@@ -12,6 +12,9 @@ import type {
   LearningNoteResponse,
   MemoryResponse,
   ModelListResponse,
+  PreparationTasksResponse,
+  RealInterviewRecordRequest,
+  RealInterviewRecordResponse,
   ReportDetailResponse,
   ReportListResponse,
   UploadMaterialsResponse,
@@ -57,6 +60,19 @@ export function getWorkspaceArtifacts(): Promise<WorkspaceArtifactListResponse> 
   return apiJson<WorkspaceArtifactListResponse>("/api/workspace/artifacts");
 }
 
+export function getPreparationTasks(): Promise<PreparationTasksResponse> {
+  return apiJson<PreparationTasksResponse>("/api/workspace/preparation-tasks");
+}
+
+export function recordRealInterviewRecord(
+  payload: RealInterviewRecordRequest,
+): Promise<RealInterviewRecordResponse> {
+  return apiJson<RealInterviewRecordResponse>("/api/workspace/real-interview-records", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getWorkspaceArtifact(artifactId: string): Promise<WorkspaceArtifactDetail> {
   return apiJson<WorkspaceArtifactDetail>(`/api/workspace/artifacts/${artifactId}`);
 }
@@ -77,12 +93,6 @@ export function deleteWorkspaceArtifact(
 ): Promise<{ id: string; status: string }> {
   return apiJson<{ id: string; status: string }>(`/api/workspace/artifacts/${artifactId}`, {
     method: "DELETE",
-  });
-}
-
-export function rebuildWorkspaceIndex(): Promise<{ status: string; collection: string }> {
-  return apiJson<{ status: string; collection: string }>("/api/workspace/rebuild-index", {
-    method: "POST",
   });
 }
 

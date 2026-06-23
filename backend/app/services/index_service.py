@@ -217,7 +217,14 @@ class IndexService:
             return path.read_text(encoding="utf-8")
         if artifact.kind == "extracted":
             return path.read_text(encoding="utf-8")
-        if artifact.kind in {"knowledge", "practice"}:
+        if artifact.kind in {
+            "knowledge",
+            "question_bank",
+            "project",
+            "interview_record",
+            "high_frequency",
+            "practice",
+        }:
             return ArtifactService(workspace).read_markdown(artifact.relative_path).body
         return None
 

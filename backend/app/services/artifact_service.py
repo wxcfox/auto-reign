@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 import yaml
@@ -141,6 +141,7 @@ class ArtifactService:
         expected_revision: int,
         body: str,
         edited_by: EditedBy = "user",
+        source_refs: list[str] | None = None,
         now: datetime | None = None,
     ) -> ManagedMarkdown:
         path = self.workspace.resolve_path(relative_path)
@@ -155,6 +156,9 @@ class ArtifactService:
                 "revision": current.front_matter.revision + 1,
                 "updated_at": self._coerce_utc(now or datetime.now(UTC)),
                 "edited_by": edited_by,
+                "source_refs": source_refs
+                if source_refs is not None
+                else current.front_matter.source_refs,
             }
         )
         raw = self.serialize_markdown(updated_front_matter, body)
@@ -266,15 +270,18 @@ class ArtifactService:
         media_type: str,
         content: bytes,
         language: str = "zh-CN",
+        directory: Literal["sources/documents", "inbox"] = "sources/documents",
         artifact_id: str | None = None,
         uploaded_at: datetime | None = None,
     ) -> SourceMeta:
+        if directory not in {"sources/documents", "inbox"}:
+            raise ValueError(f"unsupported source directory: {directory}")
         source_id = artifact_id or str(uuid4())
         actual_name = f"{source_id}-{self._sanitize_filename(source_filename)}"
-        documents_dir = self.workspace.resolve_path("sources/documents")
-        if artifact_id is not None and any(documents_dir.glob(f"{source_id}-*")):
+        source_dir = self.workspace.resolve_path(directory)
+        if artifact_id is not None and any(source_dir.glob(f"{source_id}-*")):
             raise FileExistsError(source_id)
-        path = self.workspace.resolve_path(f"sources/documents/{actual_name}")
+        path = self.workspace.resolve_path(f"{directory}/{actual_name}")
         if path.exists():
             raise FileExistsError(path)
 

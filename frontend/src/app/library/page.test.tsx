@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import LibraryPage from "./page";
-import { deleteWorkspaceArtifact, getWorkspaceArtifacts, rebuildWorkspaceIndex } from "@/lib/api";
+import { deleteWorkspaceArtifact, getWorkspaceArtifacts } from "@/lib/api";
 
 vi.mock("@/components/DocumentUploader", () => ({
   DocumentUploader: () => <div>Uploader</div>,
@@ -11,7 +11,6 @@ vi.mock("@/components/DocumentUploader", () => ({
 vi.mock("@/lib/api", () => ({
   deleteWorkspaceArtifact: vi.fn(),
   getWorkspaceArtifacts: vi.fn(),
-  rebuildWorkspaceIndex: vi.fn(),
 }));
 
 const artifacts = [
@@ -49,10 +48,6 @@ describe("LibraryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getWorkspaceArtifacts).mockResolvedValue({ artifacts });
-    vi.mocked(rebuildWorkspaceIndex).mockResolvedValue({
-      status: "rebuilt",
-      collection: "auto_reign",
-    });
     vi.mocked(deleteWorkspaceArtifact).mockResolvedValue({
       id: "knowledge-1",
       status: "deleted",
@@ -68,6 +63,7 @@ describe("LibraryPage", () => {
     expect(screen.getByRole("columnheader", { name: /Created/i })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Updated/i })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Actions/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Rebuild index/i })).not.toBeInTheDocument();
 
     const sources = screen.getByRole("button", { name: /Sources\s+1/i });
 

@@ -84,6 +84,16 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         content=b"%PDF",
     )
     artifacts.create_markdown("knowledge/python.md", kind="knowledge", body="# Python\n\nGIL")
+    question_card = artifacts.create_markdown(
+        "questions/cache-stampede.md",
+        kind="question_bank",
+        body="# Cache\n\ncache stampede standard answer",
+    )
+    project = artifacts.create_markdown(
+        "projects/order-cache.md",
+        kind="project",
+        body="# Order cache\n\nhot key mitigation project",
+    )
     artifacts.create_markdown("reports/session.md", kind="report", body="# Report\n\nDo not index")
     artifacts.create_markdown(
         "knowledge/recovery.md",
@@ -106,8 +116,13 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         chunk.metadata["artifact_id"] for _, chunks in store.upserts for chunk in chunks
     }
     assert text_source.artifact_id in indexed_ids
+    assert question_card.front_matter.id in indexed_ids
+    assert project.front_matter.id in indexed_ids
     assert binary_source.artifact_id not in indexed_ids
     assert {row.kind: row.index_status for row in rows}["report"] == "completed"
+    assert "Do not index" not in {
+        chunk.content for _, chunks in store.upserts for chunk in chunks
+    }
     assert all(chunk.metadata["source_refs"] == [] for _, chunks in store.upserts for chunk in chunks)
 
 
