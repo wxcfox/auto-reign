@@ -1,25 +1,23 @@
-# Documentation Map
+# 文档地图
 
-This directory keeps durable engineering and product documentation only. Avoid
-using it as a permanent archive for one-off implementation plans.
+本目录只保留长期有效的工程和产品文档，不作为一次性实施计划的永久归档。
 
-## Canonical Documents
+## 文档语言
 
-- `../README.md`: currently runnable implementation, setup, configuration, and
-  smoke-test instructions.
-- `superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md`:
-  target product and architecture specification for the filesystem-first
-  interview workbench.
-- `knowledge-data-flow.md`: current knowledge-base ingestion, projection,
-  chunking, embedding, indexing, and retrieval flow.
+- 正式文档默认使用简体中文。
+- 技术产品名、配置项、路径、API 名称和行业通用缩写可以保留英文，例如 `FastAPI`、`Next.js`、`MySQL`、`Qdrant`、`chunk`、`embedding`、`RAG` 和 `SSE`。
+- 同一篇正式文档内不要中英文混写标题、段落和流程图节点；流程图、表格和架构说明应与文档主体语言保持一致。
+- 只有明确需要面向英文用户时，才新增完整双语结构，例如 `docs/zh/` 与 `docs/en/` 镜像目录。不要在同一篇文档里长期维护两套正文。
 
-## Documentation Lifecycle
+## 权威文档
 
-- Process plans under `docs/superpowers/plans/` are temporary working artifacts.
-  Delete them when the implementation phase is complete.
-- If a plan contains a lasting decision, move that decision into the relevant
-  canonical document before deleting the plan.
-- Do not duplicate the same behavior across multiple documents. Keep the fact in
-  one canonical place and link to it from other docs.
-- When code changes product behavior, update the matching documentation in the
-  same PR.
+- `../README.md`：当前可运行版本的安装、配置、启动和冒烟验证说明。
+- `workbench-architecture.md`：当前工作台的长期产品与架构边界，包括文件协议、数据职责、LLM 边界和前端信息架构。
+- `knowledge-data-flow.md`：当前资料库从入库、投影、切块、向量化、索引到检索的完整数据流。
+
+## 文档生命周期
+
+- `docs/superpowers/plans/` 下的实施计划是临时工作产物，只在对应阶段开发期间保留。
+- 如果计划中包含长期有效的决策，应先移动到对应权威文档，再删除计划。
+- 不要在多份文档里重复描述同一行为。事实只保留在一个权威位置，其他文档通过链接引用。
+- 代码改变产品行为时，同一个 PR 必须更新对应文档。

@@ -1,57 +1,45 @@
-# Knowledge Base Data Flow
+# 资料库数据流
 
-This document describes the current Auto Reign knowledge-base flow for uploaded
-materials, learning notes, workspace projection, chunking, embeddings, vector
-indexing, and retrieval.
+本文描述 Auto Reign 当前资料库从上传资料、学习记录、工作区投影、切块、embedding、向量索引到面试检索的完整流程。
 
 ```mermaid
-graph TD
-  A["User uploads material or records a learning note"] --> B{"Input type"}
-  B -->|Markdown or TXT| C["Store original source file under DATA_DIR/sources/documents"]
-  B -->|PDF or DOCX| D["Store original source file under DATA_DIR/sources/documents"]
-  D --> E["Extract readable text into sources/extracted when available"]
-  B -->|Learning note| F["Store original note as source material"]
-  F --> G["LLM summarizes note into a managed knowledge Markdown file"]
-  C --> H["Organize source into candidate profile, target profile, or knowledge"]
+flowchart TD
+  A["用户上传资料或记录学习笔记"] --> B{"输入类型"}
+  B -->|Markdown 或 TXT| C["原始文件保存到 DATA_DIR/sources/documents"]
+  B -->|PDF 或 DOCX| D["原始文件保存到 DATA_DIR/sources/documents"]
+  D --> E["可解析时提取文本到 sources/extracted"]
+  B -->|学习笔记| F["把原始笔记保存为来源资料"]
+  F --> G["LLM 总结为受管知识 Markdown 文件"]
+  C --> H["整理到候选人画像、目标画像或知识分类"]
   E --> H
-  G --> I["Rebuild workspace projection"]
+  G --> I["重建工作区投影"]
   H --> I
-  I --> J["Scan workspace files and sidecar metadata"]
-  J --> K["Upsert artifact metadata into MySQL"]
-  K --> L["Rebuild vector index"]
-  L --> M["Read indexable text from text sources, extracted text, knowledge, and practice"]
-  M --> N["Split text into overlapping chunks"]
-  N --> O["Generate embeddings with configured embedding provider"]
-  O --> P["Upsert chunk vectors and metadata into Qdrant"]
-  P --> Q["Persist active vector collection in workspace settings"]
-  Q --> R["Interview service builds retrieval query from current context"]
-  R --> S["Embed retrieval query"]
-  S --> T["Search active Qdrant collection"]
-  T --> U["Inject retrieved snippets into interview question, feedback, or summary prompts"]
+  I --> J["扫描工作区文件和 sidecar 元数据"]
+  J --> K["把 artifact 元数据写入 MySQL"]
+  K --> L["重建向量索引"]
+  L --> M["读取可索引文本：原文、提取文本、知识和练习记录"]
+  M --> N["切分为带重叠窗口的 chunk"]
+  N --> O["使用配置的 embedding provider 生成向量"]
+  O --> P["把 chunk 向量和元数据写入 Qdrant"]
+  P --> Q["在工作区设置中记录活跃向量 collection"]
+  Q --> R["面试服务根据当前上下文构造检索 query"]
+  R --> S["对检索 query 生成 embedding"]
+  S --> T["查询活跃 Qdrant collection"]
+  T --> U["把检索片段注入出题、点评或总结 prompt"]
 ```
 
-## Current Storage Responsibilities
+## 当前存储职责
 
-- `DATA_DIR/sources/documents/` stores original uploaded files and original
-  learning-note sources. Source files keep the user's original filename in
-  metadata and display it in the library.
-- `DATA_DIR/sources/extracted/` stores extracted text for PDF and DOCX inputs
-  when readable text can be extracted.
-- `DATA_DIR/knowledge/`, `DATA_DIR/profile/`, `DATA_DIR/practice/`,
-  `DATA_DIR/state/`, and `DATA_DIR/reports/` store managed Markdown artifacts.
-- MySQL stores the projection of workspace artifacts, processing status, index
-  status, revisions, and session/report metadata.
-- Qdrant stores searchable chunk vectors. The active Qdrant collection can be
-  rebuilt from the filesystem workspace and MySQL artifact projection.
+- `DATA_DIR/sources/documents/` 保存用户上传的原始文件和学习笔记原文。来源文件会在元数据中保留用户的原始文件名，并在资料库中展示该名称。
+- `DATA_DIR/sources/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。
+- `DATA_DIR/knowledge/`、`DATA_DIR/profile/`、`DATA_DIR/practice/`、`DATA_DIR/state/` 和 `DATA_DIR/reports/` 保存系统管理的 Markdown 资产。
+- MySQL 保存工作区 artifact 投影、处理状态、索引状态、修订版本、会话和报告元数据。
+- Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 可以从文件工作区和 MySQL artifact 投影重新构建。
 
-## Indexing Rules
+## 索引规则
 
-- Markdown and TXT source files are indexed directly from the original source.
-- PDF and DOCX source files are not indexed directly; their extracted Markdown
-  artifact is indexed when extraction succeeds.
-- Knowledge and practice Markdown artifacts are indexed from their body content.
-- Candidate profile, target profile, plans, reports, and mastery state remain
-  visible in the library but are not currently part of the vector index.
-- A deleted library artifact removes the matching workspace file and the
-  projection is rebuilt. Index rebuild then removes stale vector content by
-  publishing a fresh active collection.
+- Markdown 和 TXT 来源文件直接从原始文件索引。
+- PDF 和 DOCX 来源文件不直接索引；解析成功后索引对应的提取文本 Markdown artifact。
+- 知识和练习 Markdown artifact 从正文内容索引。
+- 候选人画像、目标画像、计划、报告和掌握状态会展示在资料库中，但当前不进入向量索引。
+- 删除资料库 artifact 时，系统删除对应工作区文件并重建投影。随后索引重建会发布新的活跃 collection，从而移除陈旧向量内容。

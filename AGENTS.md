@@ -1,70 +1,54 @@
-# Repository Guidelines
+# 仓库指南
 
-## Product Direction
+## 产品方向
 
-Auto Reign is a local-first, single-user AI interview learning workbench. The
-current codebase is a working v1 built with FastAPI, Next.js, MySQL, and Qdrant.
-The canonical target design for the next development cycle is:
+Auto Reign 是本地优先、单用户的 AI 面试学习工作台。当前代码库使用 FastAPI、Next.js、MySQL 和 Qdrant。长期产品与架构边界记录在：
 
-- `docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md`
+- `docs/workbench-architecture.md`
 
-Read that specification before changing product behavior, storage, ingestion,
-interview flow, memory, retrieval, or the main UI. `README.md` documents the
-currently runnable implementation; the target design intentionally supersedes
-parts of the current behavior.
+修改产品行为、存储、入库、面试流程、记忆、检索或主界面之前，必须先阅读该文档。`README.md` 描述当前可运行实现，专题流程文档放在 `docs/` 下。
 
-The target design does not require compatibility with existing MySQL records,
-Qdrant points, or runtime files. Do not add dual-read, dual-write, data-copy, or
-legacy prompt branches. Never delete local user data automatically; destructive
-reset commands must remain explicit.
+不要新增双读、双写、数据复制或旧 prompt 分支。绝不能自动删除本地用户数据；破坏性重置命令必须保持显式执行。
 
-## Project Structure
+## 项目结构
 
-- `backend/app/`: FastAPI application, APIs, services, repositories, schemas,
-  database models, and prompts.
-- `backend/alembic/`: MySQL schema migrations.
-- `backend/tests/`: backend unit and integration tests.
-- `frontend/src/`: Next.js application, components, i18n resources, and tests.
-- `scripts/`: repository lifecycle tooling used by `start.sh`.
-- `docs/superpowers/specs/`: approved product and architecture specifications.
-- `docs/superpowers/plans/`: temporary implementation plans created from
-  approved specs while a phase is actively being implemented.
-- `data/`: local runtime data; it is not source code and must remain ignored.
+- `backend/app/`：FastAPI 应用、API、services、repositories、schemas、数据库 models 和 prompts。
+- `backend/alembic/`：MySQL schema 迁移。
+- `backend/tests/`：后端单元测试和集成测试。
+- `frontend/src/`：Next.js 应用、components、i18n resources 和 tests。
+- `scripts/`：`start.sh` 使用的仓库生命周期工具。
+- `docs/superpowers/plans/`：从已批准规格拆出的临时实施计划，仅在对应阶段开发期间保留。
+- `docs/workbench-architecture.md`：当前工作台长期架构说明。
+- `docs/knowledge-data-flow.md`：当前资料库入库、索引和检索数据流。
+- `data/`：本地运行数据，不是源代码，必须保持 ignored。
 
-Do not introduce a parallel `src/` tree at the repository root. Follow the
-existing backend and frontend organization.
+不要在仓库根目录新增平行的 `src/` 目录。遵循现有后端和前端组织方式。
 
-## Development Workflow
+## 文档语言
 
-For the filesystem-first workbench redesign:
+长期仓库文档默认使用简体中文。同一篇文档内，标题、正文、表格和 Mermaid 流程图节点应保持中文。产品名、配置项、路径、API 名称、代码标识符和常见技术术语可以保留英文，例如 FastAPI、Next.js、MySQL、Qdrant、chunk、embedding、RAG 和 SSE。
 
-1. Inspect the current implementation and the canonical design.
-2. Write a phased implementation plan under `docs/superpowers/plans/` before
-   changing application code.
-3. Map each task to exact files, tests, migration effects, and verification
-   commands.
-4. Implement one independently verifiable phase at a time.
-5. Keep the application runnable and tests passing at each phase boundary.
+除非仓库明确采用 `docs/zh/` 与 `docs/en/` 这类镜像双语结构，否则不要在同一份长期文档里混写中文和英文正文。过程计划是临时产物，不应演变成第二套文档系统。
 
-Do not attempt the entire redesign as one unreviewable rewrite. Reuse existing
-code where it fits the target boundaries, and delete obsolete code when its
-replacement is complete.
+## 开发工作流
 
-Implementation plans are process artifacts, not durable product documentation.
-Before a PR is ready, delete completed one-off plans or promote their lasting
-decisions into `README.md`, `docs/README.md`, `docs/superpowers/specs/`, or a
-focused topic document under `docs/`. Do not keep stale completed plans merely as
-history.
+针对工作台架构、存储、入库、检索、面试流程或主界面的较大变更：
 
-When changing behavior, update the canonical documentation in the same PR:
-`README.md` for runnable behavior, `docs/superpowers/specs/` for target
-architecture, and focused `docs/*.md` files for current operational flows. Avoid
-duplicating the same facts across multiple docs; prefer linking to the canonical
-source.
+1. 检查当前实现和 `docs/workbench-architecture.md`。
+2. 修改应用代码前，先在 `docs/superpowers/plans/` 编写分阶段实施计划。
+3. 将每个任务映射到精确文件、测试、迁移影响和验证命令。
+4. 一次实现一个可独立验证的阶段。
+5. 在每个阶段边界保持应用可运行，并保持测试通过。
 
-## Canonical Commands
+不要把整个重构做成一次不可审查的大改。目标边界内能复用现有代码就复用；替代方案完成后，应删除过时代码。
 
-Start or manage the local stack from the repository root:
+实施计划是过程产物，不是长期产品文档。PR 准备好之前，删除已经完成的一次性计划，或把其中仍然有效的决策沉淀到 `README.md`、`docs/README.md`、`docs/workbench-architecture.md` 或 `docs/` 下的专题文档。不要仅仅为了保留历史而留下过时计划。
+
+修改行为时，同一个 PR 必须更新对应权威文档：`README.md` 描述可运行行为，`docs/workbench-architecture.md` 描述长期架构，`docs/*.md` 专题文档描述当前操作流程。避免在多份文档中重复同一事实；优先链接到权威来源。
+
+## 权威命令
+
+从仓库根目录启动或管理本地栈：
 
 ```sh
 ./start.sh
@@ -73,7 +57,7 @@ Start or manage the local stack from the repository root:
 ./start.sh --restart
 ```
 
-Run repository checks before committing:
+提交前运行仓库检查：
 
 ```sh
 cd backend
@@ -88,32 +72,19 @@ cd ..
 docker compose config
 ```
 
-Prefer these commands over ad hoc alternatives. Add focused tests first for
-behavioral changes, then run the broader relevant suite.
+优先使用这些命令，而不是临时拼凑的替代命令。行为变更应先添加聚焦测试，再运行更宽的相关测试套件。
 
-## Coding Conventions
+## 编码约定
 
-- Python targets 3.12+, uses type hints, Pydantic models, SQLAlchemy 2, Ruff,
-  and pytest. Keep services focused and keep provider or persistence details
-  behind explicit interfaces.
-- TypeScript follows the existing Next.js and React patterns. Preserve i18n,
-  loading, empty, and error states for user-facing changes.
-- LLM calls return validated structured output. LLMs do not write files or
-  databases directly; deterministic application code applies changes.
-- Preserve original user sources and answers. Generated content, personal
-  facts, and observed practice evidence must retain distinct provenance.
-- Keep prompts concise, task-specific, language-aware, and resistant to prompt
-  injection from uploaded content.
-- Do not commit secrets, `.env`, dependency directories, runtime data, logs, or
-  machine-specific configuration.
+- Python 目标版本为 3.12+，使用 type hints、Pydantic models、SQLAlchemy 2、Ruff 和 pytest。保持 service 聚焦，并把 provider 或 persistence 细节放在明确接口之后。
+- TypeScript 遵循现有 Next.js 和 React 模式。面向用户的改动必须保留 i18n、loading、empty 和 error states。
+- LLM 调用返回经过校验的结构化输出。LLM 不直接写文件或数据库；由确定性应用代码应用变更。
+- 保留原始用户来源和回答。生成内容、个人事实和观察到的练习证据必须保留不同 provenance。
+- Prompt 应简洁、任务特定、语言感知，并抵抗上传内容中的 prompt injection。
+- 不要提交 secrets、`.env`、dependency directories、运行数据、logs 或机器特定配置。
 
-## Testing Expectations
+## 测试期望
 
-Every behavioral change requires tests for expected behavior, edge cases, and
-failure paths. Use deterministic model and vector test doubles unless a test is
-explicitly an integration check. Storage changes must cover MySQL migrations,
-filesystem failure behavior, and Qdrant recovery. Frontend changes must cover
-the primary user flow, not only isolated presentation components.
+每个行为变更都需要覆盖预期行为、边界情况和失败路径的测试。除非测试明确是集成检查，否则使用确定性模型和向量 test double。存储变更必须覆盖 MySQL 迁移、文件系统失败行为和 Qdrant 恢复。前端变更必须覆盖主要用户流程，而不只是孤立展示组件。
 
-Pull requests should state scope, design phase, test evidence, data reset
-effects, and screenshots for visible UI changes.
+Pull request 应说明范围、设计阶段、测试证据、数据重置影响，以及可见 UI 改动的截图。
