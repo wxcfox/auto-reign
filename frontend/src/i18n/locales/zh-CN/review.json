@@ -6,6 +6,14 @@
   "reports_title": "报告",
   "reports_empty": "还没有报告。",
   "select_report": "请选择一份报告进行预览。",
+  "real_interview_eyebrow": "真实面试",
+  "real_interview_title": "真实面试复盘",
+  "real_interview_label": "粘贴真实面试原始记录",
+  "real_interview_submit": "保存真实面试复盘",
+  "real_interview_saving": "保存中...",
+  "real_interview_result_title": "已更新复盘材料",
+  "real_interview_questions": "抽取问题",
+  "real_interview_weak_points": "薄弱线索",
   "memory_eyebrow": "持久化上下文",
   "memory_title": "记忆",
   "memory_loading": "记忆加载中...",
@@ -16,6 +24,7 @@
   },
   "errors": {
     "review_load": "加载复盘数据失败。",
-    "report_load": "加载报告失败。"
+    "report_load": "加载报告失败。",
+    "real_interview_save": "保存真实面试复盘失败。"
   }
 }

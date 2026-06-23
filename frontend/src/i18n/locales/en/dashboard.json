@@ -18,6 +18,13 @@
     "title": "Interview report",
     "empty": "No interview reports yet."
   },
+  "prep": {
+    "eyebrow": "Current prep",
+    "title": "Current plan",
+    "empty": "After a mock interview, Auto Reign will keep the three most important prep actions here.",
+    "start_drill": "Start drill",
+    "view_plan": "View plan"
+  },
   "actions": {
     "upload_title": "Upload documents",
     "upload_desc": "Add Markdown or TXT knowledge sources.",

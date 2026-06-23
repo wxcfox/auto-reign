@@ -63,6 +63,19 @@ export interface LearningNoteResponse {
   summary: LearningNoteSummary;
 }
 
+export interface RealInterviewRecordRequest {
+  text: string;
+  language: "en" | "zh-CN";
+}
+
+export interface RealInterviewRecordResponse {
+  raw_artifact: WorkspaceArtifactSummary;
+  high_frequency_artifact: WorkspaceArtifactSummary;
+  plan_artifact: WorkspaceArtifactSummary;
+  questions: string[];
+  weak_points: string[];
+}
+
 export interface UploadMaterialsResponse {
   sources: UploadedSourceRecord[];
 }
@@ -88,6 +101,17 @@ export interface WorkspaceArtifactListResponse {
 
 export interface WorkspaceArtifactDetail extends WorkspaceArtifactSummary {
   body: string | null;
+}
+
+export interface PreparationTask {
+  title: string;
+  reason: string;
+  source_artifact_id: string | null;
+  source_relative_path: string | null;
+}
+
+export interface PreparationTasksResponse {
+  tasks: PreparationTask[];
 }
 
 export interface InterviewConfig {
@@ -134,6 +158,11 @@ export interface InterviewTurn {
   follow_up_review_suggestions: string[];
   weaknesses: string[];
   review_suggestions: string[];
+  better_answer?: string;
+  mastery_change?: string;
+  should_write_weakness?: boolean;
+  should_write_high_frequency?: boolean;
+  tested_points?: string[];
   retrieved_context_refs: Array<Record<string, string>>;
   created_at: string;
 }
@@ -163,6 +192,11 @@ export interface AnswerFeedback {
   follow_up_question: string;
   weaknesses: string[];
   review_suggestions: string[];
+  better_answer: string;
+  mastery_change: string;
+  should_write_weakness: boolean;
+  should_write_high_frequency: boolean;
+  tested_points: string[];
 }
 
 export interface FollowUpFeedback {
@@ -170,6 +204,11 @@ export interface FollowUpFeedback {
   missing_points: string[];
   weaknesses: string[];
   review_suggestions: string[];
+  better_answer: string;
+  mastery_change: string;
+  should_write_weakness: boolean;
+  should_write_high_frequency: boolean;
+  tested_points: string[];
 }
 
 export interface ReportRecord {

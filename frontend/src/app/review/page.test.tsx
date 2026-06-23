@@ -1,0 +1,96 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import ReviewPage from "./page";
+import i18next from "@/i18n/setup";
+import { getMemory, getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
+
+vi.mock("@/lib/api", () => ({
+  getMemory: vi.fn(),
+  getReport: vi.fn(),
+  getReports: vi.fn(),
+  recordRealInterviewRecord: vi.fn(),
+}));
+
+const artifact = {
+  id: "artifact-1",
+  kind: "interview_record",
+  owner: "raw",
+  relative_path: "raw/20260624-120000.md",
+  display_name: "20260624-120000.md",
+  revision: 1,
+  processing_status: "completed",
+  index_status: "pending",
+  recovery_required: false,
+  allowed_operations: [],
+  created_at: "2026-06-24T12:00:00Z",
+  updated_at: "2026-06-24T12:00:00Z",
+};
+
+describe("ReviewPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    i18next.changeLanguage("zh-CN");
+    vi.mocked(getReports).mockResolvedValue({ reports: [] });
+    vi.mocked(getReport).mockResolvedValue({
+      report: {
+        id: "report-1",
+        session_id: "session-1",
+        report_path: "reports/report.md",
+        summary: "summary",
+        weaknesses: [],
+        created_at: "2026-06-24T12:00:00Z",
+      },
+      content: "# Report",
+    });
+    vi.mocked(getMemory).mockResolvedValue({
+      files: {
+        weakness: { kind: "weakness", content: "", updated_at: null },
+        interview_history: { kind: "interview_history", content: "", updated_at: null },
+        learning_profile: { kind: "learning_profile", content: "", updated_at: null },
+      },
+    });
+    vi.mocked(recordRealInterviewRecord).mockResolvedValue({
+      raw_artifact: artifact,
+      high_frequency_artifact: {
+        ...artifact,
+        id: "high-frequency-1",
+        kind: "high_frequency",
+        owner: "review",
+        relative_path: "review/high-frequency.md",
+      },
+      plan_artifact: {
+        ...artifact,
+        id: "plan-1",
+        kind: "plan",
+        owner: "state",
+        relative_path: "state/plan.md",
+      },
+      questions: ["Redis 缓存击穿怎么处理？"],
+      weak_points: ["我：只说了加锁，没答好降级预案。"],
+    });
+  });
+
+  it("records a pasted real interview and shows extracted review actions", async () => {
+    render(<ReviewPage />);
+
+    fireEvent.change(await screen.findByLabelText("粘贴真实面试原始记录"), {
+      target: {
+        value: "面试官：Redis 缓存击穿怎么处理？\n我：只说了加锁，没答好降级预案。",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存真实面试复盘" }));
+
+    await waitFor(() =>
+      expect(recordRealInterviewRecord).toHaveBeenCalledWith({
+        text: "面试官：Redis 缓存击穿怎么处理？\n我：只说了加锁，没答好降级预案。",
+        language: "zh-CN",
+      }),
+    );
+    expect(await screen.findByText("Redis 缓存击穿怎么处理？")).toBeInTheDocument();
+    expect(screen.getByText(/没答好降级预案/)).toBeInTheDocument();
+    expect(screen.getByText("raw/20260624-120000.md")).toBeInTheDocument();
+    expect(screen.getByText("review/high-frequency.md")).toBeInTheDocument();
+    expect(screen.getByText("state/plan.md")).toBeInTheDocument();
+  });
+});

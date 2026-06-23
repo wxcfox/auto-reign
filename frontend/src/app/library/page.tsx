@@ -10,13 +10,16 @@ import { useTranslation } from "@/hooks/useTranslation";
 import {
   deleteWorkspaceArtifact,
   getWorkspaceArtifacts,
-  rebuildWorkspaceIndex,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type { WorkspaceArtifactSummary } from "@/lib/types";
 
 const CATEGORY_ORDER = [
   "knowledge",
+  "question_bank",
+  "project",
+  "high_frequency",
+  "interview_record",
   "source",
   "candidate_profile",
   "target_profile",
@@ -98,18 +101,6 @@ export default function LibraryPage() {
     }
   }
 
-  async function handleRebuildIndex() {
-    setError(null);
-    setMessage(null);
-    try {
-      await rebuildWorkspaceIndex();
-      await getWorkspaceArtifacts().then((response) => setArtifacts(response.artifacts));
-      setMessage(t("rebuild_success"));
-    } catch (rebuildError) {
-      setError(getErrorMessage(rebuildError, t, "common:errors.generic_save"));
-    }
-  }
-
   async function handleDelete(artifact: WorkspaceArtifactSummary) {
     const confirmed = window.confirm(t("delete_confirm", { name: artifact.display_name }));
     if (!confirmed) {
@@ -138,9 +129,6 @@ export default function LibraryPage() {
         </div>
         <div className="status-row">
           <p className="page-summary">{t("summary", { count: artifacts.length })}</p>
-          <button className="button" onClick={() => void handleRebuildIndex()} type="button">
-            {t("rebuild_index")}
-          </button>
         </div>
       </header>
 

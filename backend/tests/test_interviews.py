@@ -152,6 +152,77 @@ def test_create_session_uses_workspace_indexed_artifacts(client: TestClient) -> 
     assert refs[0]["source_type"] == "artifact"
 
 
+def test_create_session_reads_workspace_state_before_question_generation(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    captured_contexts: list[list[str]] = []
+
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown(
+        "profile/candidate.md",
+        kind="candidate_profile",
+        body="# 候选人画像\n\nJava 后端候选人，做过订单系统。",
+    )
+    artifacts.create_markdown(
+        "profile/target.md",
+        kind="target_profile",
+        body="# 目标岗位\n\n目标是字节后端，重点关注高并发。",
+    )
+    artifacts.create_markdown(
+        "state/mastery.md",
+        kind="mastery",
+        body="# 掌握状态\n\n薄弱点：Redis 缓存击穿表达不稳定。",
+    )
+    artifacts.create_markdown(
+        "state/plan.md",
+        kind="plan",
+        body="# 当前计划\n\n- 用 30 秒讲清缓存击穿治理。\n",
+    )
+    client.post("/api/workspace/rebuild-projection")
+
+    def capture_search(_self, _session, query: str, limit: int):
+        assert limit == 4
+        return [
+            {
+                "content": "题卡：Redis 缓存击穿需要互斥锁、逻辑过期和降级预案。",
+                "score": 0.9,
+                "source_type": "artifact",
+                "source_id": "knowledge-redis",
+            }
+        ]
+
+    def capture_generate_question(_self, request):
+        captured_contexts.append(request.context)
+        return "请讲讲 Redis 缓存击穿治理。"
+
+    monkeypatch.setattr(
+        "app.services.workspace_retrieval_service.WorkspaceRetrievalService.search",
+        capture_search,
+    )
+    monkeypatch.setattr(
+        "app.services.model_service.ModelService.generate_question",
+        capture_generate_question,
+    )
+
+    created = client.post(
+        "/api/interview-sessions",
+        json={**CONFIG, "language": "zh-CN", "target_role": "后端工程师"},
+    )
+
+    assert created.status_code == 200
+    context_text = "\n".join(captured_contexts[0])
+    assert "候选人画像" in context_text
+    assert "Java 后端候选人" in context_text
+    assert "目标岗位" in context_text
+    assert "字节后端" in context_text
+    assert "掌握状态" in context_text
+    assert "Redis 缓存击穿表达不稳定" in context_text
+    assert "当前计划" in context_text
+    assert "30 秒讲清缓存击穿治理" in context_text
+    assert "题卡：Redis 缓存击穿" in context_text
+
+
 def test_create_session_auto_indexes_pending_workspace_artifacts(
     client: TestClient, monkeypatch
 ) -> None:
@@ -221,7 +292,9 @@ def test_natural_language_target_context_drives_workspace_retrieval(
     assert next_question.status_code == 200
 
     assert queries[0] == "面试字节后端岗位，JD 关注缓存和高并发。"
-    assert queries[1] == "面试字节后端岗位，JD 关注缓存和高并发。 round 2"
+    assert "面试字节后端岗位，JD 关注缓存和高并发。" in queries[1]
+    assert "我会结合 Redis、限流和服务拆分说明。" in queries[1]
+    assert queries[2] == "面试字节后端岗位，JD 关注缓存和高并发。 round 2"
 
 
 def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None:
@@ -254,6 +327,203 @@ def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None
     next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
     assert next_question.status_code == 200
     assert next_question.json()["turn"]["round_index"] == 2
+
+
+def test_answer_feedback_uses_workspace_retrieval_context(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.services.model_service import AnswerEvaluationResult
+
+    captured_contexts: list[list[str]] = []
+    captured_queries: list[str] = []
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown(
+        "profile/candidate.md",
+        kind="candidate_profile",
+        body="# 候选人画像\n\n项目：订单缓存系统，使用 Redis 降低数据库压力。",
+    )
+    artifacts.create_markdown(
+        "state/mastery.md",
+        kind="mastery",
+        body="# 掌握状态\n\n薄弱点：缓存击穿和降级预案讲得不稳定。",
+    )
+    client.post("/api/workspace/rebuild-projection")
+
+    def capture_search(_self, _session, query: str, limit: int):
+        captured_queries.append(query)
+        assert limit == 4
+        if "Redis cache stampede" in query and "I use mutex locks" in query:
+            return [
+                {
+                    "content": "Use mutex locks and logical expiration for cache breakdown.",
+                    "score": 0.91,
+                    "source_type": "artifact",
+                    "source_id": "knowledge-redis",
+                }
+            ]
+        return []
+
+    def capture_evaluate_answer(_self, request):
+        captured_contexts.append(request.context)
+        return AnswerEvaluationResult(
+            feedback="Uses retrieved context.",
+            missing_points=[],
+            follow_up_question="",
+            weaknesses=[],
+            review_suggestions=[],
+            better_answer="Better: use mutex locks, logical expiration, and a degradation plan.",
+            mastery_change="basic -> fluent if the answer includes tradeoffs.",
+            should_write_weakness=True,
+            should_write_high_frequency=True,
+            tested_points=["Redis cache stampede", "degradation plan"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.workspace_retrieval_service.WorkspaceRetrievalService.search",
+        capture_search,
+    )
+    monkeypatch.setattr(
+        "app.services.model_service.ModelService.evaluate_answer",
+        capture_evaluate_answer,
+    )
+
+    created = client.post(
+        "/api/interview-sessions",
+        json={
+            **CONFIG,
+            "target_role": "Redis Backend Engineer",
+            "job_description": "Redis cache stampede",
+        },
+    ).json()
+    session_id = created["session"]["id"]
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I use mutex locks and logical expiration."},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["better_answer"].startswith("Better:")
+    assert body["mastery_change"] == "basic -> fluent if the answer includes tradeoffs."
+    assert body["should_write_weakness"] is True
+    assert body["should_write_high_frequency"] is True
+    assert body["tested_points"] == ["Redis cache stampede", "degradation plan"]
+    context_text = "\n".join(captured_contexts[0])
+    assert "候选人画像" in context_text
+    assert "订单缓存系统" in context_text
+    assert "掌握状态" in context_text
+    assert "缓存击穿和降级预案" in context_text
+    assert "本题考察点" in context_text
+    assert "Use mutex locks and logical expiration for cache breakdown." in context_text
+    assert any("Redis cache stampede" in query for query in captured_queries)
+
+
+def test_weak_answer_feedback_creates_question_bank_entry(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.services.model_service import AnswerEvaluationResult
+
+    def evaluate_weak_answer(_self, _request):
+        return AnswerEvaluationResult(
+            feedback="Answer misses the production tradeoffs.",
+            missing_points=["hot key fallback", "degradation plan"],
+            follow_up_question="How would you degrade when Redis is unavailable?",
+            weaknesses=["Cache stampede answer lacks fallback details."],
+            review_suggestions=["Review cache stampede operations."],
+            better_answer=(
+                "Use mutex locks or logical expiration, protect hot keys, and explain "
+                "fallback and degradation plans."
+            ),
+            mastery_change="weak",
+            should_write_weakness=True,
+            should_write_high_frequency=True,
+            tested_points=["cache stampede", "degradation"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.model_service.ModelService.evaluate_answer",
+        evaluate_weak_answer,
+    )
+
+    created = client.post(
+        "/api/interview-sessions",
+        json={
+            **CONFIG,
+            "language": "zh-CN",
+            "target_role": "后端工程师",
+            "job_description": "Redis 缓存击穿",
+        },
+    ).json()
+    session_id = created["session"]["id"]
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "我会加锁。"},
+    )
+
+    assert response.status_code == 200
+    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    question_cards = [artifact for artifact in artifacts if artifact["kind"] == "question_bank"]
+    assert len(question_cards) == 1
+    assert question_cards[0]["relative_path"].startswith("questions/")
+    detail = client.get(f"/api/workspace/artifacts/{question_cards[0]['id']}").json()
+    body = detail["body"]
+    assert "## 问题：" in body
+    assert "### 考察点" in body
+    assert "cache stampede" in body
+    assert "### 标准回答" in body
+    assert "Use mutex locks or logical expiration" in body
+    assert "### 结合项目" in body
+    assert "### 常见追问" in body
+    assert "How would you degrade when Redis is unavailable?" in body
+    assert "### 易错点" in body
+    assert "hot key fallback" in body
+    assert "### 复习状态" in body
+    assert "weak" in body
+
+
+def test_project_deep_dive_includes_project_artifacts_before_question_generation(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    captured_contexts: list[list[str]] = []
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown(
+        "projects/order-cache.md",
+        kind="project",
+        body="# 订单缓存项目\n\n我负责订单缓存一致性、热点 key 保护和降级预案。",
+        origin="human",
+        edited_by="user",
+    )
+    client.post("/api/workspace/rebuild-projection")
+
+    def capture_generate_question(_self, request):
+        captured_contexts.append(request.context)
+        return "请结合订单缓存项目讲一次热点 key 保护。"
+
+    monkeypatch.setattr(
+        "app.services.model_service.ModelService.generate_question",
+        capture_generate_question,
+    )
+
+    created = client.post(
+        "/api/interview-sessions",
+        json={
+            **CONFIG,
+            "language": "zh-CN",
+            "mode": "project_deep_dive",
+            "target_role": "后端工程师",
+        },
+    )
+
+    assert created.status_code == 200
+    context_text = "\n".join(captured_contexts[0])
+    assert "项目材料" in context_text
+    assert "订单缓存项目" in context_text
+    assert "热点 key 保护" in context_text
 
 
 def test_stream_answer_feedback_returns_delta_and_result(client: TestClient) -> None:

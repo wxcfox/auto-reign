@@ -83,6 +83,13 @@ function updateTurn(
   return turns.map((item) => (item.id === turnId ? updater(item) : item));
 }
 
+function writeSuggestions(turn: InterviewTurn) {
+  return [
+    turn.should_write_weakness ? "weakness" : null,
+    turn.should_write_high_frequency ? "high_frequency" : null,
+  ].filter((item): item is "weakness" | "high_frequency" => item !== null);
+}
+
 type InterviewWorkspaceProps = {
   sessionId?: string;
 };
@@ -370,6 +377,11 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         follow_up_question: response.follow_up_question,
         weaknesses: response.weaknesses,
         review_suggestions: response.review_suggestions,
+        better_answer: response.better_answer,
+        mastery_change: response.mastery_change,
+        should_write_weakness: response.should_write_weakness,
+        should_write_high_frequency: response.should_write_high_frequency,
+        tested_points: response.tested_points,
       })),
     );
   }
@@ -421,6 +433,11 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         follow_up_missing_points: response.missing_points,
         follow_up_weaknesses: response.weaknesses,
         follow_up_review_suggestions: response.review_suggestions,
+        better_answer: response.better_answer,
+        mastery_change: response.mastery_change,
+        should_write_weakness: response.should_write_weakness,
+        should_write_high_frequency: response.should_write_high_frequency,
+        tested_points: response.tested_points,
       })),
     );
   }
@@ -571,6 +588,42 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                         <ul>
                           {item.review_suggestions.map((suggestion) => (
                             <li key={suggestion}>{suggestion}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.better_answer ? (
+                      <>
+                        <h3>{t("better_answer")}</h3>
+                        <p>{item.better_answer}</p>
+                      </>
+                    ) : null}
+                    {item.tested_points && item.tested_points.length > 0 ? (
+                      <>
+                        <h3>{t("tested_points")}</h3>
+                        <ul>
+                          {item.tested_points.map((point) => (
+                            <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.mastery_change && item.mastery_change !== "unchanged" ? (
+                      <>
+                        <h3>{t("mastery_change")}</h3>
+                        <p>{item.mastery_change}</p>
+                      </>
+                    ) : null}
+                    {writeSuggestions(item).length > 0 ? (
+                      <>
+                        <h3>{t("write_suggestions")}</h3>
+                        <ul>
+                          {writeSuggestions(item).map((suggestion) => (
+                            <li key={suggestion}>
+                              {suggestion === "weakness"
+                                ? t("write_weakness")
+                                : t("write_high_frequency")}
+                            </li>
                           ))}
                         </ul>
                       </>

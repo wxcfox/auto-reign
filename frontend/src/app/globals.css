@@ -617,6 +617,71 @@ a:focus-visible {
   font-size: 0.85rem;
 }
 
+.prep-panel {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+}
+
+.prep-task-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prep-task {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.prep-task:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.prep-task-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.prep-task-copy {
+  min-width: 0;
+}
+
+.prep-task-copy p {
+  margin: 0;
+  font-weight: 800;
+}
+
+.prep-task-copy small {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.prep-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -735,6 +800,48 @@ a:focus-visible {
 .report-preview {
   min-width: 0;
   padding: 24px;
+}
+
+.real-interview-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+}
+
+.real-interview-panel .button-row {
+  justify-content: flex-start;
+}
+
+.real-interview-result {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.real-interview-result-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.real-interview-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.real-interview-result h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+.real-interview-result ul {
+  margin: 0;
+  padding-left: 20px;
 }
 
 .segmented-control {
@@ -1639,6 +1746,7 @@ a:focus-visible {
   .form-grid,
   .interview-layout,
   .library-browser,
+  .real-interview-result-grid,
   .metric-grid,
   .dashboard-grid,
   .quick-actions,

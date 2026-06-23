@@ -107,6 +107,13 @@ def _finish_session_payload(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _interview_service(request: Request) -> InterviewService:
+    return InterviewService(
+        artifact_service=request.app.state.artifact_service,
+        workspace_service=request.app.state.workspace_service,
+    )
+
+
 @router.get("/interview-configs/last", response_model=InterviewConfigResponse)
 def get_last_config(session: Session = Depends(get_session)) -> InterviewConfigResponse:
     config = InterviewService().get_last_config(session)
@@ -146,7 +153,7 @@ def create_session(
         request.app.state.workspace_service,
         ArtifactRepository(),
     )
-    interview_session, turn = InterviewService().create_session(session, config_in)
+    interview_session, turn = _interview_service(request).create_session(session, config_in)
     return InterviewSessionCreatedResponse(
         session=interview_session,
         turn=turn,
@@ -162,7 +169,7 @@ def create_session_stream(
         request.app.state.workspace_service,
         ArtifactRepository(),
     )
-    events = InterviewService().stream_create_session(session, config_in)
+    events = _interview_service(request).stream_create_session(session, config_in)
     return _streaming_response(events, _session_created_payload, session)
 
 
@@ -179,17 +186,23 @@ def get_session_detail(
 
 @router.post("/interview-sessions/{session_id}/answer", response_model=AnswerFeedbackResponse)
 def submit_answer(
-    session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
+    session_id: str,
+    answer: AnswerRequest,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> AnswerFeedbackResponse:
-    feedback = InterviewService().submit_answer(session, session_id, answer.answer)
+    feedback = _interview_service(request).submit_answer(session, session_id, answer.answer)
     return AnswerFeedbackResponse.model_validate(feedback.model_dump())
 
 
 @router.post("/interview-sessions/{session_id}/answer/stream")
 def submit_answer_stream(
-    session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
+    session_id: str,
+    answer: AnswerRequest,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> StreamingResponse:
-    events = InterviewService().stream_submit_answer(session, session_id, answer.answer)
+    events = _interview_service(request).stream_submit_answer(session, session_id, answer.answer)
     return _streaming_response(events, _answer_feedback_payload, session)
 
 
@@ -198,17 +211,27 @@ def submit_answer_stream(
     response_model=FollowUpFeedbackResponse,
 )
 def submit_follow_up_answer(
-    session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
+    session_id: str,
+    answer: AnswerRequest,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> FollowUpFeedbackResponse:
-    feedback = InterviewService().submit_follow_up_answer(session, session_id, answer.answer)
+    feedback = _interview_service(request).submit_follow_up_answer(
+        session, session_id, answer.answer
+    )
     return FollowUpFeedbackResponse.model_validate(feedback.model_dump())
 
 
 @router.post("/interview-sessions/{session_id}/follow-up-answer/stream")
 def submit_follow_up_answer_stream(
-    session_id: str, answer: AnswerRequest, session: Session = Depends(get_session)
+    session_id: str,
+    answer: AnswerRequest,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> StreamingResponse:
-    events = InterviewService().stream_submit_follow_up_answer(session, session_id, answer.answer)
+    events = _interview_service(request).stream_submit_follow_up_answer(
+        session, session_id, answer.answer
+    )
     return _streaming_response(events, _follow_up_feedback_payload, session)
 
 
@@ -221,7 +244,7 @@ def next_question(
         request.app.state.workspace_service,
         ArtifactRepository(),
     )
-    interview_session, turn = InterviewService().next_question(session, session_id)
+    interview_session, turn = _interview_service(request).next_question(session, session_id)
     return InterviewSessionCreatedResponse(session=interview_session, turn=turn)
 
 
@@ -234,13 +257,15 @@ def next_question_stream(
         request.app.state.workspace_service,
         ArtifactRepository(),
     )
-    events = InterviewService().stream_next_question(session, session_id)
+    events = _interview_service(request).stream_next_question(session, session_id)
     return _streaming_response(events, _session_created_payload, session)
 
 
 @router.post("/interview-sessions/{session_id}/finish")
-def finish_session(session_id: str, session: Session = Depends(get_session)) -> dict[str, object]:
-    interview_session, report = InterviewService().finish_session(session, session_id)
+def finish_session(
+    session_id: str, request: Request, session: Session = Depends(get_session)
+) -> dict[str, object]:
+    interview_session, report = _interview_service(request).finish_session(session, session_id)
     return {
         "session": InterviewSessionDetailResponse(
             session=interview_session,
@@ -252,6 +277,8 @@ def finish_session(session_id: str, session: Session = Depends(get_session)) -> 
 
 
 @router.post("/interview-sessions/{session_id}/finish/stream")
-def finish_session_stream(session_id: str, session: Session = Depends(get_session)) -> StreamingResponse:
-    events = InterviewService().stream_finish_session(session, session_id)
+def finish_session_stream(
+    session_id: str, request: Request, session: Session = Depends(get_session)
+) -> StreamingResponse:
+    events = _interview_service(request).stream_finish_session(session, session_id)
     return _streaming_response(events, _finish_session_payload, session)

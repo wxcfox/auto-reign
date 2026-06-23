@@ -65,6 +65,19 @@ class LearningNoteResponse(BaseModel):
     summary: LearningNoteSummaryResult
 
 
+class RealInterviewRecordRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000)
+    language: str = "zh-CN"
+
+
+class RealInterviewRecordResponse(BaseModel):
+    raw_artifact: "ArtifactSummaryResponse"
+    high_frequency_artifact: "ArtifactSummaryResponse"
+    plan_artifact: "ArtifactSummaryResponse"
+    questions: list[str]
+    weak_points: list[str]
+
+
 class ArtifactSummaryResponse(BaseModel):
     id: str
     kind: str
@@ -82,6 +95,17 @@ class ArtifactSummaryResponse(BaseModel):
 
 class ArtifactListResponse(BaseModel):
     artifacts: list[ArtifactSummaryResponse]
+
+
+class PreparationTaskResponse(BaseModel):
+    title: str
+    reason: str
+    source_artifact_id: str | None = None
+    source_relative_path: str | None = None
+
+
+class PreparationTasksResponse(BaseModel):
+    tasks: list[PreparationTaskResponse]
 
 
 class ArtifactDetailResponse(ArtifactSummaryResponse):
@@ -118,6 +142,32 @@ def workspace_status(session: Session = Depends(get_session)) -> WorkspaceStatus
 def list_artifacts(session: Session = Depends(get_session)) -> ArtifactListResponse:
     artifacts = ArtifactRepository().list(session)
     return ArtifactListResponse(artifacts=[_summary(artifact) for artifact in artifacts])
+
+
+@router.get("/preparation-tasks", response_model=PreparationTasksResponse)
+def preparation_tasks(
+    request: Request,
+    session: Session = Depends(get_session),
+) -> PreparationTasksResponse:
+    repository = ArtifactRepository()
+    plan = repository.get_by_relative_path(session, "state/plan.md")
+    if plan is None:
+        return PreparationTasksResponse(tasks=[])
+    try:
+        body = request.app.state.artifact_service.read_markdown(plan.relative_path).body
+    except Exception:
+        return PreparationTasksResponse(tasks=[])
+    return PreparationTasksResponse(
+        tasks=[
+            PreparationTaskResponse(
+                title=task,
+                reason="来自当前学习计划",
+                source_artifact_id=plan.id,
+                source_relative_path=plan.relative_path,
+            )
+            for task in _extract_plan_tasks(body)[:3]
+        ]
+    )
 
 
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
@@ -330,6 +380,99 @@ def record_learning_note_stream(
     )
 
 
+@router.post("/real-interview-records", response_model=RealInterviewRecordResponse)
+def record_real_interview(
+    payload: RealInterviewRecordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> RealInterviewRecordResponse:
+    record = payload.text.strip()
+    if not record:
+        raise bad_request("real_interview_record_empty", "Real interview record text is required.")
+    return _persist_real_interview_record(
+        record,
+        payload.language,
+        request,
+        background_tasks,
+    )
+
+
+def _persist_real_interview_record(
+    record: str,
+    language: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> RealInterviewRecordResponse:
+    timestamp = datetime.now(UTC)
+    questions = _extract_real_interview_questions(record)
+    weak_points = _extract_real_interview_weak_points(record)
+    raw_path = f"raw/{timestamp.strftime('%Y%m%d-%H%M%S-%f')}.md"
+    raw_document = request.app.state.artifact_service.create_markdown(
+        raw_path,
+        kind="interview_record",
+        language=language,
+        body=_real_interview_record_body(record, questions, weak_points),
+        origin="human",
+        edited_by="user",
+        now=timestamp,
+    )
+    raw_ref = f"artifact:{raw_document.front_matter.id}"
+    high_frequency_path = "review/high-frequency.md"
+    plan_path = "state/plan.md"
+    _create_or_merge_high_frequency_card(
+        request.app.state.artifact_service,
+        high_frequency_path,
+        questions=questions,
+        weak_points=weak_points,
+        language=language,
+        source_ref=raw_ref,
+        timestamp=timestamp,
+    )
+    _create_or_replace_plan_from_real_interview(
+        request.app.state.artifact_service,
+        plan_path,
+        questions=questions,
+        weak_points=weak_points,
+        language=language,
+        evidence_ref=raw_ref,
+        timestamp=timestamp,
+    )
+
+    with session_scope(request.app.state.session_factory) as session:
+        repository = ArtifactRepository()
+        request.app.state.workspace_service.rebuild_projection(
+            session,
+            repository,
+            request.app.state.artifact_service,
+        )
+        raw_artifact = repository.get(session, raw_document.front_matter.id)
+        high_frequency_artifact = repository.get_by_relative_path(session, high_frequency_path)
+        plan_artifact = repository.get_by_relative_path(session, plan_path)
+        if raw_artifact is None or high_frequency_artifact is None or plan_artifact is None:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "real_interview_projection_failed",
+                    "message": "Real interview record was saved but projection failed.",
+                },
+            )
+        response = RealInterviewRecordResponse(
+            raw_artifact=_summary(raw_artifact),
+            high_frequency_artifact=_summary(high_frequency_artifact),
+            plan_artifact=_summary(plan_artifact),
+            questions=questions,
+            weak_points=weak_points,
+        )
+
+    background_tasks.add_task(
+        IndexService().rebuild_index,
+        request.app.state.session_factory,
+        request.app.state.workspace_service,
+        ArtifactRepository(),
+    )
+    return response
+
+
 def _persist_learning_note(
     note: str,
     language: str,
@@ -343,19 +486,19 @@ def _persist_learning_note(
         media_type="text/markdown",
         content=note.encode("utf-8"),
         language=language,
+        directory="inbox",
         uploaded_at=timestamp,
     )
     source_ref = f"source:{source.artifact_id}"
-    knowledge_path = f"knowledge/{_slug(summary.title)}-{source.artifact_id[:8]}.md"
-    request.app.state.artifact_service.create_markdown(
+    knowledge_path = f"knowledge/{_slug(summary.title)}.md"
+    _create_or_merge_learning_card(
+        request.app.state.artifact_service,
         knowledge_path,
-        kind="knowledge",
+        note=note,
+        summary=summary,
         language=language,
-        body=_learning_note_body(note, summary),
-        source_refs=[source_ref],
-        origin="llm",
-        edited_by="system",
-        now=timestamp,
+        source_ref=source_ref,
+        timestamp=timestamp,
     )
 
     with session_scope(request.app.state.session_factory) as session:
@@ -440,29 +583,250 @@ def _extract_plan_tasks(body: str) -> list[str]:
     tasks: list[str] = []
     for line in body.splitlines():
         if re.match(r"^\s*(?:[-*]|\d+[.)])\s+\S", line):
-            tasks.append(line.strip())
+            tasks.append(re.sub(r"^\s*(?:[-*]|\d+[.)])\s+", "", line).strip())
     return tasks
 
 
 def _learning_note_body(note: str, summary: LearningNoteSummaryResult) -> str:
-    sections = [
-        f"# {summary.title}",
-        "## 用户原始学习记录\n\n" + note,
-        "## AI 整理摘要\n\n" + summary.summary,
-    ]
-    if summary.key_points:
-        sections.append("## 关键点\n\n" + "\n".join(f"- {point}" for point in summary.key_points))
-    if summary.interview_takeaways:
-        sections.append(
-            "## 面试表达\n\n"
-            + "\n".join(f"- {takeaway}" for takeaway in summary.interview_takeaways)
+    return f"# {summary.title}\n\n{_learning_note_card(note, summary)}\n"
+
+
+def _real_interview_record_body(
+    record: str,
+    questions: list[str],
+    weak_points: list[str],
+) -> str:
+    return (
+        "# 真实面试记录\n\n"
+        "## 原始记录\n\n"
+        f"{record.strip()}\n\n"
+        "## 抽取问题\n\n"
+        f"{_plain_bullet_list(questions)}\n\n"
+        "## 薄弱线索\n\n"
+        f"{_plain_bullet_list(weak_points)}\n"
+    )
+
+
+def _create_or_merge_high_frequency_card(
+    artifact_service,
+    relative_path: str,
+    *,
+    questions: list[str],
+    weak_points: list[str],
+    language: str,
+    source_ref: str,
+    timestamp: datetime,
+) -> None:
+    try:
+        current = artifact_service.read_markdown(relative_path)
+        sections = _markdown_sections(current.body)
+        existing_questions = _markdown_list_items(sections.get("真实面试高频问题") or "")
+        existing_weak_points = _markdown_list_items(sections.get("暴露问题") or "")
+        source_refs = _unique_card_items([*current.front_matter.source_refs, source_ref])
+    except FileNotFoundError:
+        current = None
+        existing_questions = []
+        existing_weak_points = []
+        source_refs = [source_ref]
+
+    merged_questions = _unique_card_items([*existing_questions, *questions])
+    merged_weak_points = _unique_card_items([*existing_weak_points, *weak_points])
+    body = (
+        "# 高频与薄弱点\n\n"
+        "## 真实面试高频问题\n\n"
+        f"{_plain_bullet_list(merged_questions)}\n\n"
+        "## 暴露问题\n\n"
+        f"{_plain_bullet_list(merged_weak_points)}\n"
+    )
+    if current is None:
+        artifact_service.create_markdown(
+            relative_path,
+            kind="high_frequency",
+            language=language,
+            body=body,
+            source_refs=source_refs,
+            origin="llm",
+            edited_by="system",
+            now=timestamp,
         )
-    if summary.follow_up_questions:
-        sections.append(
-            "## 可追问问题\n\n"
-            + "\n".join(f"- {question}" for question in summary.follow_up_questions)
+        return
+    artifact_service.replace_body(
+        relative_path,
+        expected_revision=current.front_matter.revision,
+        body=body,
+        edited_by="system",
+        source_refs=source_refs,
+        now=timestamp,
+    )
+
+
+def _create_or_replace_plan_from_real_interview(
+    artifact_service,
+    relative_path: str,
+    *,
+    questions: list[str],
+    weak_points: list[str],
+    language: str,
+    evidence_ref: str,
+    timestamp: datetime,
+) -> None:
+    tasks = _real_interview_plan_tasks(questions, weak_points)
+    body = "# 当前计划\n\n## 未来 1-3 天\n\n" + "\n".join(
+        f"{index}. {task}" for index, task in enumerate(tasks, start=1)
+    )
+    body = f"{body}\n"
+    try:
+        current = artifact_service.read_markdown(relative_path)
+    except FileNotFoundError:
+        artifact_service.create_markdown(
+            relative_path,
+            kind="plan",
+            language=language,
+            body=body,
+            evidence_refs=[evidence_ref],
+            origin="llm",
+            edited_by="system",
+            now=timestamp,
         )
-    return "\n\n".join(sections) + "\n"
+        return
+    artifact_service.replace_body(
+        relative_path,
+        expected_revision=current.front_matter.revision,
+        body=body,
+        edited_by="system",
+        now=timestamp,
+    )
+
+
+def _extract_real_interview_questions(record: str) -> list[str]:
+    questions: list[str] = []
+    for raw_line in record.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        interviewer = re.match(r"^(?:面试官|interviewer|问)[:：]\s*(.+)$", line, re.IGNORECASE)
+        if interviewer:
+            candidate = interviewer.group(1).strip()
+        elif re.search(r"[?？]\s*$", line) and not re.match(r"^(?:我|候选人|answer)[:：]", line):
+            candidate = re.sub(r"^[^:：]{1,12}[:：]\s*", "", line).strip()
+        else:
+            continue
+        if candidate and not re.search(r"[?？]\s*$", candidate):
+            candidate = f"{candidate}？"
+        questions.append(candidate)
+    return _unique_card_items(questions)
+
+
+def _extract_real_interview_weak_points(record: str) -> list[str]:
+    markers = ("答差", "不会", "没答好", "没答出来", "卡住", "薄弱", "不熟", "忘了", "没说清", "答得不好")
+    weak_points: list[str] = []
+    for raw_line in record.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if any(marker in line for marker in markers):
+            weak_points.append(line)
+    return _unique_card_items(weak_points)
+
+
+def _real_interview_plan_tasks(questions: list[str], weak_points: list[str]) -> list[str]:
+    tasks: list[str] = []
+    if questions:
+        tasks.append(f"复盘真实面试题：{questions[0]}")
+    if weak_points:
+        tasks.append(f"补齐薄弱点：{weak_points[0]}")
+    for question in questions[1:]:
+        tasks.append(f"准备标准说法：{question}")
+    for weak_point in weak_points[1:]:
+        tasks.append(f"纠正真实面试暴露问题：{weak_point}")
+    if not tasks:
+        tasks.append("整理真实面试记录，补全问题和回答。")
+    return tasks[:3]
+
+
+def _plain_bullet_list(items: list[str]) -> str:
+    compact = _unique_card_items(items)
+    if not compact:
+        return "- 暂无。"
+    return "\n".join(f"- {item}" for item in compact)
+
+
+def _learning_note_card(note: str, summary: LearningNoteSummaryResult) -> str:
+    correction_items = _unique_card_items([summary.summary, *summary.key_points])
+    interview_items = summary.interview_takeaways or [summary.summary]
+    follow_up_items = summary.follow_up_questions[:3] or ["这个知识点在真实项目中如何落地？"]
+    return (
+        f"### {summary.title}\n\n"
+        "- 我的理解：\n"
+        f"{_indented_card_text(note)}\n"
+        "- 修正/补充：\n"
+        f"{_card_list(correction_items)}\n"
+        "- 30 秒面试说法：\n"
+        f"{_card_list(interview_items)}\n"
+        "- 易混点：\n"
+        "  - 暂无明确易混点，后续练习中补充。\n"
+        "- 追问：\n"
+        f"{_card_list(follow_up_items)}\n"
+    )
+
+
+def _create_or_merge_learning_card(
+    artifact_service,
+    knowledge_path: str,
+    *,
+    note: str,
+    summary: LearningNoteSummaryResult,
+    language: str,
+    source_ref: str,
+    timestamp: datetime,
+) -> None:
+    try:
+        current = artifact_service.read_markdown(knowledge_path)
+    except FileNotFoundError:
+        artifact_service.create_markdown(
+            knowledge_path,
+            kind="knowledge",
+            language=language,
+            body=_learning_note_body(note, summary),
+            source_refs=[source_ref],
+            origin="llm",
+            edited_by="system",
+            now=timestamp,
+        )
+        return
+    merged_body = f"{current.body.rstrip()}\n\n{_learning_note_card(note, summary)}\n"
+    artifact_service.replace_body(
+        knowledge_path,
+        expected_revision=current.front_matter.revision,
+        body=merged_body,
+        edited_by="system",
+        source_refs=_unique_card_items([*current.front_matter.source_refs, source_ref]),
+        now=timestamp,
+    )
+
+
+def _indented_card_text(value: str) -> str:
+    lines = value.strip().splitlines() or ["（空内容）"]
+    return "\n".join(f"  {line}" if line.strip() else "" for line in lines)
+
+
+def _card_list(items: list[str]) -> str:
+    compact = _unique_card_items(items)
+    if not compact:
+        return "  - 暂无明确内容，后续练习中补充。"
+    return "\n".join(f"  - {item}" for item in compact[:3])
+
+
+def _unique_card_items(items: list[str]) -> list[str]:
+    compact: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        stripped = item.strip()
+        if not stripped or stripped in seen:
+            continue
+        seen.add(stripped)
+        compact.append(stripped)
+    return compact
 
 
 def _slug(value: str) -> str:

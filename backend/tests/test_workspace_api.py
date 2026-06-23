@@ -24,6 +24,37 @@ def test_workspace_rebuild_projection_endpoint(client) -> None:
     assert response.json()["artifact_count"] == 1
 
 
+def test_workspace_preparation_tasks_parse_state_plan(client) -> None:
+    artifacts = client.app.state.artifact_service
+    artifacts.create_markdown(
+        "state/plan.md",
+        kind="plan",
+        body=(
+            "# 当前计划\n\n"
+            "## 优先任务\n\n"
+            "1. MySQL：用 30 秒说清 redo/binlog 两阶段提交。\n"
+            "2. Spring：复述 Bean 生命周期。\n"
+            "3. Redis：说明缓存击穿治理。\n"
+            "4. JVM：复述类加载流程。\n"
+        ),
+        evidence_refs=["practice:abc"],
+    )
+    client.post("/api/workspace/rebuild-projection")
+
+    response = client.get("/api/workspace/preparation-tasks")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [task["title"] for task in body["tasks"]] == [
+        "MySQL：用 30 秒说清 redo/binlog 两阶段提交。",
+        "Spring：复述 Bean 生命周期。",
+        "Redis：说明缓存击穿治理。",
+    ]
+    assert body["tasks"][0]["source_artifact_id"]
+    assert body["tasks"][0]["source_relative_path"] == "state/plan.md"
+    assert body["tasks"][0]["reason"] == "来自当前学习计划"
+
+
 def test_workspace_upload_materials_endpoint(client) -> None:
     response = client.post(
         "/api/workspace/materials/upload",
@@ -107,6 +138,7 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert response.status_code == 200
     body = response.json()
     assert body["source"]["duplicate"] is False
+    assert body["source"]["relative_path"].startswith("inbox/")
     assert body["artifact"]["kind"] == "knowledge"
     assert body["summary"]["title"]
     assert "Redis" in body["summary"]["summary"]
@@ -116,10 +148,71 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert {"source", "knowledge"}.issubset(kinds)
 
     detail = client.get(f"/api/workspace/artifacts/{body['artifact']['id']}").json()
-    assert "用户原始学习记录" in detail["body"]
+    assert "我的理解" in detail["body"]
+    assert "修正/补充" in detail["body"]
+    assert "30 秒面试说法" in detail["body"]
+    assert "易混点" in detail["body"]
+    assert "追问" in detail["body"]
     assert "缓存穿透" in detail["body"]
-    assert "AI 整理摘要" in detail["body"]
     assert len(calls) == 1
+
+
+def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) -> None:
+    class FixedModelService:
+        def summarize_learning_note(
+            self,
+            text: str,
+            *,
+            language: str = "zh-CN",
+            provider: str | None = None,
+            model: str | None = None,
+        ):
+            from app.services.model_service import LearningNoteSummaryResult
+
+            return LearningNoteSummaryResult(
+                title="Redis 缓存穿透",
+                summary=f"已整理：{text}",
+                key_points=["布隆过滤器和空值缓存是常见治理方案。"],
+                interview_takeaways=["先说明风险，再说明布隆过滤器和空值缓存的取舍。"],
+                follow_up_questions=["布隆过滤器误判会带来什么影响？"],
+            )
+
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.ModelService", FixedModelService)
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    first = client.post(
+        "/api/workspace/learning-notes",
+        json={
+            "text": "第一次：缓存穿透可以用布隆过滤器挡住不存在的 key。",
+            "language": "zh-CN",
+        },
+    ).json()
+    second = client.post(
+        "/api/workspace/learning-notes",
+        json={
+            "text": "第二次：空值缓存也可以降低数据库压力。",
+            "language": "zh-CN",
+        },
+    ).json()
+
+    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    knowledge_artifacts = [artifact for artifact in artifacts if artifact["kind"] == "knowledge"]
+    source_artifacts = [artifact for artifact in artifacts if artifact["kind"] == "source"]
+
+    assert first["artifact"]["id"] == second["artifact"]["id"]
+    assert first["artifact"]["relative_path"] == "knowledge/redis-缓存穿透.md"
+    assert len(knowledge_artifacts) == 1
+    assert len(source_artifacts) == 2
+
+    detail = client.get(f"/api/workspace/artifacts/{second['artifact']['id']}").json()
+    assert detail["revision"] == 2
+    assert "第一次：缓存穿透" in detail["body"]
+    assert "第二次：空值缓存" in detail["body"]
+    assert detail["body"].count("### Redis 缓存穿透") == 2
 
 
 def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch) -> None:
@@ -151,6 +244,63 @@ def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch
     artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
     kinds = {artifact["kind"] for artifact in artifacts}
     assert {"source", "knowledge"}.issubset(kinds)
+    assert len(calls) == 1
+
+
+def test_record_real_interview_archives_extracts_and_updates_plan(
+    client,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[object, object, object]] = []
+
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            calls.append((session_factory, workspace, repository))
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    response = client.post(
+        "/api/workspace/real-interview-records",
+        json={
+            "text": (
+                "面试官：Redis 缓存击穿怎么处理？\n"
+                "我：只说了加锁，没答好降级预案。\n"
+                "面试官：MySQL redo log 和 binlog 为什么要两阶段提交？\n"
+                "我：这个不会。\n"
+            ),
+            "language": "zh-CN",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["raw_artifact"]["kind"] == "interview_record"
+    assert body["raw_artifact"]["relative_path"].startswith("raw/")
+    assert body["questions"] == [
+        "Redis 缓存击穿怎么处理？",
+        "MySQL redo log 和 binlog 为什么要两阶段提交？",
+    ]
+    assert "没答好降级预案" in body["weak_points"][0]
+    assert body["high_frequency_artifact"]["relative_path"] == "review/high-frequency.md"
+    assert body["plan_artifact"]["relative_path"] == "state/plan.md"
+
+    raw_detail = client.get(f"/api/workspace/artifacts/{body['raw_artifact']['id']}").json()
+    assert "## 原始记录" in raw_detail["body"]
+    assert "Redis 缓存击穿怎么处理？" in raw_detail["body"]
+
+    high_frequency_detail = client.get(
+        f"/api/workspace/artifacts/{body['high_frequency_artifact']['id']}"
+    ).json()
+    assert "## 真实面试高频问题" in high_frequency_detail["body"]
+    assert "Redis 缓存击穿怎么处理？" in high_frequency_detail["body"]
+    assert "## 暴露问题" in high_frequency_detail["body"]
+    assert "这个不会" in high_frequency_detail["body"]
+
+    tasks = client.get("/api/workspace/preparation-tasks").json()["tasks"]
+    assert len(tasks) == 3
+    assert "Redis 缓存击穿怎么处理？" in tasks[0]["title"]
+    assert "降级预案" in tasks[1]["title"]
     assert len(calls) == 1
 
 

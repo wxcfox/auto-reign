@@ -13,7 +13,7 @@ vi.mock("@/lib/api", () => ({
 const learningResponse = {
   source: {
     artifact_id: "source-1",
-    relative_path: "sources/learning-note.md",
+    relative_path: "inbox/learning-note.md",
     duplicate: false,
   },
   artifact: {
@@ -108,11 +108,13 @@ describe("LearningWorkspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /记录学习/i }));
 
-    expect(await screen.findByText("Spring Bean 生命周期")).toBeInTheDocument();
-    expect(screen.getByText("摘要")).toBeInTheDocument();
-    expect(screen.getByText("关键点")).toBeInTheDocument();
-    expect(screen.getByText("面试表达")).toBeInTheDocument();
-    expect(screen.getByText("可追问问题")).toBeInTheDocument();
+    expect((await screen.findAllByText("Spring Bean 生命周期")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/我的理解/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/修正\/补充/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/30 秒面试说法/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/易混点/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/追问/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("摘要")).not.toBeInTheDocument();
     expect(screen.queryByText("Summary")).not.toBeInTheDocument();
     expect(recordLearningNoteStream).toHaveBeenCalledWith(
       expect.objectContaining({ language: "zh-CN" }),

@@ -95,6 +95,11 @@ class FeedbackResponse(BaseModel):
     missing_points: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     review_suggestions: list[str] = Field(default_factory=list)
+    better_answer: str = ""
+    mastery_change: str = "unchanged"
+    should_write_weakness: bool = False
+    should_write_high_frequency: bool = False
+    tested_points: list[str] = Field(default_factory=list)
 
 
 class AnswerFeedbackResponse(FeedbackResponse):
