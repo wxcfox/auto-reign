@@ -13,27 +13,26 @@ vi.mock("@/lib/api", () => ({
 }));
 
 describe("AppShell", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(listInterviewSessions).mockResolvedValue({
+  function sessionResponse(label: string, status: "active" | "completed", id = `${status}-session`) {
+    return {
       sessions: [
         {
-          resumable: true,
+          resumable: status === "active",
           session: {
-            id: "active-session",
+            id,
             config_id: "config-1",
-            status: "active",
+            status,
             current_round: 1,
             started_at: "2026-06-23T00:00:00Z",
-            ended_at: null,
-            report_path: null,
+            ended_at: status === "completed" ? "2026-06-23T00:10:00Z" : null,
+            report_path: status === "completed" ? "reports/completed.md" : null,
           },
           config: {
             id: "config-1",
             target_company: "",
             target_role: "",
             job_description: "",
-            extra_prompt: "Active backend interview",
+            extra_prompt: label,
             language: "en",
             mode: "comprehensive",
             chat_model_provider: "qwen",
@@ -44,6 +43,15 @@ describe("AppShell", () => {
           },
           turns: [],
         },
+      ],
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listInterviewSessions).mockResolvedValue({
+      sessions: [
+        ...sessionResponse("Active backend interview", "active", "active-session").sessions,
         {
           resumable: false,
           session: {
@@ -103,5 +111,27 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
     await waitFor(() => expect(screen.getByText(/Language/i)).toBeInTheDocument());
     expect(screen.getByText(/Dark mode/i)).toBeInTheDocument();
+  });
+
+  it("refreshes sidebar history when interview sessions change", async () => {
+    vi.mocked(listInterviewSessions)
+      .mockResolvedValueOnce(sessionResponse("Initial backend interview", "active", "initial-session"))
+      .mockResolvedValueOnce(sessionResponse("Completed refreshed interview", "completed", "done-session"));
+
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    expect(await screen.findByRole("link", { name: /Initial backend interview/i }))
+      .toHaveAttribute("href", "/interview?session=initial-session");
+
+    window.dispatchEvent(new Event("auto-reign:interview-sessions-changed"));
+
+    expect(await screen.findByRole("button", { name: /Completed refreshed interview/i }))
+      .toBeDisabled();
+    expect(screen.queryByRole("link", { name: /Initial backend interview/i })).not.toBeInTheDocument();
+    expect(listInterviewSessions).toHaveBeenCalledTimes(2);
   });
 });

@@ -320,6 +320,50 @@ describe("InterviewWorkspace", () => {
     expect(finishInterviewStream).toHaveBeenCalledWith("session-1", expect.any(Object));
     expect(screen.queryByText(/Continue to the next question/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Finish/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry report/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps a report retry path when automatic finalization fails", async () => {
+    vi.mocked(getLastInterviewConfig).mockResolvedValue({ ...baseConfig, target_rounds: 1 });
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
+      session: { ...baseSession, current_round: 1 },
+      turn: firstTurn,
+    });
+    vi.mocked(submitAnswerStream).mockResolvedValue({
+      feedback: "Final feedback.",
+      missing_points: [],
+      follow_up_question: "",
+      weaknesses: [],
+      review_suggestions: [],
+    });
+    vi.mocked(finishInterviewStream)
+      .mockRejectedValueOnce(new Error("finish failed"))
+      .mockResolvedValueOnce({
+        session: { ...baseSession, status: "completed", ended_at: "2026-06-23T00:10:00Z" },
+        report: {
+          id: "report-1",
+          session_id: "session-1",
+          report_path: "reports/session-1.md",
+          summary: "Recovered final report",
+          weaknesses: [],
+          created_at: "2026-06-23T00:10:00Z",
+        },
+      });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I would give a concise final answer." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
+
+    expect(await screen.findByText(/finish failed/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Retry report/i }));
+
+    expect(await screen.findByText(/Recovered final report/i)).toBeInTheDocument();
+    expect(finishInterviewStream).toHaveBeenCalledTimes(2);
   });
 
   it("loads an existing active interview session from history", async () => {

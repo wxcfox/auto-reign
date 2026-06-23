@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   Database,
@@ -18,6 +18,7 @@ import { usePathname } from "next/navigation";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslation } from "@/hooks/useTranslation";
 import { listInterviewSessions } from "@/lib/api";
+import { INTERVIEW_SESSIONS_CHANGED_EVENT } from "@/lib/interview-events";
 import type { InterviewSessionHistoryItem } from "@/lib/types";
 
 type AppShellProps = {
@@ -30,6 +31,7 @@ export function AppShell({ children }: AppShellProps) {
   const [sessions, setSessions] = useState<InterviewSessionHistoryItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const sessionRefreshId = useRef(0);
   const primaryNavItems = [
     { href: "/library", label: t("nav.library"), icon: Database },
   ];
@@ -43,19 +45,30 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     let cancelled = false;
-    listInterviewSessions()
-      .then((response) => {
-        if (!cancelled) {
+    async function refreshSessions() {
+      const refreshId = sessionRefreshId.current + 1;
+      sessionRefreshId.current = refreshId;
+      try {
+        const response = await listInterviewSessions();
+        if (!cancelled && refreshId === sessionRefreshId.current) {
           setSessions(response.sessions);
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
+      } catch {
+        if (!cancelled && refreshId === sessionRefreshId.current) {
           setSessions([]);
         }
-      });
+      }
+    }
+
+    void refreshSessions();
+    const handleSessionsChanged = () => {
+      void refreshSessions();
+    };
+    window.addEventListener(INTERVIEW_SESSIONS_CHANGED_EVENT, handleSessionsChanged);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(INTERVIEW_SESSIONS_CHANGED_EVENT, handleSessionsChanged);
     };
   }, []);
 

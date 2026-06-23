@@ -25,6 +25,7 @@ import {
   submitFollowUpAnswerStream,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
+import { notifyInterviewSessionsChanged } from "@/lib/interview-events";
 import type {
   AnswerFeedback,
   FollowUpFeedback,
@@ -264,6 +265,13 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       (session?.status === "active" &&
         Boolean(composerValue.trim()) &&
         (composerMode === "answer" || composerMode === "follow-up")));
+  const canRetryFinish =
+    session?.status === "active" &&
+    composerMode === "idle" &&
+    currentTurn?.answer &&
+    session.current_round >= config.target_rounds &&
+    (!currentTurn.follow_up_question || currentTurn.follow_up_answer) &&
+    !busyAction;
 
   function updateConfig<K extends keyof InterviewConfig>(field: K, value: InterviewConfig[K]) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -301,6 +309,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       });
       setSession(created.session);
       setTurns([created.turn]);
+      notifyInterviewSessionsChanged();
       setComposerValue("");
       setShowAdvanced(false);
     } catch (startError) {
@@ -459,6 +468,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       });
       setSession(response.session);
       setReport(response.report);
+      notifyInterviewSessionsChanged();
     } catch (finishError) {
       setError(getErrorMessage(finishError, t, "interview:errors.finish"));
     } finally {
@@ -789,6 +799,19 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
           </div>
 
           <div className="composer-actions">
+            {canRetryFinish ? (
+              <button
+                className="button"
+                disabled={Boolean(busyAction)}
+                onClick={() => {
+                  void handleFinish(session);
+                }}
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" size={17} />
+                {t("retry_report")}
+              </button>
+            ) : null}
             <button
               className="button"
               disabled={!session || Boolean(busyAction)}

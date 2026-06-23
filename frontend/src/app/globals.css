@@ -56,6 +56,20 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
+  --background: #ffffff;
+  --sidebar: #f9f9f9;
+  --surface: #ffffff;
+  --surface-muted: #f3f4f6;
+  --surface-subtle: #fbfbfb;
+  --border: #e4e4e7;
+  --text: #303030;
+  --text-muted: #737373;
+  --accent: #256f5b;
+  --accent-strong: #1d5a4a;
+  --danger: #a13f3f;
+  --warning: #8a620f;
+  --success: #267043;
+  --shadow-soft: 0 8px 28px rgba(0, 0, 0, 0.08);
 }
 
 * {
