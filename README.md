@@ -18,9 +18,14 @@ does not preserve existing runtime data formats. Contributors implementing the
 redesign must first create a phased plan from the specification and keep the
 application runnable at each phase boundary.
 
-Auto Reign ingests Markdown and TXT source documents, indexes their vectors in
-Qdrant, runs written mock interviews, and stores interview history and review
-memory locally.
+See [docs/README.md](docs/README.md) for the documentation map and lifecycle
+rules. Completed implementation plans should not remain in the repository unless
+their durable decisions have been promoted into canonical docs.
+
+Auto Reign ingests Markdown, TXT, PDF, DOCX, and free-form learning notes into a
+local workspace, indexes searchable chunks in Qdrant, runs written mock
+interviews in a chat-style flow, and stores interview history and review memory
+locally.
 
 ## Development Quick Start
 
@@ -93,9 +98,10 @@ If Docker Hub access is unstable in your environment, override `MYSQL_IMAGE` and
 
 Use this mode for day-to-day development. Runtime state lives in:
 
-- MySQL: interview, document, chunk, report, and memory metadata
+- MySQL: workspace artifact projection, interview, report, and memory metadata
 - Qdrant: indexed chunk vectors and retrieval payloads
-- `DATA_DIR`: uploaded source files, generated reports, and local working data
+- `DATA_DIR`: workspace source files, extracted text, generated Markdown, reports,
+  revisions, and local working data
 
 ### Full-container mode
 
@@ -154,7 +160,7 @@ docker compose config
 | `DATABASE_URL` | SQLAlchemy database URL used by the backend and Alembic. |
 | `QDRANT_URL` | Backend-to-Qdrant URL. |
 | `QDRANT_COLLECTION` | Default Qdrant collection name. |
-| `DATA_DIR` | Root directory for uploads, generated reports, and local files. |
+| `DATA_DIR` | Root directory for workspace sources, extracted text, generated reports, revisions, and local files. |
 | `EMBEDDING_PROVIDER` | Embedding provider identifier. Defaults to `qwen`. |
 | `EMBEDDING_MODEL` | Embedding model identifier. Defaults to `text-embedding-v4`. |
 | `OPENAI_API_KEY` | Enables the OpenAI model catalog. Backend only. |
@@ -182,24 +188,31 @@ and uses stable local responses and hash vectors.
 
 ## Document Library
 
-Uploads support UTF-8 `.md` and `.txt` files. Original files are stored under
-`DATA_DIR/uploads`; document and chunk metadata are stored in MySQL; chunk vectors are
-stored in Qdrant. PDF, Word, image, audio, and video ingestion are not supported.
+Uploads support `.md`, `.txt`, `.pdf`, and `.docx` files. Original files are
+stored under `DATA_DIR/sources/documents`; extracted PDF/DOCX text is stored under
+`DATA_DIR/sources/extracted` when available. The workspace projection is stored in
+MySQL, and indexable source, extracted, knowledge, and practice content is chunked
+and stored as vectors in Qdrant. See
+[Knowledge Base Data Flow](docs/knowledge-data-flow.md) for the current data path.
 
 ## Smoke Test
 
 1. Run `./start.sh`.
-2. Open Dashboard and confirm `Backend ready`.
-3. Open Library and upload a Markdown file with a level-one heading.
-4. Confirm analysis and indexing complete, then open the document detail page.
+2. Open Workbench and confirm the local stack is reachable.
+3. Open Library and upload a Markdown, TXT, PDF, or DOCX file.
+4. Confirm the file appears with its original filename, category, timestamps, and
+   edit/delete actions.
 5. Configure `QWEN_API_KEY` in `.env` and restart with `./start.sh --restart`.
-6. Open Interview, set company, role, mode, model, and target rounds.
-7. Start a session, submit an answer and optional follow-up, then finish it.
-8. Open Review and confirm the report and memory content are visible.
+6. Open New interview, optionally describe the company, role, or JD in the chat
+   composer, then start answering in the conversation flow.
+7. Continue until the configured interview completes and the summary appears in
+   the chat.
+8. Open History from the sidebar and confirm completed interviews are visible but
+   cannot be resumed.
 
 ## V1 Exclusions
 
 V1 has no authentication, authorization, multi-user isolation, background workers,
-Redis, object storage, remote RAG runtime, binary document ingestion, voice/video
-interviews, numeric scoring, or frontend API-key entry. It is intended for a single
-user running the stack locally.
+Redis, object storage, remote RAG runtime, scanned-image OCR, voice/video
+interviews, numeric scoring, or frontend API-key entry. It is intended for a
+single user running the stack locally.

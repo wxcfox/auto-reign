@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -182,6 +183,24 @@ class ArtifactService:
         )
         for old_revision in revisions[: max(0, len(revisions) - self.revisions_retained)]:
             old_revision.unlink()
+
+    def delete_artifact_files(
+        self,
+        relative_path: str,
+        *,
+        artifact_id: str,
+        remove_source_sidecar: bool = False,
+    ) -> None:
+        path = self.workspace.resolve_path(relative_path)
+        if path.exists():
+            path.unlink()
+        if remove_source_sidecar:
+            sidecar_path = path.with_name(f"{path.name}.meta.json")
+            if sidecar_path.exists():
+                sidecar_path.unlink()
+        revision_dir = self.workspace.resolve_path(f".revisions/{artifact_id}")
+        if revision_dir.exists():
+            shutil.rmtree(revision_dir)
 
     def repair_markdown(
         self,

@@ -27,7 +27,8 @@ reset commands must remain explicit.
 - `frontend/src/`: Next.js application, components, i18n resources, and tests.
 - `scripts/`: repository lifecycle tooling used by `start.sh`.
 - `docs/superpowers/specs/`: approved product and architecture specifications.
-- `docs/superpowers/plans/`: implementation plans created from approved specs.
+- `docs/superpowers/plans/`: temporary implementation plans created from
+  approved specs while a phase is actively being implemented.
 - `data/`: local runtime data; it is not source code and must remain ignored.
 
 Do not introduce a parallel `src/` tree at the repository root. Follow the
@@ -48,6 +49,18 @@ For the filesystem-first workbench redesign:
 Do not attempt the entire redesign as one unreviewable rewrite. Reuse existing
 code where it fits the target boundaries, and delete obsolete code when its
 replacement is complete.
+
+Implementation plans are process artifacts, not durable product documentation.
+Before a PR is ready, delete completed one-off plans or promote their lasting
+decisions into `README.md`, `docs/README.md`, `docs/superpowers/specs/`, or a
+focused topic document under `docs/`. Do not keep stale completed plans merely as
+history.
+
+When changing behavior, update the canonical documentation in the same PR:
+`README.md` for runnable behavior, `docs/superpowers/specs/` for target
+architecture, and focused `docs/*.md` files for current operational flows. Avoid
+duplicating the same facts across multiple docs; prefer linking to the canonical
+source.
 
 ## Canonical Commands
 

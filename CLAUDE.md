@@ -18,7 +18,9 @@ memory, retrieval, and review assumptions.
 ## Implementation Gate
 
 Do not start by implementing the entire design. First create a detailed,
-phased plan under `docs/superpowers/plans/`. The plan must:
+phased plan under `docs/superpowers/plans/`. The plan is a temporary working
+artifact for the current phase, not durable project documentation. The plan
+must:
 
 - follow the four phases in the canonical design;
 - name every file to create, modify, rename, or delete;
@@ -32,6 +34,9 @@ phased plan under `docs/superpowers/plans/`. The plan must:
 
 Implement only after the plan is coherent and internally reviewed. Work through
 the plan task by task, verify each task, and make small intentional commits.
+Before opening or updating a PR, delete completed one-off plans or promote the
+lasting decisions into the canonical docs. Do not leave completed task plans in
+the repository as historical clutter.
 
 ## Non-Negotiable Product Rules
 

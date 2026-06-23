@@ -4,6 +4,10 @@
   "summary": "共有 {{count}} 篇文档可用于面试上下文。",
   "rebuild_index": "重建索引",
   "rebuild_success": "索引已重建。",
+  "delete_success": "文件已删除。",
+  "delete_confirm": "确定删除“{{name}}”吗？此操作会删除本地 workspace 中对应文件。",
+  "edit_named": "编辑 {{name}}",
+  "delete_named": "删除 {{name}}",
   "indexed_eyebrow": "已索引资料",
   "documents_title": "文档",
   "browser_title": "文件",
@@ -24,9 +28,28 @@
   "preview_title": "预览",
   "preview_empty": "选择左侧分类浏览文件。",
   "file_count": "{{count}} 个文件",
+  "table": {
+    "name": "名称",
+    "owner": "归属",
+    "created_at": "创建时间",
+    "updated_at": "更新时间",
+    "actions": "操作"
+  },
+  "actions": {
+    "edit": "编辑",
+    "delete": "删除"
+  },
   "categories": {
     "title": "分类",
     "all": "全部文件"
+  },
+  "owners": {
+    "sources": "原始资料",
+    "knowledge": "知识库",
+    "profile": "画像",
+    "practice": "练习",
+    "state": "状态",
+    "reports": "报告"
   },
   "kinds": {
     "source": "原始资料",

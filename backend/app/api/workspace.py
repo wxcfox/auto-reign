@@ -21,8 +21,10 @@ from app.core.artifact_permissions import (
 from app.core.errors import bad_request
 from app.core.errors import conflict as conflict_error
 from app.core.errors import not_found
+from app.core.errors import service_unavailable
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
+from app.repositories.vector_store import VectorStoreError
 from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
 from app.services.artifact_service import ArtifactConflict
 from app.services.ingestion_service import IngestionService, UploadItem
@@ -66,6 +68,7 @@ class LearningNoteResponse(BaseModel):
 class ArtifactSummaryResponse(BaseModel):
     id: str
     kind: str
+    owner: str
     relative_path: str
     display_name: str
     revision: int
@@ -73,6 +76,8 @@ class ArtifactSummaryResponse(BaseModel):
     index_status: str
     recovery_required: bool
     allowed_operations: list[str]
+    created_at: datetime
+    updated_at: datetime
 
 
 class ArtifactListResponse(BaseModel):
@@ -81,6 +86,11 @@ class ArtifactListResponse(BaseModel):
 
 class ArtifactDetailResponse(ArtifactSummaryResponse):
     body: str | None = None
+
+
+class ArtifactDeleteResponse(BaseModel):
+    id: str
+    status: str
 
 
 class ReplaceBodyRequest(BaseModel):
@@ -161,6 +171,42 @@ def replace_artifact_body(
     )
     updated = repository.get(session, artifact_id)
     return _summary(updated)
+
+
+@router.delete("/artifacts/{artifact_id}", response_model=ArtifactDeleteResponse)
+def delete_artifact(
+    artifact_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> ArtifactDeleteResponse:
+    repository = ArtifactRepository()
+    artifact = repository.get(session, artifact_id)
+    if artifact is None:
+        raise not_found("artifact_not_found", "Artifact not found.")
+    workspace_settings = WorkspaceSettingsRepository().get_or_create(session)
+    index_service = IndexService()
+    target_collection = workspace_settings.active_collection or index_service.settings.qdrant_collection
+    try:
+        index_service.vector_store.delete_document_chunks(target_collection, artifact_id)
+    except VectorStoreError as exc:
+        raise service_unavailable(
+            "vector_delete_failed",
+            "Artifact chunks could not be removed from the vector index.",
+        ) from exc
+    try:
+        request.app.state.artifact_service.delete_artifact_files(
+            artifact.relative_path,
+            artifact_id=artifact.id,
+            remove_source_sidecar=artifact.kind == "source",
+        )
+    except OSError as exc:
+        raise bad_request("artifact_delete_failed", "Artifact could not be deleted.") from exc
+    request.app.state.workspace_service.rebuild_projection(
+        session,
+        repository,
+        request.app.state.artifact_service,
+    )
+    return ArtifactDeleteResponse(id=artifact_id, status="deleted")
 
 
 @router.post("/rebuild-projection", response_model=WorkspaceStatusResponse)
@@ -362,6 +408,7 @@ def _summary(artifact) -> ArtifactSummaryResponse:
     return ArtifactSummaryResponse(
         id=artifact.id,
         kind=artifact.kind,
+        owner=_owner(artifact),
         relative_path=artifact.relative_path,
         display_name=_display_name(artifact),
         revision=artifact.revision,
@@ -369,6 +416,8 @@ def _summary(artifact) -> ArtifactSummaryResponse:
         index_status=artifact.index_status,
         recovery_required=artifact.recovery_required,
         allowed_operations=sorted(ALLOWED_OPERATIONS.get(artifact.kind, set())),
+        created_at=artifact.created_at,
+        updated_at=artifact.updated_at,
     )
 
 
@@ -376,6 +425,15 @@ def _display_name(artifact) -> str:
     if artifact.kind == "source" and artifact.source_filename:
         return artifact.source_filename
     return Path(artifact.relative_path).name
+
+
+def _owner(artifact) -> str:
+    if artifact.kind in {"candidate_profile", "target_profile"}:
+        return "profile"
+    if artifact.kind in {"mastery", "plan"}:
+        return "state"
+    parts = Path(artifact.relative_path).parts
+    return parts[0] if parts else artifact.kind
 
 
 def _extract_plan_tasks(body: str) -> list[str]:

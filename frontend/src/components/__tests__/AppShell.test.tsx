@@ -144,6 +144,26 @@ describe("AppShell", () => {
     expect(screen.getByRole("button", { name: /浅色模式/i })).toBeInTheDocument();
   });
 
+  it("collapses and expands the sidebar", async () => {
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    const shell = screen.getByText("Current page").closest(".app-shell");
+    expect(shell).toHaveAttribute("data-sidebar-collapsed", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: /Collapse sidebar/i }));
+
+    expect(shell).toHaveAttribute("data-sidebar-collapsed", "true");
+    expect(screen.getByRole("button", { name: /Expand sidebar/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Expand sidebar/i }));
+
+    expect(shell).toHaveAttribute("data-sidebar-collapsed", "false");
+  });
+
   it("refreshes sidebar history when interview sessions change", async () => {
     vi.mocked(listInterviewSessions)
       .mockResolvedValueOnce(sessionResponse("Initial backend interview", "active", "initial-session"))
