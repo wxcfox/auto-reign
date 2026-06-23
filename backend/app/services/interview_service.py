@@ -30,6 +30,24 @@ class InterviewStreamEvent:
     data: dict[str, Any]
 
 
+def _target_context_query(
+    *,
+    target_company: str,
+    target_role: str,
+    job_description: str,
+    extra_prompt: str,
+    round_index: int | None = None,
+) -> str:
+    parts = [
+        item.strip()
+        for item in [target_company, target_role, job_description, extra_prompt]
+        if item.strip()
+    ]
+    if round_index is not None:
+        parts.append(f"round {round_index}")
+    return " ".join(parts)
+
+
 class InterviewService:
     def __init__(
         self,
@@ -78,7 +96,12 @@ class InterviewService:
         self.config_repository.add(session, config)
         context_hits = self.retrieval_service.search(
             session,
-            f"{config_in.target_role} {config_in.job_description}",
+            _target_context_query(
+                target_company=config_in.target_company,
+                target_role=config_in.target_role,
+                job_description=config_in.job_description,
+                extra_prompt=config_in.extra_prompt,
+            ),
             limit=4,
         )
         context = [str(hit["content"]) for hit in context_hits]
@@ -118,7 +141,12 @@ class InterviewService:
     ) -> Iterator[InterviewStreamEvent]:
         context_hits = self.retrieval_service.search(
             session,
-            f"{config_in.target_role} {config_in.job_description}",
+            _target_context_query(
+                target_company=config_in.target_company,
+                target_role=config_in.target_role,
+                job_description=config_in.job_description,
+                extra_prompt=config_in.extra_prompt,
+            ),
             limit=4,
         )
         request = QuestionGenerationRequest(
@@ -330,7 +358,13 @@ class InterviewService:
         next_round = interview_session.current_round + 1
         context_hits = self.retrieval_service.search(
             session,
-            f"{config.target_role} {config.job_description} round {next_round}",
+            _target_context_query(
+                target_company=config.target_company,
+                target_role=config.target_role,
+                job_description=config.job_description,
+                extra_prompt=config.extra_prompt,
+                round_index=next_round,
+            ),
             limit=4,
         )
         question = self.model_service.generate_question(
@@ -377,7 +411,13 @@ class InterviewService:
         next_round = interview_session.current_round + 1
         context_hits = self.retrieval_service.search(
             session,
-            f"{config.target_role} {config.job_description} round {next_round}",
+            _target_context_query(
+                target_company=config.target_company,
+                target_role=config.target_role,
+                job_description=config.job_description,
+                extra_prompt=config.extra_prompt,
+                round_index=next_round,
+            ),
             limit=4,
         )
         request = QuestionGenerationRequest(

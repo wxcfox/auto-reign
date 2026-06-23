@@ -50,7 +50,7 @@ class LearningArtifactService:
             body = [
                 "# 练习记录",
                 "",
-                f"目标：{config.target_company} {config.target_role}".strip(),
+                f"目标：{self._target_label(config) or '未指定'}",
                 "",
             ]
             for turn in turns:
@@ -72,7 +72,12 @@ class LearningArtifactService:
                         ]
                     )
         else:
-            body = ["# Practice Record", "", f"Target: {config.target_company} {config.target_role}".strip(), ""]
+            body = [
+                "# Practice Record",
+                "",
+                f"Target: {self._target_label(config) or 'Not specified'}",
+                "",
+            ]
             for turn in turns:
                 body.extend(
                     [
@@ -91,6 +96,16 @@ class LearningArtifactService:
             origin="observed",
             evidence_refs=[],
         )
+
+    def _target_label(self, config: InterviewConfig) -> str:
+        structured = " ".join(
+            item.strip()
+            for item in [config.target_company, config.target_role]
+            if item.strip()
+        )
+        if structured:
+            return structured
+        return " ".join(config.extra_prompt.split())[:120]
 
     def _write_mastery(self, turns: list[InterviewTurn], language: str, evidence_ref: str) -> None:
         weaknesses = self._top_items(

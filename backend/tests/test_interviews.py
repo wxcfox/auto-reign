@@ -134,6 +134,42 @@ def test_create_session_auto_indexes_pending_workspace_artifacts(
     assert any(artifact["index_status"] == "completed" for artifact in indexed)
 
 
+def test_natural_language_target_context_drives_workspace_retrieval(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    queries: list[str] = []
+
+    def capture_search(_self, _session, query: str, limit: int):
+        assert limit == 4
+        queries.append(query)
+        return []
+
+    monkeypatch.setattr(
+        "app.services.workspace_retrieval_service.WorkspaceRetrievalService.search",
+        capture_search,
+    )
+    config = {
+        **DEFAULT_QWEN_CONFIG,
+        "extra_prompt": "面试字节后端岗位，JD 关注缓存和高并发。",
+        "language": "zh-CN",
+    }
+
+    created = client.post("/api/interview-sessions", json=config)
+    assert created.status_code == 200
+    session_id = created.json()["session"]["id"]
+    answer = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "我会结合 Redis、限流和服务拆分说明。"},
+    )
+    assert answer.status_code == 200
+    next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
+    assert next_question.status_code == 200
+
+    assert queries[0] == "面试字节后端岗位，JD 关注缓存和高并发。"
+    assert queries[1] == "面试字节后端岗位，JD 关注缓存和高并发。 round 2"
+
+
 def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None:
     created = client.post("/api/interview-sessions", json=CONFIG).json()
     session_id = created["session"]["id"]

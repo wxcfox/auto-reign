@@ -60,3 +60,35 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     assert "# 当前计划" in plan_text
     assert plan_text.count("- ") <= 3
     assert "# 面试复盘报告" in report_files[0].read_text(encoding="utf-8")
+
+
+def test_finish_uses_extra_prompt_as_target_context_when_structured_fields_are_blank(
+    client: TestClient,
+) -> None:
+    config = {
+        "target_company": "",
+        "target_role": "",
+        "job_description": "",
+        "extra_prompt": "面试字节后端岗位，JD 关注缓存和高并发。",
+        "language": "zh-CN",
+        "mode": "comprehensive",
+        "chat_model_provider": "qwen",
+        "chat_model": "qwen3.7-plus",
+        "target_rounds": 1,
+    }
+    created = client.post("/api/interview-sessions", json=config).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "我会用 Redis、限流和监控说明高并发处理。"},
+    )
+
+    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
+
+    assert finished.status_code == 200
+    assert "字节后端岗位" in finished.json()["report"]["summary"]
+    workspace = get_settings().data_dir / "workspace"
+    practice_files = list((workspace / "practice").glob("**/*.md"))
+    assert len(practice_files) == 1
+    practice_text = practice_files[0].read_text(encoding="utf-8")
+    assert "目标：面试字节后端岗位，JD 关注缓存和高并发。" in practice_text
