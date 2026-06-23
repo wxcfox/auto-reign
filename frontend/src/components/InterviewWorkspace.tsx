@@ -1,21 +1,16 @@
 "use client";
 
 import {
-  CheckCircle2,
   ChevronDown,
   Loader2,
   Paperclip,
-  RotateCcw,
   Send,
-  Settings2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   createInterviewSessionStream,
-  finishInterviewStream,
   getInterviewSession,
   getLastInterviewConfig,
   getModels,
@@ -30,11 +25,9 @@ import type {
   AnswerFeedback,
   FollowUpFeedback,
   InterviewConfig,
-  InterviewMode,
   InterviewSession,
   InterviewTurn,
   ModelProvider,
-  ReportRecord,
 } from "@/lib/types";
 
 const defaultConfig: InterviewConfig = {
@@ -46,13 +39,13 @@ const defaultConfig: InterviewConfig = {
   mode: "comprehensive",
   chat_model_provider: "qwen",
   chat_model: "qwen3.7-plus",
-  target_rounds: 3,
+  target_rounds: 1,
 };
 
-type ComposerMode = "start" | "answer" | "follow-up" | "idle";
+type ComposerMode = "start" | "answer" | "follow-up" | "next" | "idle";
 
 type StreamingDraft = {
-  kind: "question" | "feedback" | "follow-up-feedback" | "report";
+  kind: "question" | "feedback" | "follow-up-feedback";
   meta: string;
   text: string;
   turnId?: string;
@@ -90,6 +83,33 @@ function writeSuggestions(turn: InterviewTurn) {
   ].filter((item): item is "weakness" | "high_frequency" => item !== null);
 }
 
+function inferRequestedRounds(text: string): number | null {
+  const match = text.match(/(\d{1,2})\s*(轮|题|道|round|rounds|questions?)/i);
+  if (match) {
+    return Math.max(1, Math.min(12, Number(match[1])));
+  }
+  const chineseDigits: Record<string, number> = {
+    一: 1,
+    两: 2,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+  };
+  for (const [digit, value] of Object.entries(chineseDigits)) {
+    if (new RegExp(`${digit}\\s*(轮|题|道)`).test(text)) {
+      return value;
+    }
+  }
+  if (/考考我|抽检|quiz me/i.test(text)) {
+    return 5;
+  }
+  return null;
+}
+
 type InterviewWorkspaceProps = {
   sessionId?: string;
 };
@@ -100,22 +120,13 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [session, setSession] = useState<InterviewSession | null>(null);
   const [turns, setTurns] = useState<InterviewTurn[]>([]);
-  const [report, setReport] = useState<ReportRecord | null>(null);
   const [composerValue, setComposerValue] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamingDraft, setStreamingDraft] = useState<StreamingDraft | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [openingContext, setOpeningContext] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
-
-  const modeOptions: Array<{ value: InterviewMode; label: string }> = [
-    { value: "comprehensive", label: t("mode_options.comprehensive") },
-    { value: "project_deep_dive", label: t("mode_options.project_deep_dive") },
-    { value: "knowledge_drill", label: t("mode_options.knowledge_drill") },
-    { value: "weakness_reinforcement", label: t("mode_options.weakness_reinforcement") },
-  ];
 
   useEffect(() => {
     setConfig((current) => ({
@@ -142,20 +153,29 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         if (configResult.status === "fulfilled" && configResult.value) {
           const { id: _id, is_last_used: _isLastUsed, updated_at: _updatedAt, ...lastConfig } =
             configResult.value;
+          const nextConfig = {
+            ...lastConfig,
+            target_company: "",
+            target_role: "",
+            job_description: "",
+            extra_prompt: "",
+            mode: "comprehensive" as const,
+            target_rounds: 1,
+          };
           const matchedProvider = availableProviders.find(
-            (provider) => provider.provider === lastConfig.chat_model_provider,
+            (provider) => provider.provider === nextConfig.chat_model_provider,
           );
-          if (matchedProvider?.models.includes(lastConfig.chat_model)) {
-            setConfig(lastConfig);
+          if (matchedProvider?.models.includes(nextConfig.chat_model)) {
+            setConfig(nextConfig);
           } else if (availableProviders.length > 0) {
             setConfig((current) => ({
               ...current,
-              ...lastConfig,
+              ...nextConfig,
               chat_model_provider: availableProviders[0].provider,
               chat_model: availableProviders[0].models[0] ?? "",
             }));
           } else {
-            setConfig(lastConfig);
+            setConfig(nextConfig);
           }
         } else if (availableProviders.length > 0 && !sessionId) {
           setConfig((current) => {
@@ -208,7 +228,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         setConfig(loadedConfig);
         setSession(detail.session);
         setTurns(detail.turns);
-        setReport(null);
         setOpeningContext(loadedConfig.extra_prompt.trim() || null);
         setComposerValue("");
         setStreamingDraft(null);
@@ -264,21 +283,15 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
     if (currentTurn.follow_up_question && !currentTurn.follow_up_answer) {
       return "follow-up";
     }
-    return "idle";
+    return "next";
   })();
   const canSend =
     !busyAction &&
     ((composerMode === "start" && canStart) ||
+      (composerMode === "next" && session?.status === "active") ||
       (session?.status === "active" &&
         Boolean(composerValue.trim()) &&
         (composerMode === "answer" || composerMode === "follow-up")));
-  const canRetryFinish =
-    session?.status === "active" &&
-    composerMode === "idle" &&
-    currentTurn?.answer &&
-    session.current_round >= config.target_rounds &&
-    (!currentTurn.follow_up_question || currentTurn.follow_up_answer) &&
-    !busyAction;
 
   function updateConfig<K extends keyof InterviewConfig>(field: K, value: InterviewConfig[K]) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -296,7 +309,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
 
     setBusyAction("start");
     setError(null);
-    setReport(null);
     const startContext = composerValue.trim();
     setOpeningContext(startContext || null);
     setStreamingDraft({ kind: "question", meta: t("question", { index: 1 }), text: "" });
@@ -308,6 +320,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         job_description: "",
         extra_prompt: startContext,
         language: getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en",
+        target_rounds: inferRequestedRounds(startContext) ?? 1,
       };
       setConfig(activeConfig);
       await saveLastInterviewConfig(activeConfig);
@@ -318,7 +331,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       setTurns([created.turn]);
       notifyInterviewSessionsChanged();
       setComposerValue("");
-      setShowAdvanced(false);
     } catch (startError) {
       setError(getErrorMessage(startError, t, "interview:errors.start"));
     } finally {
@@ -354,9 +366,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       });
       applyMainFeedback(currentTurn.id, response);
       if (!response.follow_up_question.trim()) {
-        if (activeSession.current_round >= config.target_rounds) {
-          await handleFinish(activeSession);
-        } else {
+        if (activeSession.current_round < config.target_rounds) {
           await handleNextQuestion(activeSession);
         }
       }
@@ -414,8 +424,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       applyFollowUpFeedback(currentTurn.id, response);
       if (activeSession.current_round < config.target_rounds) {
         await handleNextQuestion(activeSession);
-      } else {
-        await handleFinish(activeSession);
       }
     } catch (followUpError) {
       setError(getErrorMessage(followUpError, t, "interview:errors.follow_up"));
@@ -442,10 +450,11 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
     );
   }
 
-  async function handleNextQuestion(activeSession = session) {
+  async function handleNextQuestion(activeSession = session, intent = "") {
     if (!activeSession) {
       return;
     }
+    const nextIntent = intent.trim();
     setBusyAction("next");
     setError(null);
     setStreamingDraft({
@@ -456,38 +465,19 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
     try {
       const response = await nextQuestionStream(activeSession.id, {
         onDelta: appendStreamingDelta,
-      });
+      }, nextIntent);
       setSession(response.session);
       setTurns((current) => [...current, response.turn]);
+      if (nextIntent) {
+        setConfig((current) => ({
+          ...current,
+          extra_prompt: [current.extra_prompt, nextIntent].filter(Boolean).join("\n"),
+          target_rounds: current.target_rounds + (inferRequestedRounds(nextIntent) ?? 1),
+        }));
+      }
       setComposerValue("");
     } catch (nextError) {
       setError(getErrorMessage(nextError, t, "interview:errors.next"));
-    } finally {
-      setStreamingDraft(null);
-      setBusyAction(null);
-    }
-  }
-
-  async function handleFinish(activeSession = session) {
-    if (!activeSession) {
-      return;
-    }
-    setBusyAction("finish");
-    setError(null);
-    setStreamingDraft({
-      kind: "report",
-      meta: t("report_generated"),
-      text: "",
-    });
-    try {
-      const response = await finishInterviewStream(activeSession.id, {
-        onDelta: appendStreamingDelta,
-      });
-      setSession(response.session);
-      setReport(response.report);
-      notifyInterviewSessionsChanged();
-    } catch (finishError) {
-      setError(getErrorMessage(finishError, t, "interview:errors.finish"));
     } finally {
       setStreamingDraft(null);
       setBusyAction(null);
@@ -501,6 +491,10 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       void handleAnswer();
     } else if (composerMode === "follow-up") {
       void handleFollowUp();
+    } else if (composerMode === "next") {
+      const nextIntent = composerValue.trim();
+      setComposerValue("");
+      void handleNextQuestion(session, nextIntent);
     }
   }
 
@@ -514,6 +508,9 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
     if (composerMode === "start") {
       return t("composer.start_placeholder");
     }
+    if (composerMode === "next") {
+      return t("composer.next_placeholder");
+    }
     return t("composer.idle_placeholder");
   })();
 
@@ -522,7 +519,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       <header className="chat-topbar">
         <span className="chat-topbar-title">
           {session
-            ? t("round_summary", { current: session.current_round, total: config.target_rounds })
+            ? t("round_current", { current: session.current_round })
             : t("not_started")}
         </span>
         <span className="chat-topbar-model">{config.chat_model || t("model_unavailable")}</span>
@@ -670,11 +667,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                 <p>{streamingDraft.text}</p>
               </ChatMessage>
             ) : null}
-            {streamingDraft?.kind === "report" && streamingDraft.text ? (
-              <ChatMessage meta={streamingDraft.meta}>
-                <p>{streamingDraft.text}</p>
-              </ChatMessage>
-            ) : null}
           </div>
         )}
 
@@ -688,9 +680,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                   ? t("streaming.follow_up")
                   : busyAction === "next"
                     ? t("streaming.question")
-                    : busyAction === "finish"
-                      ? t("finish_busy")
-                      : t("streaming.start")}
+                    : t("streaming.start")}
             </p>
           </ChatMessage>
         ) : null}
@@ -703,69 +693,10 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
           </ChatMessage>
         ) : null}
 
-        {report ? (
-          <ChatMessage meta={t("report_generated")} tone="assistant">
-            <p>{report.summary}</p>
-          </ChatMessage>
-        ) : null}
       </div>
 
       <div className="chat-composer-wrap">
-        <button
-          aria-expanded={showAdvanced}
-          className="button settings-toggle"
-          onClick={() => setShowAdvanced((current) => !current)}
-          type="button"
-        >
-          <Settings2 aria-hidden="true" size={17} />
-          {t("interview_settings")}
-        </button>
-
-        {showAdvanced ? (
-          <div className="advanced-settings">
-            <LanguageSwitcher />
-            <div className="form-grid">
-              <label>
-                <span className="field-label">{t("mode")}</span>
-                <select
-                  disabled={session?.status === "active"}
-                  onChange={(event) => updateConfig("mode", event.target.value as InterviewMode)}
-                  value={config.mode}
-                >
-                  {modeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="field-label">{t("target_rounds")}</span>
-                <input
-                  disabled={session?.status === "active"}
-                  max={12}
-                  min={1}
-                  onChange={(event) =>
-                    updateConfig("target_rounds", Math.max(1, Number(event.target.value)))
-                  }
-                  type="number"
-                  value={config.target_rounds}
-                />
-              </label>
-            </div>
-          </div>
-        ) : null}
-
         <section className="chat-composer" aria-label={t("composer.label")}>
-          <div className="composer-toolbar">
-            {session?.status === "completed" ? (
-              <span className="session-complete">
-                <CheckCircle2 aria-hidden="true" size={16} />
-                {t("completed")}
-              </span>
-            ) : null}
-          </div>
-
           <div className="composer-box">
             <button className="icon-button" disabled type="button" aria-label={t("composer.attach")}>
               <Paperclip aria-hidden="true" size={18} />
@@ -840,7 +771,9 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                   ? t("composer.start_interview")
                   : composerMode === "follow-up"
                     ? t("composer.send_follow_up")
-                    : t("composer.send_answer")
+                    : composerMode === "next"
+                      ? t("composer.next_question")
+                      : t("composer.send_answer")
               }
               className="send-button"
               disabled={!canSend}
@@ -848,39 +781,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
               type="button"
             >
               <Send aria-hidden="true" size={18} />
-            </button>
-          </div>
-
-          <div className="composer-actions">
-            {canRetryFinish ? (
-              <button
-                className="button"
-                disabled={Boolean(busyAction)}
-                onClick={() => {
-                  void handleFinish(session);
-                }}
-                type="button"
-              >
-                <RotateCcw aria-hidden="true" size={17} />
-                {t("retry_report")}
-              </button>
-            ) : null}
-            <button
-              className="button"
-              disabled={!session || Boolean(busyAction)}
-              onClick={() => {
-                setSession(null);
-                setTurns([]);
-                setReport(null);
-                setComposerValue("");
-                setOpeningContext(null);
-                setError(null);
-                setStreamingDraft(null);
-              }}
-              type="button"
-            >
-              <RotateCcw aria-hidden="true" size={17} />
-              {t("reset_session")}
             </button>
           </div>
         </section>

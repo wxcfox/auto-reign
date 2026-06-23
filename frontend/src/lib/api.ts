@@ -1,6 +1,5 @@
 import type {
   AnswerFeedback,
-  FinishInterviewResponse,
   FollowUpFeedback,
   HealthResponse,
   InterviewConfig,
@@ -29,7 +28,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8
 
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  headers.set("Content-Type", "application/json");
+  if (init?.body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     await throwApiError(response, `Request failed with ${response.status}`);
@@ -156,7 +157,9 @@ async function apiStream<T>(
   callbacks: StreamCallbacks,
 ): Promise<T> {
   const headers = new Headers();
-  headers.set("Content-Type", "application/json");
+  if (body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers,
@@ -283,37 +286,24 @@ export function submitFollowUpAnswerStream(
   );
 }
 
-export function nextQuestion(sessionId: string): Promise<InterviewSessionCreatedResponse> {
+export function nextQuestion(
+  sessionId: string,
+  intent = "",
+): Promise<InterviewSessionCreatedResponse> {
   return apiJson<InterviewSessionCreatedResponse>(
     `/api/interview-sessions/${sessionId}/next-question`,
-    { method: "POST" },
+    intent ? { method: "POST", body: JSON.stringify({ intent }) } : { method: "POST" },
   );
 }
 
 export function nextQuestionStream(
   sessionId: string,
   callbacks: StreamCallbacks,
+  intent = "",
 ): Promise<InterviewSessionCreatedResponse> {
   return apiStream<InterviewSessionCreatedResponse>(
     `/api/interview-sessions/${sessionId}/next-question/stream`,
-    undefined,
-    callbacks,
-  );
-}
-
-export function finishInterview(sessionId: string): Promise<FinishInterviewResponse> {
-  return apiJson<FinishInterviewResponse>(`/api/interview-sessions/${sessionId}/finish`, {
-    method: "POST",
-  });
-}
-
-export function finishInterviewStream(
-  sessionId: string,
-  callbacks: StreamCallbacks,
-): Promise<FinishInterviewResponse> {
-  return apiStream<FinishInterviewResponse>(
-    `/api/interview-sessions/${sessionId}/finish/stream`,
-    undefined,
+    intent ? { intent } : undefined,
     callbacks,
   );
 }

@@ -4,7 +4,7 @@ Generate a Markdown interview review report with these sections:
 - Strong Signals
 - Missing Points
 - Weaknesses
-- Review Plan
+- Review Focus
 - Source Context
 
 Follow `language` from the request payload.

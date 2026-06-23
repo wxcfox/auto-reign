@@ -25,10 +25,10 @@ const CATEGORY_ORDER = [
   "target_profile",
   "practice",
   "report",
-  "plan",
   "mastery",
   "extracted",
 ];
+const HIDDEN_KINDS = new Set(["plan"]);
 
 export default function LibraryPage() {
   const { getCurrentLanguage, t } = useTranslation("library");
@@ -59,6 +59,9 @@ export default function LibraryPage() {
   const filteredArtifacts = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     return artifacts.filter((artifact) => {
+      if (HIDDEN_KINDS.has(artifact.kind)) {
+        return false;
+      }
       const matchesKeyword =
         !normalizedKeyword ||
         `${artifact.display_name} ${artifact.relative_path} ${artifact.kind}`
@@ -70,7 +73,8 @@ export default function LibraryPage() {
   }, [artifacts, keyword, selectedKind]);
 
   const categoryItems = useMemo(() => {
-    const counts = artifacts.reduce<Record<string, number>>((current, artifact) => {
+    const visibleArtifacts = artifacts.filter((artifact) => !HIDDEN_KINDS.has(artifact.kind));
+    const counts = visibleArtifacts.reduce<Record<string, number>>((current, artifact) => {
       current[artifact.kind] = (current[artifact.kind] ?? 0) + 1;
       return current;
     }, {});
@@ -81,7 +85,7 @@ export default function LibraryPage() {
         .sort(),
     ];
     return [
-      { kind: "", label: t("categories.all"), count: artifacts.length },
+      { kind: "", label: t("categories.all"), count: visibleArtifacts.length },
       ...orderedKinds.map((item) => ({
         kind: item,
         label: t(`kinds.${item}`, item),

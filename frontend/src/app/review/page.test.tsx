@@ -59,12 +59,12 @@ describe("ReviewPage", () => {
         owner: "review",
         relative_path: "review/high-frequency.md",
       },
-      plan_artifact: {
+      status_artifact: {
         ...artifact,
-        id: "plan-1",
-        kind: "plan",
-        owner: "state",
-        relative_path: "state/plan.md",
+        id: "status-1",
+        kind: "review_status",
+        owner: "review",
+        relative_path: "review/status.md",
       },
       questions: ["Redis 缓存击穿怎么处理？"],
       weak_points: ["我：只说了加锁，没答好降级预案。"],
@@ -91,6 +91,6 @@ describe("ReviewPage", () => {
     expect(screen.getByText(/没答好降级预案/)).toBeInTheDocument();
     expect(screen.getByText("raw/20260624-120000.md")).toBeInTheDocument();
     expect(screen.getByText("review/high-frequency.md")).toBeInTheDocument();
-    expect(screen.getByText("state/plan.md")).toBeInTheDocument();
+    expect(screen.getByText("review/status.md")).toBeInTheDocument();
   });
 });

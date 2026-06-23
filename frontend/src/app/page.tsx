@@ -114,7 +114,7 @@ export default function DashboardPage() {
                   {task.source_artifact_id ? (
                     <Link className="button" href={`/library/${task.source_artifact_id}`}>
                       <FileText aria-hidden="true" size={16} />
-                      {t("prep.view_plan")}
+                      {t("prep.view_status")}
                     </Link>
                   ) : null}
                 </div>

@@ -14,6 +14,7 @@ ArtifactKind = Literal[
     "project",
     "interview_record",
     "high_frequency",
+    "review_status",
     "practice",
     "mastery",
     "plan",

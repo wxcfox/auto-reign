@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
@@ -104,19 +104,32 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: /^Interview$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Recent/i)).not.toBeInTheDocument();
 
-    expect(await screen.findByRole("link", { name: /Active backend interview/i }))
-      .toHaveAttribute("href", "/interview?session=active-session");
+    const activeSessionLink = await screen.findByRole("link", { name: /Active backend interview/i });
+    expect(activeSessionLink).toHaveAttribute("href", "/interview?session=active-session");
     expect(screen.getByRole("button", { name: /Completed backend interview/i }))
       .toBeDisabled();
 
+    const libraryLink = screen.getByRole("link", { name: /Library/i });
     const moreButton = screen.getByRole("button", { name: /More/i });
     expect(moreButton).toHaveAttribute("aria-expanded", "false");
+    expect(libraryLink.compareDocumentPosition(moreButton) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    const historyHeading = screen.getByRole("heading", { name: /History/i });
+    expect(moreButton.compareDocumentPosition(historyHeading) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    const moreSection = moreButton.closest(".sidebar-more");
+    expect(moreSection).not.toBeNull();
+    expect(within(moreSection as HTMLElement).queryByRole("heading", { name: /History/i }))
+      .not.toBeInTheDocument();
     fireEvent.click(moreButton);
     expect(moreButton).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: /Workbench/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Review/i })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
+    const userButton = screen.getByRole("button", { name: /Local user/i });
+    expect(userButton.querySelector(".lucide-chevron-up")).toBeInTheDocument();
+    fireEvent.click(userButton);
+    expect(userButton.querySelector(".lucide-chevron-down")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: /简体中文/i })).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /Dark mode/i })).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();

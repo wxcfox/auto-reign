@@ -20,10 +20,10 @@
   },
   "prep": {
     "eyebrow": "当前准备",
-    "title": "当前计划",
-    "empty": "完成一轮面试后，Auto Reign 会把最重要的 3 个准备动作放在这里。",
+    "title": "当前重点",
+    "empty": "完成练习或复盘后，Auto Reign 会把当前最值得抽检的重点放在这里。",
     "start_drill": "开始抽检",
-    "view_plan": "查看计划"
+    "view_status": "查看状态"
   },
   "actions": {
     "upload_title": "上传资料",

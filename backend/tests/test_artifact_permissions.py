@@ -1,15 +1,19 @@
 import pytest
 
 from app.core.artifact_permissions import (
-    PLAN_MAX_TASKS,
     ArtifactPermissionError,
     assert_operation_allowed,
-    validate_plan_task_count,
 )
 
 
 def test_operation_permissions_match_artifact_semantics() -> None:
-    for kind in ("candidate_profile", "target_profile", "knowledge", "plan", "report"):
+    for kind in (
+        "candidate_profile",
+        "target_profile",
+        "knowledge",
+        "review_status",
+        "report",
+    ):
         assert_operation_allowed(kind, "replace_body")
 
     assert_operation_allowed("practice", "append_supplement")
@@ -29,8 +33,6 @@ def test_practice_is_append_only() -> None:
         assert_operation_allowed("practice", "replace_body")
 
 
-def test_plan_keeps_at_most_three_tasks() -> None:
-    validate_plan_task_count(["a", "b", "c"])
+def test_legacy_plan_is_not_an_editable_current_artifact() -> None:
     with pytest.raises(ArtifactPermissionError):
-        validate_plan_task_count(["a", "b", "c", "d"])
-    assert PLAN_MAX_TASKS == 3
+        assert_operation_allowed("plan", "replace_body")

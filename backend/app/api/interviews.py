@@ -19,6 +19,7 @@ from app.schemas.interviews import (
     InterviewSessionDetailResponse,
     InterviewSessionHistoryItemResponse,
     InterviewSessionListResponse,
+    NextQuestionRequest,
 )
 from app.schemas.reports import ReportResponse
 from app.services.index_service import IndexService
@@ -105,6 +106,24 @@ def _finish_session_payload(data: dict[str, Any]) -> dict[str, Any]:
         ).session.model_dump(mode="json"),
         "report": ReportResponse.model_validate(data["report"]).model_dump(mode="json"),
     }
+
+
+async def _next_question_intent(request: Request) -> str:
+    raw_body = await request.body()
+    if not raw_body or not raw_body.strip():
+        return ""
+    text = raw_body.decode("utf-8", errors="ignore").strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return text[:2000]
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload[:2000]
+    if isinstance(payload, dict):
+        return NextQuestionRequest.model_validate(payload).intent[:2000]
+    raise HTTPException(status_code=422, detail="Invalid next question request body.")
 
 
 def _interview_service(request: Request) -> InterviewService:
@@ -236,28 +255,40 @@ def submit_follow_up_answer_stream(
 
 
 @router.post("/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse)
-def next_question(
-    session_id: str, request: Request, session: Session = Depends(get_session)
+async def next_question(
+    session_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> InterviewSessionCreatedResponse:
     IndexService().ensure_current(
         request.app.state.session_factory,
         request.app.state.workspace_service,
         ArtifactRepository(),
     )
-    interview_session, turn = _interview_service(request).next_question(session, session_id)
+    interview_session, turn = _interview_service(request).next_question(
+        session,
+        session_id,
+        intent=await _next_question_intent(request),
+    )
     return InterviewSessionCreatedResponse(session=interview_session, turn=turn)
 
 
 @router.post("/interview-sessions/{session_id}/next-question/stream")
-def next_question_stream(
-    session_id: str, request: Request, session: Session = Depends(get_session)
+async def next_question_stream(
+    session_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> StreamingResponse:
     IndexService().ensure_current(
         request.app.state.session_factory,
         request.app.state.workspace_service,
         ArtifactRepository(),
     )
-    events = _interview_service(request).stream_next_question(session, session_id)
+    events = _interview_service(request).stream_next_question(
+        session,
+        session_id,
+        intent=await _next_question_intent(request),
+    )
     return _streaming_response(events, _session_created_payload, session)
 
 

@@ -31,15 +31,15 @@ describe("DashboardPage", () => {
       tasks: [
         {
           title: "MySQL：用 30 秒说清 redo/binlog 两阶段提交",
-          reason: "来自当前学习计划",
-          source_artifact_id: "plan-1",
-          source_relative_path: "state/plan.md",
+          reason: "来自复习状态",
+          source_artifact_id: "status-1",
+          source_relative_path: "review/status.md",
         },
         {
           title: "Spring：复述 Bean 生命周期",
-          reason: "来自当前学习计划",
-          source_artifact_id: "plan-1",
-          source_relative_path: "state/plan.md",
+          reason: "来自复习状态",
+          source_artifact_id: "status-1",
+          source_relative_path: "review/status.md",
         },
       ],
     });
@@ -89,7 +89,7 @@ describe("DashboardPage", () => {
     expect(await screen.findByText("MySQL：用 30 秒说清 redo/binlog 两阶段提交")).toBeInTheDocument();
     expect(screen.getByText("Spring：复述 Bean 生命周期")).toBeInTheDocument();
     expect(screen.getAllByText("Start drill")[0]).toHaveAttribute("href", "/interview");
-    expect(screen.getAllByText("View plan")[0]).toHaveAttribute("href", "/library/plan-1");
+    expect(screen.getAllByText("View status")[0]).toHaveAttribute("href", "/library/status-1");
     expect(screen.getByText("原始资料")).toBeInTheDocument();
     expect(screen.getByText("知识卡片")).toBeInTheDocument();
     expect(screen.getByText("练习记录")).toBeInTheDocument();

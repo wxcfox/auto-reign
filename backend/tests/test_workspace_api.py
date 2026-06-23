@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,14 +25,14 @@ def test_workspace_rebuild_projection_endpoint(client) -> None:
     assert response.json()["artifact_count"] == 1
 
 
-def test_workspace_preparation_tasks_parse_state_plan(client) -> None:
+def test_workspace_preparation_tasks_parse_review_status(client) -> None:
     artifacts = client.app.state.artifact_service
     artifacts.create_markdown(
-        "state/plan.md",
-        kind="plan",
+        "review/status.md",
+        kind="review_status",
         body=(
-            "# 当前计划\n\n"
-            "## 优先任务\n\n"
+            "# 复习状态\n\n"
+            "## 当前重点\n\n"
             "1. MySQL：用 30 秒说清 redo/binlog 两阶段提交。\n"
             "2. Spring：复述 Bean 生命周期。\n"
             "3. Redis：说明缓存击穿治理。\n"
@@ -51,8 +52,8 @@ def test_workspace_preparation_tasks_parse_state_plan(client) -> None:
         "Redis：说明缓存击穿治理。",
     ]
     assert body["tasks"][0]["source_artifact_id"]
-    assert body["tasks"][0]["source_relative_path"] == "state/plan.md"
-    assert body["tasks"][0]["reason"] == "来自当前学习计划"
+    assert body["tasks"][0]["source_relative_path"] == "review/status.md"
+    assert body["tasks"][0]["reason"] == "来自复习状态"
 
 
 def test_workspace_upload_materials_endpoint(client) -> None:
@@ -138,14 +139,16 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert response.status_code == 200
     body = response.json()
     assert body["source"]["duplicate"] is False
-    assert body["source"]["relative_path"].startswith("inbox/")
+    assert re.match(r"inbox/\d{4}-\d{2}-\d{2}\.md", body["source"]["relative_path"])
     assert body["artifact"]["kind"] == "knowledge"
     assert body["summary"]["title"]
     assert "Redis" in body["summary"]["summary"]
+    assert "我的理解" in body["card_markdown"]
+    assert "原始记录已保存" not in body["card_markdown"]
 
     artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
     kinds = {artifact["kind"] for artifact in artifacts}
-    assert {"source", "knowledge"}.issubset(kinds)
+    assert {"source", "knowledge", "review_status"}.issubset(kinds)
 
     detail = client.get(f"/api/workspace/artifacts/{body['artifact']['id']}").json()
     assert "我的理解" in detail["body"]
@@ -154,6 +157,11 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert "易混点" in detail["body"]
     assert "追问" in detail["body"]
     assert "缓存穿透" in detail["body"]
+    assert "原始记录已保存" not in detail["body"]
+    status = next(artifact for artifact in artifacts if artifact["kind"] == "review_status")
+    status_detail = client.get(f"/api/workspace/artifacts/{status['id']}").json()
+    assert "## 最近整理" in status_detail["body"]
+    assert body["summary"]["title"] in status_detail["body"]
     assert len(calls) == 1
 
 
@@ -206,13 +214,15 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
     assert first["artifact"]["id"] == second["artifact"]["id"]
     assert first["artifact"]["relative_path"] == "knowledge/redis-缓存穿透.md"
     assert len(knowledge_artifacts) == 1
-    assert len(source_artifacts) == 2
+    assert len(source_artifacts) == 1
+    assert source_artifacts[0]["relative_path"].startswith("inbox/")
 
     detail = client.get(f"/api/workspace/artifacts/{second['artifact']['id']}").json()
     assert detail["revision"] == 2
     assert "第一次：缓存穿透" in detail["body"]
     assert "第二次：空值缓存" in detail["body"]
-    assert detail["body"].count("### Redis 缓存穿透") == 2
+    assert detail["body"].count("# Redis 缓存穿透") == 1
+    assert detail["body"].count("- 我的理解") == 2
 
 
 def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch) -> None:
@@ -247,7 +257,7 @@ def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch
     assert len(calls) == 1
 
 
-def test_record_real_interview_archives_extracts_and_updates_plan(
+def test_record_real_interview_archives_extracts_and_updates_status(
     client,
     monkeypatch,
 ) -> None:
@@ -283,7 +293,7 @@ def test_record_real_interview_archives_extracts_and_updates_plan(
     ]
     assert "没答好降级预案" in body["weak_points"][0]
     assert body["high_frequency_artifact"]["relative_path"] == "review/high-frequency.md"
-    assert body["plan_artifact"]["relative_path"] == "state/plan.md"
+    assert body["status_artifact"]["relative_path"] == "review/status.md"
 
     raw_detail = client.get(f"/api/workspace/artifacts/{body['raw_artifact']['id']}").json()
     assert "## 原始记录" in raw_detail["body"]
@@ -296,6 +306,9 @@ def test_record_real_interview_archives_extracts_and_updates_plan(
     assert "Redis 缓存击穿怎么处理？" in high_frequency_detail["body"]
     assert "## 暴露问题" in high_frequency_detail["body"]
     assert "这个不会" in high_frequency_detail["body"]
+    status_detail = client.get(f"/api/workspace/artifacts/{body['status_artifact']['id']}").json()
+    assert "## 当前重点" in status_detail["body"]
+    assert "Redis 缓存击穿怎么处理？" in status_detail["body"]
 
     tasks = client.get("/api/workspace/preparation-tasks").json()["tasks"]
     assert len(tasks) == 3
@@ -430,7 +443,7 @@ def test_workspace_artifact_permissions_are_enforced(client) -> None:
     assert response.status_code == 403
 
 
-def test_workspace_plan_edit_limits_to_three_tasks(client) -> None:
+def test_workspace_legacy_plan_artifact_is_not_editable(client) -> None:
     artifacts = client.app.state.artifact_service
     artifacts.create_markdown("state/plan.md", kind="plan", body="# Plan\n\n- a\n")
     client.post("/api/workspace/rebuild-projection")

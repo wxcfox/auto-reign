@@ -2,9 +2,7 @@
   "eyebrow": "Mock interview",
   "title": "Interview",
   "not_started": "Not started",
-  "round_summary": "Round {{current}} of {{total}}",
-  "setup_eyebrow": "Setup",
-  "setup_title": "Configuration",
+  "round_current": "Question {{current}}",
   "target_company": "Target company",
   "target_role": "Target role",
   "job_description": "Job description",
@@ -12,7 +10,6 @@
   "mode": "Mode",
   "provider": "Provider",
   "model": "Model",
-  "target_rounds": "Target rounds",
   "no_providers": "No providers configured",
   "model_unavailable": "Unavailable",
   "session_eyebrow": "Live session",
@@ -43,15 +40,8 @@
   "follow_up_feedback": "Follow-up feedback",
   "next_question": "Next question",
   "next_question_busy": "Generating next question...",
-  "finish_busy": "Generating report...",
-  "report_generated": "Report generated",
   "completed": "Completed",
-  "show_advanced": "Show advanced settings",
-  "hide_advanced": "Hide advanced settings",
-  "interview_settings": "Interview settings",
   "select_model": "Select model",
-  "reset_session": "Clear chat",
-  "retry_report": "Retry report",
   "error_title": "Something went wrong",
   "composer": {
     "label": "Interview composer",
@@ -60,9 +50,11 @@
     "start_interview": "Start interview",
     "send_answer": "Send answer",
     "send_follow_up": "Send follow-up",
+    "next_question": "Next question",
     "answer_placeholder": "Write your answer...",
     "follow_up_placeholder": "Answer the follow-up...",
     "start_placeholder": "Company, role, JD, or focus. Press send to start.",
+    "next_placeholder": "Send to continue, or type a new focus for the next question...",
     "idle_placeholder": "This turn is complete."
   },
   "streaming": {
@@ -74,21 +66,13 @@
   },
   "guidance": {
     "continue": "Answer saved. Submit the follow-up answer if the assistant asked one.",
-    "follow_up_complete": "Follow-up feedback is ready.",
-    "final_round": "Final round complete. The report will be generated automatically."
-  },
-  "mode_options": {
-    "comprehensive": "Comprehensive",
-    "project_deep_dive": "Project deep dive",
-    "knowledge_drill": "Knowledge drill",
-    "weakness_reinforcement": "Weakness reinforcement"
+    "follow_up_complete": "Follow-up feedback is ready."
   },
   "errors": {
     "load": "Could not load the saved configuration or model availability.",
     "start": "Failed to start interview.",
     "answer": "Failed to submit answer.",
     "follow_up": "Failed to submit follow-up.",
-    "next": "Failed to load next question.",
-    "finish": "Failed to finish interview."
+    "next": "Failed to load next question."
   }
 }

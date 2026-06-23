@@ -2,6 +2,7 @@ import hashlib
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -32,7 +33,8 @@ DIRECT_WORKSPACE_CONTEXT_FILES = (
     ("profile/candidate.md", "候选人画像"),
     ("profile/target.md", "目标画像"),
     ("state/mastery.md", "掌握状态"),
-    ("state/plan.md", "当前计划"),
+    ("review/status.md", "复习状态"),
+    ("review/high-frequency.md", "高频与薄弱点"),
 )
 PROJECT_CONTEXT_LIMIT = 3
 
@@ -130,9 +132,53 @@ class InterviewService:
         config = InterviewConfig(**config_in.model_dump(), is_last_used=True)
         return self.config_repository.add(session, config)
 
+    def _config_from_natural_intent(self, config_in: InterviewConfigIn) -> InterviewConfigIn:
+        intent = config_in.extra_prompt.strip()
+        if not intent:
+            return config_in
+        updates: dict[str, Any] = {"mode": self._infer_mode(intent, config_in.mode)}
+        inferred_rounds = self._infer_round_count(intent)
+        if inferred_rounds is not None:
+            updates["target_rounds"] = inferred_rounds
+        return config_in.model_copy(update=updates)
+
+    def _infer_mode(self, intent: str, fallback: str) -> str:
+        lowered = intent.lower()
+        if any(marker in lowered for marker in ("project", "项目", "深挖", "经历")):
+            return "project_deep_dive"
+        if any(marker in lowered for marker in ("weak", "薄弱", "错题", "答差", "不会")):
+            return "weakness_reinforcement"
+        if any(marker in lowered for marker in ("knowledge", "知识", "八股", "基础", "考点")):
+            return "knowledge_drill"
+        return fallback
+
+    def _infer_round_count(self, intent: str) -> int | None:
+        normalized_digits = {
+            "一": 1,
+            "两": 2,
+            "二": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+        }
+        match = re.search(r"(\d{1,2})\s*(?:轮|题|道|round|rounds|questions?)", intent, re.IGNORECASE)
+        if match:
+            return max(1, min(12, int(match.group(1))))
+        for marker, value in normalized_digits.items():
+            if re.search(rf"{marker}\s*(?:轮|题|道)", intent):
+                return value
+        lowered = intent.lower()
+        if "考考我" in intent or "抽检" in intent or "quiz me" in lowered:
+            return 5
+        return None
+
     def create_session(
         self, session: Session, config_in: InterviewConfigIn
     ) -> tuple[InterviewSession, InterviewTurn]:
+        config_in = self._config_from_natural_intent(config_in)
         config = InterviewConfig(**config_in.model_dump(), is_last_used=False)
         self.config_repository.add(session, config)
         context, context_hits = self._question_context(
@@ -179,6 +225,7 @@ class InterviewService:
     def stream_create_session(
         self, session: Session, config_in: InterviewConfigIn
     ) -> Iterator[InterviewStreamEvent]:
+        config_in = self._config_from_natural_intent(config_in)
         context, context_hits = self._question_context(
             session,
             _target_context_query(
@@ -303,7 +350,9 @@ class InterviewService:
             question=turn.question,
             evaluation=evaluation,
         )
+        self._upsert_high_frequency_question(config, turn.question, evaluation)
         session.flush()
+        self._persist_practice_progress(session, interview_session, config)
         return evaluation
 
     def stream_submit_answer(
@@ -346,7 +395,9 @@ class InterviewService:
                 question=turn.question,
                 evaluation=evaluation,
             )
+            self._upsert_high_frequency_question(config, turn.question, evaluation)
             session.flush()
+            self._persist_practice_progress(session, interview_session, config)
             yield InterviewStreamEvent(event="result", data=evaluation.model_dump())
 
         return events()
@@ -394,7 +445,9 @@ class InterviewService:
             question=turn.follow_up_question,
             evaluation=evaluation,
         )
+        self._upsert_high_frequency_question(config, turn.follow_up_question, evaluation)
         session.flush()
+        self._persist_practice_progress(session, interview_session, config)
         return evaluation
 
     def stream_submit_follow_up_answer(
@@ -441,13 +494,15 @@ class InterviewService:
                 question=turn.follow_up_question,
                 evaluation=evaluation,
             )
+            self._upsert_high_frequency_question(config, turn.follow_up_question, evaluation)
             session.flush()
+            self._persist_practice_progress(session, interview_session, config)
             yield InterviewStreamEvent(event="result", data=evaluation.model_dump())
 
         return events()
 
     def next_question(
-        self, session: Session, session_id: str
+        self, session: Session, session_id: str, *, intent: str = ""
     ) -> tuple[InterviewSession, InterviewTurn]:
         interview_session = self._get_active_session(session, session_id)
         config = session.get(InterviewConfig, interview_session.config_id)
@@ -456,16 +511,15 @@ class InterviewService:
         current_turn = self._current_turn(session, interview_session)
         if current_turn.answer is None:
             raise conflict("current_turn_unanswered", "Answer the current question before continuing.")
-        if interview_session.current_round >= config.target_rounds:
-            raise conflict("target_rounds_reached", "The configured target round count was reached.")
         next_round = interview_session.current_round + 1
+        next_extra_prompt = self._apply_next_intent(config, intent)
         context, context_hits = self._question_context(
             session,
             _target_context_query(
                 target_company=config.target_company,
                 target_role=config.target_role,
                 job_description=config.job_description,
-                extra_prompt=config.extra_prompt,
+                extra_prompt=next_extra_prompt,
                 round_index=next_round,
             ),
             mode=config.mode,
@@ -475,7 +529,7 @@ class InterviewService:
                 target_company=config.target_company,
                 target_role=config.target_role,
                 job_description=config.job_description,
-                extra_prompt=config.extra_prompt,
+                extra_prompt=next_extra_prompt,
                 language=config.language,
                 mode=config.mode,
                 context=context,
@@ -500,7 +554,7 @@ class InterviewService:
         return interview_session, turn
 
     def stream_next_question(
-        self, session: Session, session_id: str
+        self, session: Session, session_id: str, *, intent: str = ""
     ) -> Iterator[InterviewStreamEvent]:
         interview_session = self._get_active_session(session, session_id)
         config = session.get(InterviewConfig, interview_session.config_id)
@@ -509,16 +563,15 @@ class InterviewService:
         current_turn = self._current_turn(session, interview_session)
         if current_turn.answer is None:
             raise conflict("current_turn_unanswered", "Answer the current question before continuing.")
-        if interview_session.current_round >= config.target_rounds:
-            raise conflict("target_rounds_reached", "The configured target round count was reached.")
         next_round = interview_session.current_round + 1
+        next_extra_prompt = self._apply_next_intent(config, intent)
         context, context_hits = self._question_context(
             session,
             _target_context_query(
                 target_company=config.target_company,
                 target_role=config.target_role,
                 job_description=config.job_description,
-                extra_prompt=config.extra_prompt,
+                extra_prompt=next_extra_prompt,
                 round_index=next_round,
             ),
             mode=config.mode,
@@ -527,7 +580,7 @@ class InterviewService:
             target_company=config.target_company,
             target_role=config.target_role,
             job_description=config.job_description,
-            extra_prompt=config.extra_prompt,
+            extra_prompt=next_extra_prompt,
             language=config.language,
             mode=config.mode,
             context=context,
@@ -750,10 +803,278 @@ class InterviewService:
                 context.append(f"[项目材料 | {artifact.relative_path}]\n{body}")
         return context
 
+    def _apply_next_intent(self, config: InterviewConfig, intent: str) -> str:
+        cleaned = intent.strip()
+        if not cleaned:
+            return config.extra_prompt
+        config.extra_prompt = self._merged_intent(config.extra_prompt, cleaned)
+        config.mode = self._infer_mode(cleaned, config.mode)
+        inferred_rounds = self._infer_round_count(cleaned)
+        if inferred_rounds is not None:
+            config.target_rounds += inferred_rounds
+        return config.extra_prompt
+
+    def _merged_intent(self, existing: str, intent: str) -> str:
+        cleaned = intent.strip()
+        if not cleaned:
+            return existing
+        existing_lines = [line.strip() for line in existing.splitlines() if line.strip()]
+        if cleaned in existing_lines:
+            return existing
+        return "\n".join([*existing_lines, cleaned])[-4000:]
+
     def _retrieved_context_text(self, hit: dict[str, object]) -> str:
         source_type = str(hit.get("source_type", "artifact"))
         source_id = str(hit.get("source_id", "unknown"))
         return f"[检索片段 | {source_type}:{source_id}]\n{hit.get('content', '')}"
+
+    def _persist_practice_progress(
+        self,
+        session: Session,
+        interview_session: InterviewSession,
+        config: InterviewConfig,
+    ) -> None:
+        if self.artifact_service is None or self.workspace_service is None:
+            return
+        turns = self.turn_repository.list_for_session(session, interview_session.id)
+        if not any(turn.answer or turn.follow_up_answer for turn in turns):
+            return
+
+        language = config.language or "zh-CN"
+        started = interview_session.started_at.astimezone(UTC)
+        practice_path = f"practice/{started:%Y-%m-%d}.md"
+        session_heading = f"会话 {interview_session.id}"
+        session_body = self._practice_session_body(interview_session, config, turns)
+        evidence_ref = f"interview_session:{interview_session.id}"
+        try:
+            current = self.artifact_service.read_markdown(practice_path)
+        except FileNotFoundError:
+            self.artifact_service.create_markdown(
+                practice_path,
+                kind="practice",
+                body=f"# 模拟面试记录\n\n## {session_heading}\n\n{session_body}\n",
+                language=language,
+                origin="observed",
+                edited_by="system",
+                evidence_refs=[evidence_ref],
+            )
+        else:
+            body = self._replace_or_append_h2(current.body, session_heading, session_body)
+            self.artifact_service.replace_body(
+                practice_path,
+                expected_revision=current.front_matter.revision,
+                body=body,
+                edited_by="system",
+                now=datetime.now(UTC),
+            )
+        self._upsert_review_status(config, turns, evidence_ref)
+        self.workspace_service.rebuild_projection(
+            session,
+            self.artifact_repository,
+            self.artifact_service,
+        )
+
+    def _practice_session_body(
+        self,
+        interview_session: InterviewSession,
+        config: InterviewConfig,
+        turns: list[InterviewTurn],
+    ) -> str:
+        body = [
+            f"- 开始时间：{interview_session.started_at.astimezone(UTC).isoformat().replace('+00:00', 'Z')}",
+            f"- 出题要求：{config.extra_prompt.strip() or '默认抽检'}",
+            "",
+        ]
+        for turn in turns:
+            body.extend(
+                [
+                    f"### 第 {turn.round_index} 轮",
+                    "",
+                    f"**问题**：{turn.question}",
+                    "",
+                    f"**回答**：{turn.answer or ''}",
+                    "",
+                    f"**点评**：{turn.feedback or ''}",
+                    "",
+                ]
+            )
+            if turn.missing_points:
+                body.extend(["**缺失点**：", self._bullet_list(turn.missing_points), ""])
+            if turn.weaknesses:
+                body.extend(["**薄弱点**：", self._bullet_list(turn.weaknesses), ""])
+            if turn.review_suggestions:
+                body.extend(["**复习建议**：", self._bullet_list(turn.review_suggestions), ""])
+            if turn.follow_up_question:
+                body.extend(
+                    [
+                        f"**追问**：{turn.follow_up_question}",
+                        "",
+                        f"**追问回答**：{turn.follow_up_answer or ''}",
+                        "",
+                        f"**追问点评**：{turn.follow_up_feedback or ''}",
+                        "",
+                    ]
+                )
+                if turn.follow_up_missing_points:
+                    body.extend(["**追问缺失点**：", self._bullet_list(turn.follow_up_missing_points), ""])
+                if turn.follow_up_weaknesses:
+                    body.extend(["**追问薄弱点**：", self._bullet_list(turn.follow_up_weaknesses), ""])
+                if turn.follow_up_review_suggestions:
+                    body.extend(["**追问复习建议**：", self._bullet_list(turn.follow_up_review_suggestions), ""])
+        return "\n".join(body).strip()
+
+    def _upsert_review_status(
+        self,
+        config: InterviewConfig,
+        turns: list[InterviewTurn],
+        evidence_ref: str,
+    ) -> None:
+        if self.artifact_service is None:
+            return
+        status_path = "review/status.md"
+        focus = self._top_items(
+            [
+                item
+                for turn in turns
+                for item in [
+                    *turn.weaknesses,
+                    *turn.follow_up_weaknesses,
+                    *turn.missing_points,
+                    *turn.follow_up_missing_points,
+                    *turn.review_suggestions,
+                    *turn.follow_up_review_suggestions,
+                ]
+            ],
+            6,
+        )
+        latest_question = next((turn.question for turn in reversed(turns) if turn.answer), "")
+        latest_practice = f"练习：{latest_question}" if latest_question else ""
+        try:
+            current = self.artifact_service.read_markdown(status_path)
+            sections = self._markdown_sections(current.body)
+            recent_learning = self._markdown_list_items(sections.get("最近整理") or "")
+            recent_practice = self._markdown_list_items(sections.get("最近练习") or "")
+            evidence_refs = self._top_items([*current.front_matter.evidence_refs, evidence_ref], 20)
+        except FileNotFoundError:
+            current = None
+            recent_learning = []
+            recent_practice = []
+            evidence_refs = [evidence_ref]
+
+        practice_items = self._top_items([latest_practice, *recent_practice], 8)
+        body = (
+            "# 复习状态\n\n"
+            "## 当前重点\n\n"
+            f"{self._plain_bullet_list(focus or ['继续通过模拟面试暴露薄弱点'])}\n\n"
+            "## 最近整理\n\n"
+            f"{self._plain_bullet_list(recent_learning)}\n\n"
+            "## 最近练习\n\n"
+            f"{self._plain_bullet_list(practice_items)}\n"
+        )
+        if current is None:
+            self.artifact_service.create_markdown(
+                status_path,
+                kind="review_status",
+                body=body,
+                language=config.language or "zh-CN",
+                origin="llm",
+                edited_by="system",
+                evidence_refs=evidence_refs,
+            )
+            return
+        self.artifact_service.replace_body(
+            status_path,
+            expected_revision=current.front_matter.revision,
+            body=body,
+            edited_by="system",
+            now=datetime.now(UTC),
+        )
+
+    def _upsert_high_frequency_question(
+        self,
+        config: InterviewConfig,
+        question: str | None,
+        evaluation: AnswerEvaluationResult,
+    ) -> None:
+        if self.artifact_service is None or not evaluation.should_write_high_frequency or not question:
+            return
+        relative_path = "review/high-frequency.md"
+        try:
+            current = self.artifact_service.read_markdown(relative_path)
+            sections = self._markdown_sections(current.body)
+            existing_questions = self._markdown_list_items(sections.get("真实面试高频问题") or "")
+            existing_weak_points = self._markdown_list_items(sections.get("暴露问题") or "")
+        except FileNotFoundError:
+            current = None
+            existing_questions = []
+            existing_weak_points = []
+
+        questions = self._top_items([question, *existing_questions], 20)
+        weak_points = self._top_items(
+            [*evaluation.weaknesses, *evaluation.missing_points, *existing_weak_points],
+            20,
+        )
+        body = (
+            "# 高频与薄弱点\n\n"
+            "## 真实面试高频问题\n\n"
+            f"{self._plain_bullet_list(questions)}\n\n"
+            "## 暴露问题\n\n"
+            f"{self._plain_bullet_list(weak_points)}\n"
+        )
+        if current is None:
+            self.artifact_service.create_markdown(
+                relative_path,
+                kind="high_frequency",
+                body=body,
+                language=config.language or "zh-CN",
+                origin="llm",
+                edited_by="system",
+            )
+            return
+        self.artifact_service.replace_body(
+            relative_path,
+            expected_revision=current.front_matter.revision,
+            body=body,
+            edited_by="system",
+            now=datetime.now(UTC),
+        )
+
+    def _replace_or_append_h2(self, body: str, heading: str, content: str) -> str:
+        replacement = f"## {heading}\n\n{content.strip()}\n"
+        pattern = re.compile(
+            rf"^##[ \t]+{re.escape(heading)}[ \t]*\n.*?(?=^##[ \t]+|\Z)",
+            flags=re.DOTALL | re.MULTILINE,
+        )
+        if pattern.search(body):
+            return pattern.sub(replacement, body, count=1)
+        return f"{body.rstrip()}\n\n{replacement}"
+
+    def _markdown_sections(self, markdown: str) -> dict[str, str]:
+        sections: dict[str, list[str]] = {}
+        current: str | None = None
+        for line in markdown.splitlines():
+            heading = re.match(r"^##\s+(.+)$", line.strip())
+            if heading:
+                current = heading.group(1).strip().lower()
+                sections.setdefault(current, [])
+                continue
+            if current:
+                sections[current].append(line)
+        return {heading: "\n".join(lines).strip() for heading, lines in sections.items()}
+
+    def _markdown_list_items(self, markdown: str) -> list[str]:
+        items: list[str] = []
+        for line in markdown.splitlines():
+            match = re.match(r"^\s*(?:[-*]|\d+[.)])\s+(.+)$", line)
+            if match:
+                items.append(match.group(1).strip())
+        return self._top_items(items, 100)
+
+    def _plain_bullet_list(self, items: list[str]) -> str:
+        compact = self._top_items(items, 100)
+        if not compact:
+            return "- 暂无。"
+        return "\n".join(f"- {item}" for item in compact)
 
     def _upsert_question_bank_entry(
         self,
@@ -850,6 +1171,14 @@ class InterviewService:
             "### 复习状态\n\n"
             f"{review_status}\n"
         )
+
+    def _top_items(self, values: list[str], limit: int) -> list[str]:
+        seen: list[str] = []
+        for value in values:
+            cleaned = value.strip()
+            if cleaned and cleaned not in seen:
+                seen.append(cleaned)
+        return seen[:limit]
 
     def _bullet_list(self, items: list[str]) -> str:
         cleaned = [item.strip() for item in items if item.strip()]

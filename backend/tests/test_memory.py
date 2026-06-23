@@ -49,16 +49,17 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     practice_files = list((workspace / "practice").glob("**/*.md"))
     report_files = list((workspace / "reports").glob("*.md"))
     mastery_path = workspace / "state" / "mastery.md"
-    plan_path = workspace / "state" / "plan.md"
+    status_path = workspace / "review" / "status.md"
     assert len(practice_files) == 1
     assert len(report_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")
-    assert "# 练习记录" in practice_text
+    assert "# 模拟面试记录" in practice_text
+    assert f"## 会话 {session_id}" in practice_text
     assert "I use tests and clear services." in practice_text
     assert "# 掌握状态" in mastery_path.read_text(encoding="utf-8")
-    plan_text = plan_path.read_text(encoding="utf-8")
-    assert "# 当前计划" in plan_text
-    assert plan_text.count("- ") <= 3
+    status_text = status_path.read_text(encoding="utf-8")
+    assert "# 复习状态" in status_text
+    assert status_text.count("- ") <= 3
     assert "# 面试复盘报告" in report_files[0].read_text(encoding="utf-8")
 
 
@@ -91,4 +92,4 @@ def test_finish_uses_extra_prompt_as_target_context_when_structured_fields_are_b
     practice_files = list((workspace / "practice").glob("**/*.md"))
     assert len(practice_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")
-    assert "目标：面试字节后端岗位，JD 关注缓存和高并发。" in practice_text
+    assert "出题要求：面试字节后端岗位，JD 关注缓存和高并发。" in practice_text

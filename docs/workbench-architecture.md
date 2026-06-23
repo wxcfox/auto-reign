@@ -45,9 +45,9 @@ raw/
 practice/
 review/
   high-frequency.md
+  status.md
 state/
   mastery.md
-  plan.md
 reports/
 archive/
 .revisions/
@@ -67,8 +67,8 @@ archive/
 - `raw/`：真实面试原始记录，保存用户粘贴的原文和确定性抽取结果。
 - `practice/`：每次练习的完整证据，包括问题、回答、追问、反馈和结果。
 - `review/high-frequency.md`：真实面试复盘抽出的高频问题和暴露问题。
+- `review/status.md`：当前复习重点、最近整理和最近练习，用于工作台首页和出题前上下文。
 - `state/mastery.md`：当前掌握状态和支持结论的练习引用。
-- `state/plan.md`：最多 3 个当前优先任务。
 - `reports/`：面试结束后的短复盘；它是展示产物，不作为新的事实来源。
 - `archive/`：被合并或不再活跃的生成资产。
 - `.revisions/`：系统修改 Markdown 前保存的有限历史版本，不在普通资料列表中展示。
@@ -97,7 +97,7 @@ archive/
 ```text
 source, extracted, candidate_profile, target_profile, knowledge,
 question_bank, project, interview_record, high_frequency,
-practice, mastery, plan, report
+review_status, practice, mastery, report
 ```
 
 ## 可见与可编辑语义
@@ -106,7 +106,7 @@ practice, mastery, plan, report
 
 - `source`：可查看，不能应用内覆盖。
 - `extracted`：可查看，不直接编辑，可从原始资料重新生成。
-- `candidate_profile`、`target_profile`、`knowledge`、`question_bank`、`project`、`high_frequency`、`plan`、`report`：可编辑。
+- `candidate_profile`、`target_profile`、`knowledge`、`question_bank`、`project`、`high_frequency`、`review_status`、`report`：可编辑。
 - `interview_record`：真实面试原始记录，可查看，不能应用内覆盖。
 - `practice`：问题、回答和反馈证据不可原地覆盖；需要纠错时应追加说明。
 - `mastery`：系统聚合状态不可手工伪造；可以追加用户备注或请求重新评估。
@@ -141,13 +141,12 @@ Qdrant 保存可检索 chunk 向量，任何 collection 都应能从文件工作
 
 默认不进入向量索引的内容：
 
-- `state/plan.md`
 - `state/mastery.md`
 - 生成报告。
 - `.revisions/`
 - `archive/` 中的非活跃文件。
 
-面试检索上下文应优先直接读取体积受控的小文件，例如候选人画像、目标画像、掌握状态和学习计划，再结合 Qdrant 检索结果。检索结果需要保留来源引用，并避免多个 top-k 结果全部来自同一份资料或同一个主题。
+面试检索上下文应优先直接读取体积受控的小文件，例如候选人画像、目标画像、掌握状态、复习状态和高频问题，再结合 Qdrant 检索结果。检索结果需要保留来源引用，并避免多个 top-k 结果全部来自同一份资料或同一个主题。
 
 出题、回答点评和追问点评都可以使用目标上下文、当前题目、用户回答、项目材料、历史薄弱点和资料库检索片段。项目深挖模式优先直接读取 `projects/`。检索片段始终是用户来源材料，不能作为系统指令执行，也不能绕过 provenance 边界直接改写用户事实。
 
@@ -166,32 +165,32 @@ Qdrant 保存可检索 chunk 向量，任何 collection 都应能从文件工作
 
 ## 面试与练习证据
 
-面试页只有一条主流程：问题、用户回答、必要追问、反馈和总结都保留在同一对话流中。用户可以随时结束；只要已有有效回答，系统就应归档练习证据。
+面试页只有一条主流程：问题、用户回答、必要追问、反馈和继续出题都保留在同一对话流中。用户点击“新面试”后可以直接开始，也可以在输入框里用自然语言说明公司、岗位、JD、主题或轮数；系统据此推断出题方式。界面不提供面试设置表单，也不要求点击结束按钮；只要已有有效回答，系统就实时归档练习证据。
 
-出题前读取候选人画像、目标画像、掌握状态、当前计划和资料库检索结果。回答点评返回结构化结果，包括更好的面试说法、掌握状态变化、是否写入薄弱点、是否写入高频题和本题考察点。只要点评暴露薄弱点或缺失点，系统会在 `questions/` 中创建或更新对应题库条目。
+出题前读取候选人画像、目标画像、掌握状态、复习状态、高频问题和资料库检索结果。回答点评返回结构化结果，包括更好的面试说法、掌握状态变化、是否写入薄弱点、是否写入高频题和本题考察点。只要点评暴露薄弱点或缺失点，系统会在 `questions/` 中创建或更新对应题库条目。
 
-每次完成或中断后具有有效回答的会话应沉淀为 practice 记录。归档顺序遵循：
+每次回答或追问点评后具有有效回答的会话应沉淀为 practice 记录。归档顺序遵循：
 
 1. 保存完整 practice 文件。
 2. 根据本轮证据更新 `state/mastery.md`。
 3. 必要时更新相关 knowledge 文件中的易错点和追问。
-4. 重新计算 `state/plan.md`，最多保留 3 项。
-5. 生成简短 report 文件。
+4. 更新 `review/status.md` 中的当前重点、最近整理和最近练习。
+5. 必要时更新 `review/high-frequency.md`。
 6. 更新 MySQL 投影和 Qdrant 索引。
 
 任何后续步骤失败都不得导致 practice 证据丢失。归档和索引任务应可幂等重试。
 
 ## 真实面试复盘
 
-复盘页允许用户粘贴真实面试原始记录。系统不要求用户整理格式，也不调用 LLM 改写原文；确定性应用代码会保存 `raw/<timestamp>.md`，抽取问题和薄弱线索，更新 `review/high-frequency.md`，并重写 `state/plan.md` 中未来 1-3 天的最多 3 个准备任务。
+复盘页允许用户粘贴真实面试原始记录。系统不要求用户整理格式，也不调用 LLM 改写原文；确定性应用代码会保存 `raw/<timestamp>.md`，抽取问题和薄弱线索，更新 `review/high-frequency.md`，并更新 `review/status.md` 中的当前重点。
 
 ## 前端信息架构
 
 界面优先暴露用户能理解的概念：
 
 - 左侧侧边栏：新面试、新学习、资料库、历史会话和工作台入口。
-- 工作台首页：展示 `state/plan.md` 中最多 3 个当前准备任务，并提供开始抽检和查看计划入口。
-- 面试页：居中的聊天流、模型选择、固定输入框、loading、streaming、错误重试和会话历史。
+- 工作台首页：展示 `review/status.md` 中最多 3 个当前重点，并提供开始抽检和查看状态入口。
+- 面试页：居中的聊天流、模型选择、固定输入框、loading、streaming、错误重试和会话历史；出题意图通过自然语言输入表达。
 - 复盘页：真实面试原始记录粘贴入口、抽题结果、薄弱线索、历史报告和持久化上下文。
 - 资料库：分类、文件列表、原始文件名、归属、时间、编辑和删除操作。
 - 资料详情：优先展示可读内容和编辑入口，不要求用户理解内部路径。

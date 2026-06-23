@@ -75,20 +75,20 @@ def test_update_rejects_stale_revision_without_changing_file(
 ) -> None:
     workspace, artifacts = services
     artifacts.create_markdown(
-        "state/plan.md",
-        kind="plan",
-        body="# 当前计划\n\n## 优先任务\n\n1. 第一项\n",
+        "review/status.md",
+        kind="review_status",
+        body="# 复习状态\n\n## 当前重点\n\n- 第一项\n",
     )
-    before = workspace.resolve_path("state/plan.md").read_bytes()
+    before = workspace.resolve_path("review/status.md").read_bytes()
 
     with pytest.raises(ArtifactConflict):
         artifacts.update_sections(
-            "state/plan.md",
+            "review/status.md",
             expected_revision=0,
-            sections={"优先任务": "1. 错误覆盖"},
+            sections={"当前重点": "- 错误覆盖"},
         )
 
-    assert workspace.resolve_path("state/plan.md").read_bytes() == before
+    assert workspace.resolve_path("review/status.md").read_bytes() == before
 
 
 def test_source_bytes_are_immutable_and_have_a_json_sidecar(

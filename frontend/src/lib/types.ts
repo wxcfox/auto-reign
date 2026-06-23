@@ -61,6 +61,7 @@ export interface LearningNoteResponse {
   source: UploadedSourceRecord;
   artifact: WorkspaceArtifactSummary;
   summary: LearningNoteSummary;
+  card_markdown: string;
 }
 
 export interface RealInterviewRecordRequest {
@@ -71,7 +72,7 @@ export interface RealInterviewRecordRequest {
 export interface RealInterviewRecordResponse {
   raw_artifact: WorkspaceArtifactSummary;
   high_frequency_artifact: WorkspaceArtifactSummary;
-  plan_artifact: WorkspaceArtifactSummary;
+  status_artifact: WorkspaceArtifactSummary;
   questions: string[];
   weak_points: string[];
 }
@@ -227,11 +228,6 @@ export interface ReportListResponse {
 export interface ReportDetailResponse {
   report: ReportRecord;
   content: string;
-}
-
-export interface FinishInterviewResponse {
-  session: InterviewSession;
-  report: ReportRecord;
 }
 
 export interface MemoryFileContent {
