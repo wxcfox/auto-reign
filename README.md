@@ -1,35 +1,23 @@
 # Auto Reign
 
-*Autoregressive Q&A — every token is a step to the throne.*
+*自回归式问答：每一个 token 都是通往掌控面试的一步。*
 
-**Local-first AI mock interviews grounded in your own knowledge base, with
-automatic weakness tracking and review reports.**
+**本地优先的 AI 模拟面试工作台，基于你自己的资料库出题、追问、点评，并自动沉淀薄弱项和复盘报告。**
 
-## Development Direction
+## 开发方向
 
-This README documents the currently runnable v1 implementation. The canonical
-design for the next development cycle is the
-[filesystem-first interview workbench specification](docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md).
+本文档描述当前可运行的 v1 实现。下一阶段的权威设计是
+[文件系统优先的面试学习工作台规格](docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md)。
 
-That redesign makes user-visible Markdown files the durable learning assets,
-automates document organization and learning-state maintenance, and treats
-MySQL and Qdrant as operational or rebuildable infrastructure. It intentionally
-does not preserve existing runtime data formats. Contributors implementing the
-redesign must first create a phased plan from the specification and keep the
-application runnable at each phase boundary.
+该重构会把用户可见的 Markdown 文件作为长期学习资产，自动完成资料整理和学习状态维护，并将 MySQL 与 Qdrant 视为运行状态或可重建基础设施。它明确不保留现有运行数据格式的兼容性。实现该重构的贡献者必须先从规格拆分分阶段计划，并在每个阶段边界保持应用可运行。
 
-See [docs/README.md](docs/README.md) for the documentation map and lifecycle
-rules. Completed implementation plans should not remain in the repository unless
-their durable decisions have been promoted into canonical docs.
+文档地图和生命周期规则见 [docs/README.md](docs/README.md)。已完成的一次性实施计划不应继续留在仓库中，除非其中长期有效的决策已经沉淀到权威文档。
 
-Auto Reign ingests Markdown, TXT, PDF, DOCX, and free-form learning notes into a
-local workspace, indexes searchable chunks in Qdrant, runs written mock
-interviews in a chat-style flow, and stores interview history and review memory
-locally.
+Auto Reign 可以把 Markdown、TXT、PDF、DOCX 和自由文本学习笔记写入本地工作区，在 Qdrant 中索引可检索 chunk，以聊天式流程进行书面模拟面试，并在本地保存面试历史和复盘记忆。
 
-## Development Quick Start
+## 快速开始
 
-Requirements:
+依赖：
 
 - Docker with Compose v2
 - Python 3.12+
@@ -37,17 +25,15 @@ Requirements:
 - Node.js 22+
 - `npm`
 
-Start the local development stack with the repository entrypoint:
+从仓库根目录启动本地开发栈：
 
 ```sh
 ./start.sh
 ```
 
-The script copies `.env.example` to `.env` when needed, starts MySQL and Qdrant in
-Docker, runs Alembic migrations, installs frontend dependencies when missing, and
-starts the backend and frontend as host processes.
+该脚本会在需要时把 `.env.example` 复制为 `.env`，用 Docker 启动 MySQL 和 Qdrant，执行 Alembic 迁移，安装缺失的前端依赖，并以宿主机进程启动后端和前端。
 
-Lifecycle commands:
+常用生命周期命令：
 
 ```sh
 ./start.sh --status
@@ -58,54 +44,44 @@ Lifecycle commands:
 ./reset-data.sh --yes
 ```
 
-`./reset-data.sh --yes` is destructive: it stops the local Auto Reign processes,
-removes the MySQL and Qdrant Docker volumes, and deletes local runtime data such
-as `data/`, `.pids/`, and `logs/`. It keeps source code, dependencies, and local
-configuration files such as `.env`.
+`./reset-data.sh --yes` 是破坏性命令：它会停止本地 Auto Reign 进程，删除 MySQL 和 Qdrant Docker volume，并删除 `data/`、`.pids/`、`logs/` 等本地运行数据。它不会删除源代码、依赖目录或 `.env` 等本地配置文件。
 
-Default host ports:
+默认宿主机端口：
 
-- `3100`: frontend
-- `8300`: backend
-- `13306`: MySQL
-- `16333`: Qdrant HTTP
+- `3100`：前端
+- `8300`：后端
+- `13306`：MySQL
+- `16333`：Qdrant HTTP
 
-Default dependency images:
+默认依赖镜像：
 
 - `MYSQL_IMAGE=mysql:8.4`
 - `QDRANT_IMAGE=qdrant/qdrant:v1.17.0`
 
-At least one backend provider key must be non-empty before that provider and its
-models appear in the Interview selector. The default local path is tuned for a
-single `QWEN_API_KEY`: chat uses `qwen3.7-plus` by default and RAG embeddings use `text-embedding-v4`
-through the DashScope OpenAI-compatible endpoint. `QWEN_CHAT_MODELS` only controls
-the Interview model picker for chat models; embeddings stay separate under
-`EMBEDDING_PROVIDER` and `EMBEDDING_MODEL`. Keep `.env` local; it is ignored by Git.
-If Docker Hub access is unstable in your environment, override `MYSQL_IMAGE` and
-`QDRANT_IMAGE` in `.env` with reachable mirror image references before rerunning
-`./start.sh`.
+至少一个后端 provider key 非空时，对应 provider 和模型才会出现在面试模型选择器中。默认本地路径针对单个 `QWEN_API_KEY` 做了优化：聊天默认使用 `qwen3.7-plus`，RAG embedding 通过 DashScope OpenAI-compatible endpoint 使用 `text-embedding-v4`。`QWEN_CHAT_MODELS` 只控制面试聊天模型选择器；embedding 由 `EMBEDDING_PROVIDER` 和 `EMBEDDING_MODEL` 单独控制。`.env` 只保存在本地，并已被 Git 忽略。
 
-## Runtime Modes
+如果你的环境访问 Docker Hub 不稳定，可以先在 `.env` 中把 `MYSQL_IMAGE` 和 `QDRANT_IMAGE` 改成可访问的镜像源，再重新运行 `./start.sh`。
 
-### Host-process development mode
+## 运行模式
 
-`./start.sh` runs:
+### 宿主机进程开发模式
 
-- MySQL in Docker for relational metadata
-- Qdrant in Docker for vectors and retrieval
-- FastAPI on the host
-- Next.js on the host
+`./start.sh` 会启动：
 
-Use this mode for day-to-day development. Runtime state lives in:
+- Docker 中的 MySQL，用于关系型元数据
+- Docker 中的 Qdrant，用于向量和检索
+- 宿主机上的 FastAPI
+- 宿主机上的 Next.js
 
-- MySQL: workspace artifact projection, interview, report, and memory metadata
-- Qdrant: indexed chunk vectors and retrieval payloads
-- `DATA_DIR`: workspace source files, extracted text, generated Markdown, reports,
-  revisions, and local working data
+日常开发优先使用该模式。运行状态分别保存到：
 
-### Full-container mode
+- MySQL：工作区 artifact 投影、面试、报告和记忆元数据
+- Qdrant：索引后的 chunk 向量和检索 payload
+- `DATA_DIR`：工作区来源文件、提取文本、生成的 Markdown、报告、修订版本和本地工作数据
 
-Use Compose directly when you want all four services inside Docker:
+### 全容器模式
+
+如果希望四个服务都运行在 Docker 中，可以直接使用 Compose：
 
 ```sh
 cp .env.example .env
@@ -113,20 +89,19 @@ docker compose config
 docker compose up --build -d
 ```
 
-Open the frontend at <http://127.0.0.1:3100>. The backend health endpoint is
-<http://127.0.0.1:8300/api/health>.
+前端地址是 <http://127.0.0.1:3100>。后端健康检查地址是 <http://127.0.0.1:8300/api/health>。
 
-Stop the stack with:
+停止容器栈：
 
 ```sh
 docker compose down
 ```
 
-Persistent data remains in the named MySQL and Qdrant volumes plus `./data`.
+持久化数据会保留在 MySQL、Qdrant 命名 volume 和 `./data` 中。
 
-## Canonical Checks
+## 权威检查命令
 
-Run the repository checks before committing:
+提交前运行仓库检查：
 
 ```sh
 cd backend
@@ -141,78 +116,58 @@ cd ..
 docker compose config
 ```
 
-## Configuration
+## 配置
 
-| Variable | Purpose |
+| 变量 | 说明 |
 | --- | --- |
-| `BACKEND_HOST` | Backend bind host for container mode. |
-| `BACKEND_PORT` | Preferred host port for the backend process or container mapping. |
-| `FRONTEND_PORT` | Preferred host port for the frontend process or container mapping. |
-| `MYSQL_PORT` | Host port mapped to MySQL container port `3306`. |
-| `QDRANT_HTTP_PORT` | Host port mapped to Qdrant HTTP port `6333`. |
-| `QDRANT_GRPC_PORT` | Host port mapped to Qdrant gRPC port `6334`. |
-| `MYSQL_IMAGE` | Container image reference for the local MySQL dependency. |
-| `QDRANT_IMAGE` | Container image reference for the local Qdrant dependency. |
-| `MYSQL_DATABASE` | MySQL database name. |
-| `MYSQL_USER` | MySQL application user. |
-| `MYSQL_PASSWORD` | MySQL application password. |
-| `MYSQL_ROOT_PASSWORD` | MySQL root password for local container setup. |
-| `DATABASE_URL` | SQLAlchemy database URL used by the backend and Alembic. |
-| `QDRANT_URL` | Backend-to-Qdrant URL. |
-| `QDRANT_COLLECTION` | Default Qdrant collection name. |
-| `DATA_DIR` | Root directory for workspace sources, extracted text, generated reports, revisions, and local files. |
-| `EMBEDDING_PROVIDER` | Embedding provider identifier. Defaults to `qwen`. |
-| `EMBEDDING_MODEL` | Embedding model identifier. Defaults to `text-embedding-v4`. |
-| `OPENAI_API_KEY` | Enables the OpenAI model catalog. Backend only. |
-| `DEEPSEEK_API_KEY` | Enables the DeepSeek model catalog. Backend only. |
-| `QWEN_API_KEY` | Enables the Qwen model catalog. Backend only. |
-| `OPENAI_CHAT_MODELS` | Comma-separated OpenAI model allowlist. |
-| `DEEPSEEK_CHAT_MODELS` | Comma-separated DeepSeek model allowlist. |
-| `QWEN_CHAT_MODELS` | Comma-separated Qwen model allowlist. |
-| `DEEPSEEK_BASE_URL` | DeepSeek OpenAI-compatible API base URL. |
-| `QWEN_BASE_URL` | Qwen OpenAI-compatible regional API base URL. |
-| `DETERMINISTIC_MODEL_FALLBACK` | Uses local deterministic chat and vectors for tests or offline demos. |
-| `NEXT_PUBLIC_API_BASE_URL` | Public browser URL for the backend API. |
+| `BACKEND_HOST` | 容器模式下的后端监听 host。 |
+| `BACKEND_PORT` | 后端进程或容器映射使用的首选宿主机端口。 |
+| `FRONTEND_PORT` | 前端进程或容器映射使用的首选宿主机端口。 |
+| `MYSQL_PORT` | 映射到 MySQL 容器 `3306` 的宿主机端口。 |
+| `QDRANT_HTTP_PORT` | 映射到 Qdrant HTTP `6333` 的宿主机端口。 |
+| `QDRANT_GRPC_PORT` | 映射到 Qdrant gRPC `6334` 的宿主机端口。 |
+| `MYSQL_IMAGE` | 本地 MySQL 依赖的容器镜像。 |
+| `QDRANT_IMAGE` | 本地 Qdrant 依赖的容器镜像。 |
+| `MYSQL_DATABASE` | MySQL 数据库名称。 |
+| `MYSQL_USER` | MySQL 应用用户。 |
+| `MYSQL_PASSWORD` | MySQL 应用用户密码。 |
+| `MYSQL_ROOT_PASSWORD` | 本地容器初始化使用的 MySQL root 密码。 |
+| `DATABASE_URL` | 后端和 Alembic 使用的 SQLAlchemy 数据库 URL。 |
+| `QDRANT_URL` | 后端访问 Qdrant 的 URL。 |
+| `QDRANT_COLLECTION` | 默认 Qdrant collection 名称。 |
+| `DATA_DIR` | 工作区来源文件、提取文本、生成报告、修订版本和本地文件的根目录。 |
+| `EMBEDDING_PROVIDER` | Embedding provider 标识，默认是 `qwen`。 |
+| `EMBEDDING_MODEL` | Embedding 模型标识，默认是 `text-embedding-v4`。 |
+| `OPENAI_API_KEY` | 启用 OpenAI 模型目录，仅后端读取。 |
+| `DEEPSEEK_API_KEY` | 启用 DeepSeek 模型目录，仅后端读取。 |
+| `QWEN_API_KEY` | 启用 Qwen 模型目录，仅后端读取。 |
+| `OPENAI_CHAT_MODELS` | OpenAI 聊天模型白名单，逗号分隔。 |
+| `DEEPSEEK_CHAT_MODELS` | DeepSeek 聊天模型白名单，逗号分隔。 |
+| `QWEN_CHAT_MODELS` | Qwen 聊天模型白名单，逗号分隔。 |
+| `DEEPSEEK_BASE_URL` | DeepSeek OpenAI-compatible API base URL。 |
+| `QWEN_BASE_URL` | Qwen OpenAI-compatible 区域 API base URL。 |
+| `DETERMINISTIC_MODEL_FALLBACK` | 在测试或离线演示中使用本地确定性聊天和向量。 |
+| `NEXT_PUBLIC_API_BASE_URL` | 浏览器访问后端 API 的公开 URL。 |
 
-Provider keys are read only from the backend environment. The API returns boolean
-availability and configured model names, never key values. Keys are not accepted by
-the frontend and are not written to MySQL, Qdrant, reports, or memory files.
+Provider key 只从后端环境变量读取。API 只返回 provider 是否可用和配置的模型名称，绝不返回 key 值。前端不接收 key，也不会把 key 写入 MySQL、Qdrant、报告或记忆文件。
 
-OpenAI uses the standard API endpoint. DeepSeek and Qwen use their OpenAI-compatible
-endpoints. The default setup uses Qwen for both chat and embeddings, so a valid
-`QWEN_API_KEY` is enough to run document indexing, retrieval, and interviews locally.
-OpenAI remains supported for both chat and embeddings when `EMBEDDING_PROVIDER=openai`
-and `EMBEDDING_MODEL=text-embedding-3-small`. Set `DETERMINISTIC_MODEL_FALLBACK=true`
-only for automated tests or an explicitly offline demo; this bypasses provider calls
-and uses stable local responses and hash vectors.
+OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-compatible endpoint。默认配置使用 Qwen 同时提供聊天和 embedding，因此有效的 `QWEN_API_KEY` 足以在本地运行文档索引、检索和面试。OpenAI 仍然支持聊天和 embedding；使用 OpenAI embedding 时设置 `EMBEDDING_PROVIDER=openai` 和 `EMBEDDING_MODEL=text-embedding-3-small`。`DETERMINISTIC_MODEL_FALLBACK=true` 只应用于自动化测试或明确的离线演示；它会绕过 provider 调用，使用稳定的本地响应和 hash 向量。
 
-## Document Library
+## 资料库
 
-Uploads support `.md`, `.txt`, `.pdf`, and `.docx` files. Original files are
-stored under `DATA_DIR/sources/documents`; extracted PDF/DOCX text is stored under
-`DATA_DIR/sources/extracted` when available. The workspace projection is stored in
-MySQL, and indexable source, extracted, knowledge, and practice content is chunked
-and stored as vectors in Qdrant. See
-[Knowledge Base Data Flow](docs/knowledge-data-flow.md) for the current data path.
+上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。原始文件保存到 `DATA_DIR/sources/documents`；PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/sources/extracted`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识和练习内容会被切块并以向量形式保存到 Qdrant。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
 
-## Smoke Test
+## 冒烟验证
 
-1. Run `./start.sh`.
-2. Open Workbench and confirm the local stack is reachable.
-3. Open Library and upload a Markdown, TXT, PDF, or DOCX file.
-4. Confirm the file appears with its original filename, category, timestamps, and
-   edit/delete actions.
-5. Configure `QWEN_API_KEY` in `.env` and restart with `./start.sh --restart`.
-6. Open New interview, optionally describe the company, role, or JD in the chat
-   composer, then start answering in the conversation flow.
-7. Continue until the configured interview completes and the summary appears in
-   the chat.
-8. Open History from the sidebar and confirm completed interviews are visible but
-   cannot be resumed.
+1. 运行 `./start.sh`。
+2. 打开工作台，确认本地服务栈可访问。
+3. 打开资料库，上传 Markdown、TXT、PDF 或 DOCX 文件。
+4. 确认文件以原始文件名展示，并显示分类、创建时间、更新时间以及编辑/删除操作。
+5. 在 `.env` 中配置 `QWEN_API_KEY`，然后运行 `./start.sh --restart`。
+6. 打开新面试，可以在聊天输入框中描述公司、岗位或 JD，然后开始在对话流里回答。
+7. 持续回答直到配置的面试完成，并确认总结出现在聊天流中。
+8. 从侧边栏打开历史，确认已结束面试可见但不能继续对话。
 
-## V1 Exclusions
+## V1 不包含的能力
 
-V1 has no authentication, authorization, multi-user isolation, background workers,
-Redis, object storage, remote RAG runtime, scanned-image OCR, voice/video
-interviews, numeric scoring, or frontend API-key entry. It is intended for a
-single user running the stack locally.
+V1 不包含认证、授权、多用户隔离、后台 worker、Redis、对象存储、远程 RAG runtime、扫描图片 OCR、语音/视频面试、数字评分或前端 API key 输入。它面向单个用户在本地运行。
