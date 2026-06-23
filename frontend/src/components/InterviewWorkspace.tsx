@@ -2,6 +2,7 @@
 
 import {
   CheckCircle2,
+  ChevronDown,
   Loader2,
   Paperclip,
   RotateCcw,
@@ -12,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   createInterviewSessionStream,
   finishInterview,
@@ -31,7 +33,6 @@ import type {
   InterviewSession,
   InterviewTurn,
   ModelProvider,
-  ProviderName,
   ReportRecord,
 } from "@/lib/types";
 
@@ -93,6 +94,8 @@ export function InterviewWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [streamingDraft, setStreamingDraft] = useState<StreamingDraft | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [openingContext, setOpeningContext] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
   const modeOptions: Array<{ value: InterviewMode; label: string }> = [
@@ -182,7 +185,7 @@ export function InterviewWorkspace() {
     } else {
       transcript.scrollTop = transcript.scrollHeight;
     }
-  }, [turns.length, busyAction]);
+  }, [turns.length, busyAction, openingContext, streamingDraft?.text]);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.provider === config.chat_model_provider),
@@ -191,11 +194,7 @@ export function InterviewWorkspace() {
   const selectedModelAvailable =
     selectedProvider?.models.includes(config.chat_model) ?? false;
   const currentTurn = turns.at(-1) ?? null;
-  const reachedTargetRounds =
-    session !== null && session.current_round >= config.target_rounds;
   const canStart =
-    Boolean(config.target_company.trim()) &&
-    Boolean(config.target_role.trim()) &&
     selectedModelAvailable &&
     !busyAction &&
     session?.status !== "active";
@@ -212,22 +211,14 @@ export function InterviewWorkspace() {
     return "idle";
   })();
   const canSend =
-    session?.status === "active" &&
-    Boolean(composerValue.trim()) &&
     !busyAction &&
-    (composerMode === "answer" || composerMode === "follow-up");
+    ((composerMode === "start" && canStart) ||
+      (session?.status === "active" &&
+        Boolean(composerValue.trim()) &&
+        (composerMode === "answer" || composerMode === "follow-up")));
 
   function updateConfig<K extends keyof InterviewConfig>(field: K, value: InterviewConfig[K]) {
     setConfig((current) => ({ ...current, [field]: value }));
-  }
-
-  function selectProvider(providerName: ProviderName) {
-    const provider = providers.find((item) => item.provider === providerName);
-    setConfig((current) => ({
-      ...current,
-      chat_model_provider: providerName,
-      chat_model: provider?.models[0] ?? "",
-    }));
   }
 
   function appendStreamingDelta(text: string) {
@@ -243,10 +234,16 @@ export function InterviewWorkspace() {
     setBusyAction("start");
     setError(null);
     setReport(null);
+    const startContext = composerValue.trim();
+    setOpeningContext(startContext || null);
     setStreamingDraft({ kind: "question", meta: t("question", { index: 1 }), text: "" });
     try {
       const activeConfig: InterviewConfig = {
         ...config,
+        target_company: "",
+        target_role: "",
+        job_description: "",
+        extra_prompt: startContext,
         language: getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en",
       };
       setConfig(activeConfig);
@@ -404,7 +401,9 @@ export function InterviewWorkspace() {
   }
 
   function handleComposerSubmit() {
-    if (composerMode === "answer") {
+    if (composerMode === "start") {
+      void handleStart();
+    } else if (composerMode === "answer") {
       void handleAnswer();
     } else if (composerMode === "follow-up") {
       void handleFollowUp();
@@ -443,6 +442,11 @@ export function InterviewWorkspace() {
           </section>
         ) : (
           <div className="chat-thread">
+            {openingContext ? (
+              <ChatMessage tone="user" meta={t("context_message")}>
+                <p>{openingContext}</p>
+              </ChatMessage>
+            ) : null}
             {turns.map((item) => (
               <div className="chat-turn" key={item.id}>
                 <ChatMessage meta={t("question", { index: item.round_index })}>
@@ -582,47 +586,12 @@ export function InterviewWorkspace() {
           type="button"
         >
           <Settings2 aria-hidden="true" size={17} />
-          {showAdvanced ? t("hide_advanced") : t("show_advanced")}
+          {t("interview_settings")}
         </button>
 
         {showAdvanced ? (
-          <form className="advanced-settings" onSubmit={(event) => void handleStart(event)}>
-            <label>
-              <span className="field-label">{t("target_company")}</span>
-              <input
-                disabled={session?.status === "active"}
-                onChange={(event) => updateConfig("target_company", event.target.value)}
-                required
-                value={config.target_company}
-              />
-            </label>
-            <label>
-              <span className="field-label">{t("target_role")}</span>
-              <input
-                disabled={session?.status === "active"}
-                onChange={(event) => updateConfig("target_role", event.target.value)}
-                required
-                value={config.target_role}
-              />
-            </label>
-            <label>
-              <span className="field-label">{t("job_description")}</span>
-              <textarea
-                disabled={session?.status === "active"}
-                onChange={(event) => updateConfig("job_description", event.target.value)}
-                rows={4}
-                value={config.job_description}
-              />
-            </label>
-            <label>
-              <span className="field-label">{t("extra_prompt")}</span>
-              <textarea
-                disabled={session?.status === "active"}
-                onChange={(event) => updateConfig("extra_prompt", event.target.value)}
-                rows={3}
-                value={config.extra_prompt}
-              />
-            </label>
+          <div className="advanced-settings">
+            <LanguageSwitcher />
             <div className="form-grid">
               <label>
                 <span className="field-label">{t("mode")}</span>
@@ -639,61 +608,24 @@ export function InterviewWorkspace() {
                 </select>
               </label>
               <label>
-                <span className="field-label">{t("provider")}</span>
-                <select
-                  disabled={session?.status === "active" || providers.length === 0}
-                  onChange={(event) => selectProvider(event.target.value as ProviderName)}
-                  value={selectedProvider ? config.chat_model_provider : ""}
-                >
-                  {providers.length === 0 ? <option value="">{t("no_providers")}</option> : null}
-                  {providers.map((provider) => (
-                    <option key={provider.provider} value={provider.provider}>
-                      {provider.provider}
-                    </option>
-                  ))}
-                </select>
+                <span className="field-label">{t("target_rounds")}</span>
+                <input
+                  disabled={session?.status === "active"}
+                  max={12}
+                  min={1}
+                  onChange={(event) =>
+                    updateConfig("target_rounds", Math.max(1, Number(event.target.value)))
+                  }
+                  type="number"
+                  value={config.target_rounds}
+                />
               </label>
             </div>
-            <label>
-              <span className="field-label">{t("target_rounds")}</span>
-              <input
-                disabled={session?.status === "active"}
-                max={12}
-                min={1}
-                onChange={(event) =>
-                  updateConfig("target_rounds", Math.max(1, Number(event.target.value)))
-                }
-                type="number"
-                value={config.target_rounds}
-              />
-            </label>
-            <button
-              className="button button-primary"
-              disabled={!canStart || session?.status === "active"}
-              type="submit"
-            >
-              {busyAction === "start" ? `${t("common:actions.start")}...` : t("common:actions.start")}
-            </button>
-          </form>
+          </div>
         ) : null}
 
         <section className="chat-composer" aria-label={t("composer.label")}>
           <div className="composer-toolbar">
-            <label className="model-picker">
-              <span className="field-label">{t("model")}</span>
-              <select
-                disabled={session?.status === "active" || !selectedProvider}
-                onChange={(event) => updateConfig("chat_model", event.target.value)}
-                value={selectedModelAvailable ? config.chat_model : ""}
-              >
-                {!selectedProvider ? <option value="">{t("model_unavailable")}</option> : null}
-                {selectedProvider?.models.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </label>
             {session?.status === "completed" ? (
               <span className="session-complete">
                 <CheckCircle2 aria-hidden="true" size={16} />
@@ -711,7 +643,7 @@ export function InterviewWorkspace() {
             </label>
             <textarea
               aria-label={t("composer.input_label")}
-              disabled={composerMode === "start" || composerMode === "idle"}
+              disabled={composerMode === "idle"}
               id="interview-composer"
               onChange={(event) => setComposerValue(event.target.value)}
               onKeyDown={(event) => {
@@ -724,9 +656,59 @@ export function InterviewWorkspace() {
               rows={1}
               value={composerValue}
             />
+            <div className="model-picker" data-open={modelMenuOpen}>
+              <button
+                aria-expanded={modelMenuOpen}
+                aria-label={t("select_model")}
+                className="model-picker-button"
+                disabled={session?.status === "active" || providers.length === 0}
+                onClick={() => setModelMenuOpen((current) => !current)}
+                type="button"
+              >
+                <span>{config.chat_model || t("model_unavailable")}</span>
+                <ChevronDown aria-hidden="true" size={14} />
+              </button>
+              {modelMenuOpen ? (
+                <div className="model-picker-menu" role="listbox" aria-label={t("model")}>
+                  {providers.length === 0 ? (
+                    <span className="model-picker-empty">{t("no_providers")}</span>
+                  ) : null}
+                  {providers.map((provider) => (
+                    <div className="model-picker-group" key={provider.provider}>
+                      <p>{provider.provider}</p>
+                      {provider.models.map((model) => {
+                        const active =
+                          provider.provider === config.chat_model_provider &&
+                          model === config.chat_model;
+                        return (
+                          <button
+                            data-active={active}
+                            key={`${provider.provider}-${model}`}
+                            onClick={() => {
+                              updateConfig("chat_model_provider", provider.provider);
+                              updateConfig("chat_model", model);
+                              setModelMenuOpen(false);
+                            }}
+                            role="option"
+                            aria-selected={active}
+                            type="button"
+                          >
+                            {model}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <button
               aria-label={
-                composerMode === "follow-up" ? t("composer.send_follow_up") : t("composer.send_answer")
+                composerMode === "start"
+                  ? t("composer.start_interview")
+                  : composerMode === "follow-up"
+                    ? t("composer.send_follow_up")
+                    : t("composer.send_answer")
               }
               className="send-button"
               disabled={!canSend}
@@ -746,6 +728,7 @@ export function InterviewWorkspace() {
                 setTurns([]);
                 setReport(null);
                 setComposerValue("");
+                setOpeningContext(null);
                 setError(null);
                 setStreamingDraft(null);
               }}

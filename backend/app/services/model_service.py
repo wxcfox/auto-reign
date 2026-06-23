@@ -24,6 +24,14 @@ class DocumentAnalysisResult(BaseModel):
     weakness_candidates: list[str] = Field(default_factory=list)
 
 
+class LearningNoteSummaryResult(BaseModel):
+    title: str
+    summary: str
+    key_points: list[str] = Field(default_factory=list)
+    interview_takeaways: list[str] = Field(default_factory=list)
+    follow_up_questions: list[str] = Field(default_factory=list)
+
+
 class ProviderRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
@@ -91,15 +99,80 @@ class ModelService:
             DocumentAnalysisResult,
         )
 
+    def summarize_learning_note(
+        self,
+        text: str,
+        *,
+        language: str = "zh-CN",
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> LearningNoteSummaryResult:
+        if self.settings.deterministic_model_fallback:
+            stripped = re.sub(r"\s+", " ", text).strip()
+            title = self._fallback_title(stripped, "学习记录")
+            summary = stripped[:240] if stripped else "（空内容）"
+            if language == "zh-CN":
+                return LearningNoteSummaryResult(
+                    title=title,
+                    summary=f"已记录：{summary}",
+                    key_points=[summary] if summary else [],
+                    interview_takeaways=["把学习内容整理成 30 秒可口述表达。"],
+                    follow_up_questions=["这个知识点在真实项目中如何落地？"],
+                )
+            return LearningNoteSummaryResult(
+                title=title,
+                summary=f"Recorded: {summary}",
+                key_points=[summary] if summary else [],
+                interview_takeaways=["Prepare a 30-second explanation for this learning note."],
+                follow_up_questions=["How would this topic apply in a real project?"],
+            )
+        return self._structured_chat(
+            "learning_note_summary.md",
+            {"text": text, "language": language},
+            LearningNoteSummaryResult,
+            provider,
+            model,
+        )
+
+    def stream_learning_note_summary(
+        self,
+        text: str,
+        *,
+        language: str = "zh-CN",
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> Iterator[str]:
+        if self.settings.deterministic_model_fallback:
+            result = self.summarize_learning_note(
+                text,
+                language=language,
+                provider=provider,
+                model=model,
+            )
+            yield from self._chunk_text(self._learning_note_summary_markdown(result, language))
+            return
+        yield from self.stream_chat(
+            "learning_note_summary_stream.md",
+            {"text": text, "language": language},
+            provider,
+            model,
+        )
+
     def generate_question(self, request: QuestionGenerationRequest) -> str:
         if self.settings.deterministic_model_fallback:
             if request.language == "zh-CN":
-                role = request.target_role or "目标岗位"
-                company = request.target_company or "目标公司"
-                return f"请结合你的经历，说明你会如何胜任{company}的{role}岗位？"
+                if request.target_company or request.target_role:
+                    role = request.target_role or "这个岗位"
+                    company = request.target_company or "目标公司"
+                    return f"请结合你的经历，说明你会如何胜任{company}的{role}？"
+                return "请先介绍一个你最近做过、最能体现能力的项目，并说明你的关键贡献。"
+            if request.target_company or request.target_role:
+                role = request.target_role or "the target role"
+                company = request.target_company or "the target company"
+                return f"How would you explain your {role} experience for {company}?"
             return (
-                f"How would you explain your {request.target_role} experience "
-                f"for {request.target_company}?"
+                "Walk me through a recent project that best demonstrates your strengths, "
+                "and explain your specific contribution."
             )
         return self._chat(
             "question_generation.md",
@@ -472,6 +545,60 @@ class ModelService:
                 return match.group(1).strip()
         words = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", text)
         return " ".join(words[:5]) or "Untitled Document"
+
+    def _fallback_title(self, text: str, default: str) -> str:
+        markdown_title = self._title_from_markdown(text)
+        if markdown_title != "Untitled Document":
+            return markdown_title[:80]
+        chinese_terms = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]+", text)
+        if chinese_terms:
+            return "".join(chinese_terms[:8])[:80]
+        return default
+
+    def _learning_note_summary_markdown(
+        self,
+        result: LearningNoteSummaryResult,
+        language: str,
+    ) -> str:
+        if language == "zh-CN":
+            sections = [
+                f"# {result.title}",
+                f"## 摘要\n\n{result.summary}",
+                "## 关键点\n\n"
+                + "\n".join(f"- {point}" for point in result.key_points or ["继续补充细节。"]),
+                "## 面试表达\n\n"
+                + "\n".join(
+                    f"- {takeaway}"
+                    for takeaway in result.interview_takeaways
+                    or ["整理成项目案例里的可口述表达。"]
+                ),
+                "## 可追问问题\n\n"
+                + "\n".join(
+                    f"- {question}"
+                    for question in result.follow_up_questions
+                    or ["这个知识点如何在真实项目中落地？"]
+                ),
+            ]
+            return "\n\n".join(sections)
+        sections = [
+            f"# {result.title}",
+            f"## Summary\n\n{result.summary}",
+            "## Key points\n\n"
+            + "\n".join(f"- {point}" for point in result.key_points or ["Add more detail."]),
+            "## Interview expression\n\n"
+            + "\n".join(
+                f"- {takeaway}"
+                for takeaway in result.interview_takeaways
+                or ["Turn this into a concise interview-ready story."]
+            ),
+            "## Follow-up questions\n\n"
+            + "\n".join(
+                f"- {question}"
+                for question in result.follow_up_questions
+                or ["How would this apply in a real project?"]
+            ),
+        ]
+        return "\n\n".join(sections)
 
     def _summary_from_text(self, text: str) -> str:
         compact = " ".join(text.split())

@@ -16,6 +16,7 @@ describe("AppShell", () => {
     );
 
     expect(screen.getByRole("link", { name: /New interview/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /New learning/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /Primary/i })).toBeInTheDocument();
     const moreButton = screen.getByRole("button", { name: /More/i });
     expect(moreButton).toHaveAttribute("aria-expanded", "false");

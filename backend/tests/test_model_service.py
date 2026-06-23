@@ -210,6 +210,32 @@ def test_model_service_uses_deterministic_fallback_when_enabled(tmp_path) -> Non
     assert question == "How would you explain your Backend Engineer experience for OpenAI?"
 
 
+def test_model_service_generates_generic_question_without_target_fields(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        deterministic_model_fallback=True,
+    )
+    service = ModelService(settings=settings)
+
+    question = service.generate_question(
+        QuestionGenerationRequest(
+            target_company="",
+            target_role="",
+            extra_prompt="面试字节后端岗位，JD 关注缓存和高并发。",
+            language="zh-CN",
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+
+    assert "目标公司" not in question
+    assert "目标岗位" not in question
+    assert "最近做过" in question
+
+
 def test_model_service_uses_chinese_fallback_outputs_when_requested(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,

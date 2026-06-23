@@ -9,6 +9,8 @@ import type {
   InterviewConfig,
   InterviewConfigResponse,
   InterviewSessionCreatedResponse,
+  LearningNoteRequest,
+  LearningNoteResponse,
   MemoryResponse,
   ModelListResponse,
   ReportDetailResponse,
@@ -88,6 +90,17 @@ export function rebuildWorkspaceIndex(): Promise<{ status: string; collection: s
   return apiJson<{ status: string; collection: string }>("/api/workspace/rebuild-index", {
     method: "POST",
   });
+}
+
+export function recordLearningNoteStream(
+  payload: LearningNoteRequest,
+  callbacks: StreamCallbacks,
+): Promise<LearningNoteResponse> {
+  return apiStream<LearningNoteResponse>(
+    "/api/workspace/learning-notes/stream",
+    payload,
+    callbacks,
+  );
 }
 
 export function getDocuments(): Promise<DocumentListResponse> {

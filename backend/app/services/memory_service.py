@@ -135,7 +135,12 @@ class MemoryService:
             Report(
                 session_id=interview_session.id,
                 report_path=str(report_path),
-                summary=self._report_summary(config.target_role, config.target_company, config.language),
+                summary=self._report_summary(
+                    config.target_role,
+                    config.target_company,
+                    config.extra_prompt,
+                    config.language,
+                ),
                 weaknesses=weaknesses,
             ),
         )
@@ -300,9 +305,16 @@ class MemoryService:
         existing = content.split(history_heading, 1)[1].strip()
         return f"{existing}\n\n{entry}".strip()
 
-    def _report_summary(self, target_role: str, target_company: str, language: str) -> str:
+    def _report_summary(
+        self,
+        target_role: str,
+        target_company: str,
+        extra_prompt: str,
+        language: str,
+    ) -> str:
         role = target_role.strip()
         company = target_company.strip()
+        natural_context = " ".join(extra_prompt.split())[:120]
         if language == "zh-CN":
             if role and company:
                 return f"{company}{role}面试复盘"
@@ -310,5 +322,15 @@ class MemoryService:
                 return f"{role}面试复盘"
             if company:
                 return f"{company}面试复盘"
+            if natural_context:
+                return f"面试复盘：{natural_context}"
             return "面试复盘"
-        return f"{role} interview for {company}".strip()
+        if role and company:
+            return f"{role} interview for {company}"
+        if role:
+            return f"{role} interview"
+        if company:
+            return f"Interview for {company}"
+        if natural_context:
+            return f"Interview review: {natural_context}"
+        return "Interview review"
