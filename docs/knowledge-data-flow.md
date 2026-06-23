@@ -5,29 +5,29 @@ materials, learning notes, workspace projection, chunking, embeddings, vector
 indexing, and retrieval.
 
 ```mermaid
-flowchart TD
-  A[User uploads material or records a learning note] --> B{Input type}
-  B -->|Markdown or TXT| C[Store original source file under DATA_DIR/sources/documents]
-  B -->|PDF or DOCX| D[Store original source file under DATA_DIR/sources/documents]
-  D --> E[Extract readable text into sources/extracted when available]
-  B -->|Learning note| F[Store original note as source material]
-  F --> G[LLM summarizes note into a managed knowledge Markdown file]
-  C --> H[Organize source into candidate profile, target profile, or knowledge]
+graph TD
+  A["User uploads material or records a learning note"] --> B{"Input type"}
+  B -->|Markdown or TXT| C["Store original source file under DATA_DIR/sources/documents"]
+  B -->|PDF or DOCX| D["Store original source file under DATA_DIR/sources/documents"]
+  D --> E["Extract readable text into sources/extracted when available"]
+  B -->|Learning note| F["Store original note as source material"]
+  F --> G["LLM summarizes note into a managed knowledge Markdown file"]
+  C --> H["Organize source into candidate profile, target profile, or knowledge"]
   E --> H
-  G --> I[Rebuild workspace projection]
+  G --> I["Rebuild workspace projection"]
   H --> I
-  I --> J[Scan workspace files and sidecar metadata]
-  J --> K[Upsert artifact metadata into MySQL]
-  K --> L[Rebuild vector index]
-  L --> M[Read indexable text from text sources, extracted text, knowledge, and practice]
-  M --> N[Split text into overlapping chunks]
-  N --> O[Generate embeddings with configured embedding provider]
-  O --> P[Upsert chunk vectors and metadata into Qdrant]
-  P --> Q[Persist active vector collection in workspace settings]
-  Q --> R[Interview service builds retrieval query from current context]
-  R --> S[Embed retrieval query]
-  S --> T[Search active Qdrant collection]
-  T --> U[Inject retrieved snippets into interview question, feedback, or summary prompts]
+  I --> J["Scan workspace files and sidecar metadata"]
+  J --> K["Upsert artifact metadata into MySQL"]
+  K --> L["Rebuild vector index"]
+  L --> M["Read indexable text from text sources, extracted text, knowledge, and practice"]
+  M --> N["Split text into overlapping chunks"]
+  N --> O["Generate embeddings with configured embedding provider"]
+  O --> P["Upsert chunk vectors and metadata into Qdrant"]
+  P --> Q["Persist active vector collection in workspace settings"]
+  Q --> R["Interview service builds retrieval query from current context"]
+  R --> S["Embed retrieval query"]
+  S --> T["Search active Qdrant collection"]
+  T --> U["Inject retrieved snippets into interview question, feedback, or summary prompts"]
 ```
 
 ## Current Storage Responsibilities
