@@ -4,22 +4,25 @@ import { initReactI18next } from "react-i18next";
 import commonEn from "@/i18n/locales/en/common.json";
 import dashboardEn from "@/i18n/locales/en/dashboard.json";
 import interviewEn from "@/i18n/locales/en/interview.json";
+import learningEn from "@/i18n/locales/en/learning.json";
 import libraryEn from "@/i18n/locales/en/library.json";
 import reviewEn from "@/i18n/locales/en/review.json";
 import commonZh from "@/i18n/locales/zh-CN/common.json";
 import dashboardZh from "@/i18n/locales/zh-CN/dashboard.json";
 import interviewZh from "@/i18n/locales/zh-CN/interview.json";
+import learningZh from "@/i18n/locales/zh-CN/learning.json";
 import libraryZh from "@/i18n/locales/zh-CN/library.json";
 import reviewZh from "@/i18n/locales/zh-CN/review.json";
 
 export const supportedLanguages = ["en", "zh-CN"] as const;
-export const namespaces = ["common", "dashboard", "library", "interview", "review"] as const;
+export const namespaces = ["common", "dashboard", "library", "interview", "learning", "review"] as const;
 
 const resources = {
   en: {
     common: commonEn,
     dashboard: dashboardEn,
     interview: interviewEn,
+    learning: learningEn,
     library: libraryEn,
     review: reviewEn,
   },
@@ -27,6 +30,7 @@ const resources = {
     common: commonZh,
     dashboard: dashboardZh,
     interview: interviewZh,
+    learning: learningZh,
     library: libraryZh,
     review: reviewZh,
   },

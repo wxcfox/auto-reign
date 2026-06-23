@@ -52,6 +52,76 @@ def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch
     assert calls[0][1] is client.app.state.workspace_service
 
 
+def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) -> None:
+    calls: list[tuple[object, object, object]] = []
+
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            calls.append((session_factory, workspace, repository))
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    response = client.post(
+        "/api/workspace/learning-notes",
+        json={
+            "text": "今天学习了 Redis 缓存穿透、布隆过滤器和空值缓存。",
+            "language": "zh-CN",
+            "provider": "qwen",
+            "model": "qwen3.7-plus",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"]["duplicate"] is False
+    assert body["artifact"]["kind"] == "knowledge"
+    assert body["summary"]["title"]
+    assert "Redis" in body["summary"]["summary"]
+
+    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    kinds = {artifact["kind"] for artifact in artifacts}
+    assert {"source", "knowledge"}.issubset(kinds)
+
+    detail = client.get(f"/api/workspace/artifacts/{body['artifact']['id']}").json()
+    assert "用户原始学习记录" in detail["body"]
+    assert "缓存穿透" in detail["body"]
+    assert "AI 整理摘要" in detail["body"]
+    assert len(calls) == 1
+
+
+def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch) -> None:
+    calls: list[tuple[object, object, object]] = []
+
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            calls.append((session_factory, workspace, repository))
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    response = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={
+            "text": "今天学习了 MySQL 索引覆盖和回表优化。",
+            "language": "zh-CN",
+            "provider": "qwen",
+            "model": "qwen3.7-plus",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "event: delta" in body
+    assert "event: result" in body
+    assert "MySQL" in body
+
+    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    kinds = {artifact["kind"] for artifact in artifacts}
+    assert {"source", "knowledge"}.issubset(kinds)
+    assert len(calls) == 1
+
+
 def test_workspace_artifact_read_and_replace_body(client) -> None:
     artifacts = client.app.state.artifact_service
     artifacts.create_markdown("knowledge/edit.md", kind="knowledge", body="# Edit\n\nold")

@@ -28,6 +28,7 @@
     "upload": "Upload",
     "start": "Start interview",
     "new_interview": "New interview",
+    "new_learning": "New learning",
     "open_report": "Open report",
     "save_and_reindex": "Save and reindex",
     "review_memory": "Review memory"

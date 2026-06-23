@@ -1,0 +1,29 @@
+{
+  "title": "学习",
+  "not_started": "准备记录",
+  "empty_label": "空学习聊天",
+  "empty_title": "今天学了什么？",
+  "empty_body": "直接粘贴笔记、概念、资料片段或粗略复盘，Auto Reign 会整理进本地知识库。",
+  "model_unavailable": "不可用",
+  "select_model": "选择模型",
+  "no_providers": "暂无可用提供方",
+  "message_meta": "学习输入",
+  "summary_meta": "已保存总结",
+  "saved_to": "已保存到 {{path}}",
+  "error_title": "出现问题",
+  "composer": {
+    "label": "学习输入框",
+    "input_label": "Message Auto Reign",
+    "placeholder": "粘贴你刚学到的内容，发送即可记录...",
+    "send": "记录学习",
+    "attach": "附加资料"
+  },
+  "streaming": {
+    "label": "助手正在整理",
+    "body": "正在整理学习记录..."
+  },
+  "errors": {
+    "load": "加载模型可用性失败。",
+    "record": "记录学习失败。"
+  }
+}

@@ -42,6 +42,27 @@ export interface UploadedSourceRecord {
   duplicate: boolean;
 }
 
+export interface LearningNoteSummary {
+  title: string;
+  summary: string;
+  key_points: string[];
+  interview_takeaways: string[];
+  follow_up_questions: string[];
+}
+
+export interface LearningNoteRequest {
+  text: string;
+  language: "en" | "zh-CN";
+  provider?: ProviderName;
+  model?: string;
+}
+
+export interface LearningNoteResponse {
+  source: UploadedSourceRecord;
+  artifact: WorkspaceArtifactSummary;
+  summary: LearningNoteSummary;
+}
+
 export interface UploadMaterialsResponse {
   sources: UploadedSourceRecord[];
 }

@@ -103,9 +103,61 @@ describe("InterviewWorkspace", () => {
     render(<InterviewWorkspace />);
 
     expect(await screen.findByText(/Ready when you are/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Model/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Select model/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Message Auto Reign/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Show advanced settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Interview settings/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Target company/i)).not.toBeInTheDocument();
+  });
+
+  it("starts an interview from natural language context in the composer", async () => {
+    vi.mocked(createInterviewSessionStream).mockImplementation(async (_config, handlers) => {
+      handlers.onDelta(firstTurn.question);
+      return {
+        session: baseSession,
+        turn: firstTurn,
+      };
+    });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.change(await screen.findByLabelText(/Message Auto Reign/i), {
+      target: {
+        value: "面试 Acme 后端工程师，JD 关注缓存、高并发和 FastAPI。",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Start interview/i }));
+
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    expect(screen.getByText(/面试 Acme 后端工程师/)).toBeInTheDocument();
+    expect(saveLastInterviewConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target_company: "",
+        target_role: "",
+        job_description: "",
+        extra_prompt: "面试 Acme 后端工程师，JD 关注缓存、高并发和 FastAPI。",
+      }),
+    );
+  });
+
+  it("can start a generic interview without any typed target context", async () => {
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
+      session: baseSession,
+      turn: firstTurn,
+    });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
+
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    expect(saveLastInterviewConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target_company: "",
+        target_role: "",
+        job_description: "",
+        extra_prompt: "",
+      }),
+    );
   });
 
   it("keeps earlier interview turns visible and automatically streams the next question after follow-up", async () => {
@@ -145,9 +197,9 @@ describe("InterviewWorkspace", () => {
 
     render(<InterviewWorkspace />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Show advanced settings/i }));
-    fireEvent.change(screen.getByLabelText(/Target company/i), { target: { value: "Acme" } });
-    fireEvent.change(screen.getByLabelText(/Target role/i), { target: { value: "Backend Engineer" } });
+    fireEvent.change(await screen.findByLabelText(/Message Auto Reign/i), {
+      target: { value: "Acme backend interview focused on caching." },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Start interview/i }));
 
     expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
@@ -190,10 +242,7 @@ describe("InterviewWorkspace", () => {
 
     render(<InterviewWorkspace />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Show advanced settings/i }));
-    fireEvent.change(screen.getByLabelText(/Target company/i), { target: { value: "Acme" } });
-    fireEvent.change(screen.getByLabelText(/Target role/i), { target: { value: "Backend Engineer" } });
-    fireEvent.click(screen.getByRole("button", { name: /Start interview/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
 
     expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
@@ -238,10 +287,7 @@ describe("InterviewWorkspace", () => {
 
     render(<InterviewWorkspace />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Show advanced settings/i }));
-    fireEvent.change(screen.getByLabelText(/Target company/i), { target: { value: "Acme" } });
-    fireEvent.change(screen.getByLabelText(/Target role/i), { target: { value: "Backend Engineer" } });
-    fireEvent.click(screen.getByRole("button", { name: /Start interview/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
 
     expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {

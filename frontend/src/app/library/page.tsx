@@ -11,26 +11,23 @@ import { getWorkspaceArtifacts, rebuildWorkspaceIndex } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type { WorkspaceArtifactSummary } from "@/lib/types";
 
-function labelForKind(kind: string): string {
-  const labels: Record<string, string> = {
-    source: "原始资料",
-    extracted: "提取文本",
-    candidate_profile: "候选人画像",
-    target_profile: "目标岗位",
-    knowledge: "知识卡片",
-    practice: "练习记录",
-    mastery: "掌握状态",
-    plan: "当前计划",
-    report: "复盘报告",
-  };
-  return labels[kind] ?? kind;
-}
+const CATEGORY_ORDER = [
+  "knowledge",
+  "source",
+  "candidate_profile",
+  "target_profile",
+  "practice",
+  "report",
+  "plan",
+  "mastery",
+  "extracted",
+];
 
 export default function LibraryPage() {
   const { t } = useTranslation("library");
   const [artifacts, setArtifacts] = useState<WorkspaceArtifactSummary[]>([]);
   const [keyword, setKeyword] = useState("");
-  const [kind, setKind] = useState("");
+  const [selectedKind, setSelectedKind] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,12 +52,33 @@ export default function LibraryPage() {
       const matchesKeyword =
         !normalizedKeyword ||
         `${artifact.relative_path} ${artifact.kind}`.toLowerCase().includes(normalizedKeyword);
-      const matchesKind = !kind || artifact.kind === kind;
+      const matchesKind = !selectedKind || artifact.kind === selectedKind;
       return matchesKeyword && matchesKind;
     });
-  }, [artifacts, keyword, kind]);
+  }, [artifacts, keyword, selectedKind]);
 
-  const kinds = Array.from(new Set(artifacts.map((artifact) => artifact.kind))).sort();
+  const categoryItems = useMemo(() => {
+    const counts = artifacts.reduce<Record<string, number>>((current, artifact) => {
+      current[artifact.kind] = (current[artifact.kind] ?? 0) + 1;
+      return current;
+    }, {});
+    const orderedKinds = [
+      ...CATEGORY_ORDER.filter((item) => counts[item]),
+      ...Object.keys(counts)
+        .filter((item) => !CATEGORY_ORDER.includes(item))
+        .sort(),
+    ];
+    return [
+      { kind: "", label: t("categories.all"), count: artifacts.length },
+      ...orderedKinds.map((item) => ({
+        kind: item,
+        label: t(`kinds.${item}`, item),
+        count: counts[item] ?? 0,
+      })),
+    ];
+  }, [artifacts, t]);
+
+  const previewArtifact = filteredArtifacts[0] ?? null;
 
   async function handleRebuildIndex() {
     setError(null);
@@ -68,102 +86,121 @@ export default function LibraryPage() {
     try {
       await rebuildWorkspaceIndex();
       await getWorkspaceArtifacts().then((response) => setArtifacts(response.artifacts));
-      setMessage("索引已重建");
+      setMessage(t("rebuild_success"));
     } catch (rebuildError) {
       setError(getErrorMessage(rebuildError, t, "common:errors.generic_save"));
     }
   }
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="library-workspace">
+      <header className="page-header library-header">
         <div>
-          <p className="eyebrow">学习资料</p>
-          <h1>资料库</h1>
+          <p className="eyebrow">{t("eyebrow")}</p>
+          <h1>{t("title")}</h1>
         </div>
         <div className="status-row">
-          <p className="page-summary">已整理 {artifacts.length} 个学习文件</p>
+          <p className="page-summary">{t("summary", { count: artifacts.length })}</p>
           <button className="button" onClick={() => void handleRebuildIndex()} type="button">
-            重建索引
+            {t("rebuild_index")}
           </button>
         </div>
       </header>
 
-      <section className="tool-panel" aria-label="Upload material">
+      <section className="tool-panel library-upload-panel" aria-label={t("upload_label")}>
         <DocumentUploader onUploaded={() => loadArtifacts()} />
       </section>
 
-      <section className="page-section" aria-labelledby="artifact-list-heading">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">自动整理</p>
-            <h2 id="artifact-list-heading">学习文件</h2>
+      <section className="library-browser" aria-labelledby="artifact-list-heading">
+        <aside className="library-categories" aria-label={t("categories.title")}>
+          <p className="eyebrow">{t("categories.title")}</p>
+          <div className="library-category-list">
+            {categoryItems.map((item) => (
+              <button
+                aria-label={`${item.label} ${item.count}`}
+                aria-pressed={selectedKind === item.kind}
+                data-active={selectedKind === item.kind}
+                key={item.kind || "all"}
+                onClick={() => setSelectedKind(item.kind)}
+                type="button"
+              >
+                <span>{item.label}</span>
+                <strong>{item.count}</strong>
+              </button>
+            ))}
           </div>
-          <div className="filter-row">
-            <label className="search-field">
-              <Search aria-hidden="true" size={17} />
-              <span className="sr-only">搜索</span>
-              <input
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="搜索路径或类型"
-                type="search"
-                value={keyword}
-              />
-            </label>
-            <label>
-              <span className="sr-only">类型</span>
-              <select onChange={(event) => setKind(event.target.value)} value={kind}>
-                <option value="">全部类型</option>
-                {kinds.map((item) => (
-                  <option key={item} value={item}>
-                    {labelForKind(item)}
-                  </option>
-                ))}
-              </select>
-            </label>
+        </aside>
+
+        <div className="library-files">
+          <div className="section-heading library-file-heading">
+            <div>
+              <p className="eyebrow">{t("browser_eyebrow")}</p>
+              <h2 id="artifact-list-heading">{t("browser_title")}</h2>
+            </div>
+            <div className="filter-row">
+              <label className="search-field">
+                <Search aria-hidden="true" size={17} />
+                <span className="sr-only">{t("keyword_label")}</span>
+                <input
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder={t("keyword_placeholder")}
+                  type="search"
+                  value={keyword}
+                />
+              </label>
+            </div>
           </div>
-        </div>
 
-        {loading ? <p className="empty-state">加载中...</p> : null}
-        {error ? (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {message ? (
-          <p className="form-success" role="status">
-            {message}
-          </p>
-        ) : null}
-        {!loading && !error && filteredArtifacts.length === 0 ? (
-          <p className="empty-state">上传简历、JD 或学习笔记后，系统会自动整理到这里。</p>
-        ) : null}
+          {loading ? <p className="empty-state">{t("loading")}</p> : null}
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p className="form-success" role="status">
+              {message}
+            </p>
+          ) : null}
+          {!loading && !error && filteredArtifacts.length === 0 ? (
+            <p className="empty-state">
+              {artifacts.length === 0 ? t("empty") : t("empty_filtered")}
+            </p>
+          ) : null}
 
-        <div className="document-grid">
-          {filteredArtifacts.map((artifact) => (
-            <Link className="document-card" href={`/library/${artifact.id}`} key={artifact.id}>
-              <div className="document-card-heading">
+          <div className="library-file-list">
+            {filteredArtifacts.map((artifact) => (
+              <Link className="library-file-row" href={`/library/${artifact.id}`} key={artifact.id}>
                 <div>
-                  <p className="document-source">{labelForKind(artifact.kind)}</p>
+                  <p className="document-source">{t(`kinds.${artifact.kind}`, artifact.kind)}</p>
                   <h3>{artifact.relative_path}</h3>
                 </div>
                 <StatusPill
-                  label={artifact.recovery_required ? "需要确认" : artifact.processing_status}
+                  label={artifact.recovery_required ? t("common:states.checking") : artifact.processing_status}
                   tone={artifact.recovery_required ? "warning" : "success"}
                 />
-              </div>
-              <p>revision {artifact.revision}</p>
-              <div className="tag-row">
-                <span className="tag">{artifact.index_status}</span>
-                {artifact.allowed_operations.length > 0 ? (
-                  <span className="tag">可编辑</span>
-                ) : (
-                  <span className="tag">只读</span>
-                )}
-              </div>
-            </Link>
-          ))}
+              </Link>
+            ))}
+          </div>
         </div>
+
+        <aside className="library-preview" aria-label={t("preview_title")}>
+          <div>
+            <p className="eyebrow">{t("preview_title")}</p>
+            <h2>{previewArtifact ? previewArtifact.relative_path : t("preview_empty")}</h2>
+          </div>
+          {previewArtifact ? (
+            <div className="library-preview-meta">
+              <span className="tag">{t(`kinds.${previewArtifact.kind}`, previewArtifact.kind)}</span>
+              <span className="tag">{previewArtifact.index_status}</span>
+              <span className="tag">{t("revision", { value: previewArtifact.revision })}</span>
+              <span className="tag">
+                {previewArtifact.allowed_operations.length > 0 ? t("editable") : t("readonly")}
+              </span>
+            </div>
+          ) : null}
+          <p className="page-summary">{t("file_count", { count: filteredArtifacts.length })}</p>
+        </aside>
       </section>
     </div>
   );

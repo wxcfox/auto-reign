@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+import json
 import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.artifact_permissions import (
@@ -23,6 +26,7 @@ from app.repositories.workspace_settings_repository import WorkspaceSettingsRepo
 from app.services.artifact_service import ArtifactConflict
 from app.services.ingestion_service import IngestionService, UploadItem
 from app.services.index_service import IndexService
+from app.services.model_service import LearningNoteSummaryResult, ModelService
 
 
 router = APIRouter(prefix="/api/workspace")
@@ -43,6 +47,19 @@ class UploadedSourceResponse(BaseModel):
 
 class UploadMaterialsResponse(BaseModel):
     sources: list[UploadedSourceResponse]
+
+
+class LearningNoteRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20000)
+    language: str = "zh-CN"
+    provider: str | None = None
+    model: str | None = None
+
+
+class LearningNoteResponse(BaseModel):
+    source: UploadedSourceResponse
+    artifact: "ArtifactSummaryResponse"
+    summary: LearningNoteSummaryResult
 
 
 class ArtifactSummaryResponse(BaseModel):
@@ -196,6 +213,139 @@ async def upload_materials(
     )
 
 
+@router.post("/learning-notes", response_model=LearningNoteResponse)
+def record_learning_note(
+    payload: LearningNoteRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> LearningNoteResponse:
+    note = payload.text.strip()
+    if not note:
+        raise bad_request("learning_note_empty", "Learning note text is required.")
+
+    summary = ModelService().summarize_learning_note(
+        note,
+        language=payload.language,
+        provider=payload.provider,
+        model=payload.model,
+    )
+    return _persist_learning_note(note, payload.language, summary, request, background_tasks)
+
+
+@router.post("/learning-notes/stream")
+def record_learning_note_stream(
+    payload: LearningNoteRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> StreamingResponse:
+    note = payload.text.strip()
+    if not note:
+        raise bad_request("learning_note_empty", "Learning note text is required.")
+
+    def body() -> Iterator[str]:
+        chunks: list[str] = []
+        try:
+            for chunk in ModelService().stream_learning_note_summary(
+                note,
+                language=payload.language,
+                provider=payload.provider,
+                model=payload.model,
+            ):
+                chunks.append(chunk)
+                yield _sse_event("delta", {"text": chunk})
+            assistant_message = "".join(chunks).strip()
+            summary = _parse_learning_note_summary(assistant_message, note, payload.language)
+            response = _persist_learning_note(
+                note,
+                payload.language,
+                summary,
+                request,
+                background_tasks,
+            )
+            yield _sse_event("result", response.model_dump(mode="json"))
+        except HTTPException as error:
+            yield _sse_event("error", _http_error_payload(error))
+        except Exception:
+            yield _sse_event(
+                "error",
+                {
+                    "code": "stream_failed",
+                    "message": "The streaming response failed.",
+                    "status_code": 502,
+                },
+            )
+
+    return StreamingResponse(
+        body(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _persist_learning_note(
+    note: str,
+    language: str,
+    summary: LearningNoteSummaryResult,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> LearningNoteResponse:
+    timestamp = datetime.now(UTC)
+    source = request.app.state.artifact_service.store_source(
+        source_filename=f"learning-note-{timestamp.strftime('%Y%m%d-%H%M%S')}.md",
+        media_type="text/markdown",
+        content=note.encode("utf-8"),
+        language=language,
+        uploaded_at=timestamp,
+    )
+    source_ref = f"source:{source.artifact_id}"
+    knowledge_path = f"knowledge/{_slug(summary.title)}-{source.artifact_id[:8]}.md"
+    request.app.state.artifact_service.create_markdown(
+        knowledge_path,
+        kind="knowledge",
+        language=language,
+        body=_learning_note_body(note, summary),
+        source_refs=[source_ref],
+        origin="llm",
+        edited_by="system",
+        now=timestamp,
+    )
+
+    with session_scope(request.app.state.session_factory) as session:
+        repository = ArtifactRepository()
+        request.app.state.workspace_service.rebuild_projection(
+            session,
+            repository,
+            request.app.state.artifact_service,
+        )
+        source_artifact = repository.get(session, source.artifact_id)
+        knowledge_artifact = repository.get_by_relative_path(session, knowledge_path)
+        if source_artifact is None or knowledge_artifact is None:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "learning_note_projection_failed",
+                    "message": "Learning note was saved but projection failed.",
+                },
+            )
+        response = LearningNoteResponse(
+            source=UploadedSourceResponse(
+                artifact_id=source_artifact.id,
+                relative_path=source_artifact.relative_path,
+                duplicate=False,
+            ),
+            artifact=_summary(knowledge_artifact),
+            summary=summary,
+        )
+
+    background_tasks.add_task(
+        IndexService().rebuild_index,
+        request.app.state.session_factory,
+        request.app.state.workspace_service,
+        ArtifactRepository(),
+    )
+    return response
+
+
 @router.post("/rebuild-index")
 def rebuild_index(request: Request) -> dict[str, str]:
     collection = IndexService().rebuild_index(
@@ -225,3 +375,108 @@ def _extract_plan_tasks(body: str) -> list[str]:
         if re.match(r"^\s*(?:[-*]|\d+[.)])\s+\S", line):
             tasks.append(line.strip())
     return tasks
+
+
+def _learning_note_body(note: str, summary: LearningNoteSummaryResult) -> str:
+    sections = [
+        f"# {summary.title}",
+        "## 用户原始学习记录\n\n" + note,
+        "## AI 整理摘要\n\n" + summary.summary,
+    ]
+    if summary.key_points:
+        sections.append("## 关键点\n\n" + "\n".join(f"- {point}" for point in summary.key_points))
+    if summary.interview_takeaways:
+        sections.append(
+            "## 面试表达\n\n"
+            + "\n".join(f"- {takeaway}" for takeaway in summary.interview_takeaways)
+        )
+    if summary.follow_up_questions:
+        sections.append(
+            "## 可追问问题\n\n"
+            + "\n".join(f"- {question}" for question in summary.follow_up_questions)
+        )
+    return "\n\n".join(sections) + "\n"
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", "-", value).strip("-").lower()
+    return slug[:80] or "learning-note"
+
+
+def _sse_event(event: str, data: dict[str, object]) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _http_error_payload(error: HTTPException) -> dict[str, object]:
+    if isinstance(error.detail, dict):
+        return {
+            "code": error.detail.get("code", "request_failed"),
+            "message": error.detail.get("message", "Request failed."),
+            "status_code": error.status_code,
+        }
+    return {
+        "code": "request_failed",
+        "message": str(error.detail),
+        "status_code": error.status_code,
+    }
+
+
+def _parse_learning_note_summary(
+    markdown: str,
+    note: str,
+    language: str,
+) -> LearningNoteSummaryResult:
+    title_match = re.search(r"^#\s+(.+)$", markdown, flags=re.MULTILINE)
+    fallback_title = "学习记录" if language == "zh-CN" else "Learning note"
+    title = title_match.group(1).strip()[:80] if title_match else _slug(note).replace("-", " ")
+    sections = _markdown_sections(markdown)
+    summary = (
+        sections.get("summary")
+        or sections.get("摘要")
+        or sections.get("ai 整理摘要")
+        or note[:240]
+        or fallback_title
+    )
+    key_points = _markdown_list_items(
+        sections.get("key points") or sections.get("关键点") or ""
+    )
+    interview_takeaways = _markdown_list_items(
+        sections.get("interview expression") or sections.get("面试表达") or ""
+    )
+    follow_up_questions = _markdown_list_items(
+        sections.get("follow-up questions") or sections.get("可追问问题") or ""
+    )
+    return LearningNoteSummaryResult(
+        title=title or fallback_title,
+        summary=summary.strip(),
+        key_points=key_points,
+        interview_takeaways=interview_takeaways,
+        follow_up_questions=follow_up_questions,
+    )
+
+
+def _markdown_sections(markdown: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in markdown.splitlines():
+        heading = re.match(r"^##\s+(.+)$", line.strip())
+        if heading:
+            current = heading.group(1).strip().lower()
+            sections.setdefault(current, [])
+            continue
+        if current:
+            sections[current].append(line)
+    return {key: "\n".join(lines).strip() for key, lines in sections.items()}
+
+
+def _markdown_list_items(value: str) -> list[str]:
+    items: list[str] = []
+    for line in value.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        stripped = re.sub(r"^(?:[-*]|\d+[.)])\s+", "", stripped).strip()
+        if stripped:
+            items.append(stripped)
+    return items

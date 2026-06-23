@@ -8,6 +8,7 @@ import {
   Database,
   LayoutDashboard,
   MoreHorizontal,
+  PencilLine,
   Plus,
   Settings,
   UserCircle,
@@ -16,7 +17,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 type AppShellProps = {
   children: ReactNode;
@@ -50,6 +50,10 @@ export function AppShell({ children }: AppShellProps) {
         <Link className="new-chat-link" href="/interview">
           <Plus size={18} aria-hidden="true" />
           <span>{t("actions.new_interview")}</span>
+        </Link>
+        <Link className="new-chat-link new-learning-link" href="/learn">
+          <PencilLine size={18} aria-hidden="true" />
+          <span>{t("actions.new_learning")}</span>
         </Link>
         <nav aria-label="Primary" className="app-nav">
           {primaryNavItems.map((item) => {
@@ -103,7 +107,6 @@ export function AppShell({ children }: AppShellProps) {
             <Settings size={18} aria-hidden="true" />
             <span>{t("app.settings")}</span>
           </button>
-          <LanguageSwitcher />
         </div>
       </aside>
       <main className="app-main">{children}</main>
