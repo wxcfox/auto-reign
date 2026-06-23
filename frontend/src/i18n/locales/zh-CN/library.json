@@ -22,12 +22,6 @@
   "empty_filtered": "当前分类或搜索条件下没有匹配文件。",
   "no_summary": "暂无摘要。",
   "updated": "更新于 {{value}}",
-  "revision": "版本 {{value}}",
-  "editable": "可编辑",
-  "readonly": "只读",
-  "preview_title": "预览",
-  "preview_empty": "选择左侧分类浏览文件。",
-  "file_count": "{{count}} 个文件",
   "table": {
     "name": "名称",
     "owner": "归属",

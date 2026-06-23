@@ -87,8 +87,6 @@ export default function LibraryPage() {
     ];
   }, [artifacts, t]);
 
-  const previewArtifact = filteredArtifacts[0] ?? null;
-
   function formatDate(value: string) {
     try {
       return new Intl.DateTimeFormat(getCurrentLanguage() === "zh-CN" ? "zh-CN" : "en", {
@@ -207,87 +205,72 @@ export default function LibraryPage() {
             </p>
           ) : null}
 
-          <div className="library-table" role="table" aria-label={t("browser_title")}>
-            <div className="library-table-row library-table-head" role="row">
-              <span role="columnheader">{t("table.name")}</span>
-              <span role="columnheader">{t("table.owner")}</span>
-              <span role="columnheader">{t("table.created_at")}</span>
-              <span role="columnheader">{t("table.updated_at")}</span>
-              <span role="columnheader">{t("table.actions")}</span>
-            </div>
-            {filteredArtifacts.map((artifact) => (
-              <div className="library-table-row" key={artifact.id} role="row">
-                <div className="library-file-name" role="cell">
-                  <span className="library-file-icon" aria-hidden="true">
-                    <FileText size={18} />
-                  </span>
-                  <div>
-                    <Link href={`/library/${artifact.id}`}>{artifact.display_name}</Link>
-                    <span>{t(`kinds.${artifact.kind}`, artifact.kind)}</span>
-                  </div>
-                  <StatusPill
-                    label={
-                      artifact.recovery_required
-                        ? t("common:states.checking")
-                        : artifact.index_status
-                    }
-                    tone={artifact.recovery_required ? "warning" : "success"}
-                  />
-                </div>
-                <span className="library-muted-cell" role="cell">
-                  {t(`owners.${artifact.owner}`, artifact.owner)}
-                </span>
-                <time className="library-muted-cell" dateTime={artifact.created_at} role="cell">
-                  {formatDate(artifact.created_at)}
-                </time>
-                <time className="library-muted-cell" dateTime={artifact.updated_at} role="cell">
-                  {formatDate(artifact.updated_at)}
-                </time>
-                <div className="library-actions" role="cell">
-                  <Link
-                    aria-label={t("edit_named", { name: artifact.display_name })}
-                    className="library-action-button"
-                    href={`/library/${artifact.id}`}
-                  >
-                    <Pencil size={15} aria-hidden="true" />
-                    <span>{t("actions.edit")}</span>
-                  </Link>
-                  <button
-                    aria-label={t("delete_named", { name: artifact.display_name })}
-                    className="library-action-button library-action-danger"
-                    disabled={deletingId === artifact.id}
-                    onClick={() => void handleDelete(artifact)}
-                    type="button"
-                  >
-                    <Trash2 size={15} aria-hidden="true" />
-                    <span>{t("actions.delete")}</span>
-                  </button>
-                </div>
+          <div className="library-table-scroll">
+            <div className="library-table" role="table" aria-label={t("browser_title")}>
+              <div className="library-table-row library-table-head" role="row">
+                <span role="columnheader">{t("table.name")}</span>
+                <span role="columnheader">{t("table.owner")}</span>
+                <span role="columnheader">{t("table.created_at")}</span>
+                <span role="columnheader">{t("table.updated_at")}</span>
+                <span role="columnheader">{t("table.actions")}</span>
               </div>
-            ))}
+              {filteredArtifacts.map((artifact) => (
+                <div className="library-table-row" key={artifact.id} role="row">
+                  <div className="library-file-name" role="cell">
+                    <span className="library-file-icon" aria-hidden="true">
+                      <FileText size={16} />
+                    </span>
+                    <div>
+                      <Link href={`/library/${artifact.id}`} title={artifact.display_name}>
+                        {artifact.display_name}
+                      </Link>
+                      <span>{t(`kinds.${artifact.kind}`, artifact.kind)}</span>
+                    </div>
+                    <StatusPill
+                      label={
+                        artifact.recovery_required
+                          ? t("common:states.checking")
+                          : artifact.index_status
+                      }
+                      tone={artifact.recovery_required ? "warning" : "success"}
+                    />
+                  </div>
+                  <span className="library-muted-cell" role="cell">
+                    {t(`owners.${artifact.owner}`, artifact.owner)}
+                  </span>
+                  <time className="library-muted-cell" dateTime={artifact.created_at} role="cell">
+                    {formatDate(artifact.created_at)}
+                  </time>
+                  <time className="library-muted-cell" dateTime={artifact.updated_at} role="cell">
+                    {formatDate(artifact.updated_at)}
+                  </time>
+                  <div className="library-actions" role="cell">
+                    <Link
+                      aria-label={t("edit_named", { name: artifact.display_name })}
+                      className="library-action-button"
+                      href={`/library/${artifact.id}`}
+                      title={t("actions.edit")}
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                      <span className="sr-only">{t("actions.edit")}</span>
+                    </Link>
+                    <button
+                      aria-label={t("delete_named", { name: artifact.display_name })}
+                      className="library-action-button library-action-danger"
+                      disabled={deletingId === artifact.id}
+                      onClick={() => void handleDelete(artifact)}
+                      title={t("actions.delete")}
+                      type="button"
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                      <span className="sr-only">{t("actions.delete")}</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-
-        <aside className="library-preview" aria-label={t("preview_title")}>
-          <div>
-            <p className="eyebrow">{t("preview_title")}</p>
-            <h2>{previewArtifact ? previewArtifact.display_name : t("preview_empty")}</h2>
-          </div>
-          {previewArtifact ? (
-            <div className="library-preview-meta">
-              <span className="tag">{t(`kinds.${previewArtifact.kind}`, previewArtifact.kind)}</span>
-              <span className="tag">
-                {t(`owners.${previewArtifact.owner}`, previewArtifact.owner)}
-              </span>
-              <span className="tag">{previewArtifact.index_status}</span>
-              <span className="tag">{t("revision", { value: previewArtifact.revision })}</span>
-              <span className="tag">
-                {previewArtifact.allowed_operations.length > 0 ? t("editable") : t("readonly")}
-              </span>
-            </div>
-          ) : null}
-          <p className="page-summary">{t("file_count", { count: filteredArtifacts.length })}</p>
-        </aside>
       </section>
     </div>
   );

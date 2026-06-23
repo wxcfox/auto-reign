@@ -22,12 +22,6 @@
   "empty_filtered": "No files match the current category or search.",
   "no_summary": "No summary available.",
   "updated": "Updated {{value}}",
-  "revision": "Revision {{value}}",
-  "editable": "Editable",
-  "readonly": "Read only",
-  "preview_title": "Preview",
-  "preview_empty": "Select a category to browse its files.",
-  "file_count": "{{count}} files",
   "table": {
     "name": "Name",
     "owner": "Owner",
