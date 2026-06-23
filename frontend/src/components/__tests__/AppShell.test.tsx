@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
+import i18next from "@/i18n/setup";
 import { listInterviewSessions } from "@/lib/api";
 
 vi.mock("next/navigation", () => ({
@@ -49,6 +50,13 @@ describe("AppShell", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    i18next.changeLanguage("en");
+    try {
+      window.localStorage?.clear();
+    } catch {
+      // Tests run without persistent localStorage.
+    }
+    document.documentElement.dataset.theme = "light";
     vi.mocked(listInterviewSessions).mockResolvedValue({
       sessions: [
         ...sessionResponse("Active backend interview", "active", "active-session").sessions,
@@ -109,8 +117,31 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: /Review/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
-    await waitFor(() => expect(screen.getByText(/Language/i)).toBeInTheDocument());
-    expect(screen.getByText(/Dark mode/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /简体中文/i })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /Dark mode/i })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("uses target-state buttons for language and theme settings", async () => {
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
+    const languageButton = await screen.findByRole("button", { name: /简体中文/i });
+    fireEvent.click(languageButton);
+
+    expect(await screen.findByRole("button", { name: /English/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /本地用户/i })).toBeInTheDocument();
+
+    const themeButton = screen.getByRole("button", { name: /深色模式/i });
+    fireEvent.click(themeButton);
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(screen.getByRole("button", { name: /浅色模式/i })).toBeInTheDocument();
   });
 
   it("refreshes sidebar history when interview sessions change", async () => {

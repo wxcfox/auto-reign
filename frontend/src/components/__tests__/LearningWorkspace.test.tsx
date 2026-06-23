@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LearningWorkspace } from "../LearningWorkspace";
+import i18next from "@/i18n/setup";
 import { getModels, recordLearningNoteStream } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
@@ -38,6 +39,7 @@ const learningResponse = {
 describe("LearningWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    i18next.changeLanguage("en");
     vi.mocked(getModels).mockResolvedValue({
       providers: [{ provider: "qwen", models: ["qwen3.7-plus"] }],
     });
@@ -72,6 +74,48 @@ describe("LearningWorkspace", () => {
         provider: "qwen",
         model: "qwen3.7-plus",
       }),
+      expect.any(Object),
+    );
+  });
+
+  it("renders the final Chinese learning summary with Chinese section headings", async () => {
+    i18next.changeLanguage("zh-CN");
+    vi.mocked(recordLearningNoteStream).mockImplementation(async (_payload, handlers) => {
+      handlers.onDelta("# Spring Bean lifecycle\n\n## Summary\n\nMixed heading stream.");
+      return {
+        ...learningResponse,
+        artifact: {
+          ...learningResponse.artifact,
+          relative_path: "knowledge/spring-bean-生命周期.md",
+          display_name: "spring-bean-生命周期.md",
+        },
+        summary: {
+          title: "Spring Bean 生命周期",
+          summary: "总结了 Spring Bean 的完整生命周期流程。",
+          key_points: ["核心流程：实例化 -> 注入 -> Aware -> 初始化 -> 销毁。"],
+          interview_takeaways: ["面试中重点说明 BeanPostProcessor 的前后置处理。"],
+          follow_up_questions: ["AOP 代理对象在哪个阶段生成？"],
+        },
+      };
+    });
+
+    render(<LearningWorkspace />);
+
+    fireEvent.change(await screen.findByLabelText(/Message Auto Reign/i), {
+      target: {
+        value: "随手记：spring bean 生命周期: 实例化 -> 注入 -> Aware -> 初始化 -> 销毁",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /记录学习/i }));
+
+    expect(await screen.findByText("Spring Bean 生命周期")).toBeInTheDocument();
+    expect(screen.getByText("摘要")).toBeInTheDocument();
+    expect(screen.getByText("关键点")).toBeInTheDocument();
+    expect(screen.getByText("面试表达")).toBeInTheDocument();
+    expect(screen.getByText("可追问问题")).toBeInTheDocument();
+    expect(screen.queryByText("Summary")).not.toBeInTheDocument();
+    expect(recordLearningNoteStream).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "zh-CN" }),
       expect.any(Object),
     );
   });

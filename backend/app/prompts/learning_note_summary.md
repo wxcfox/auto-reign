@@ -10,3 +10,8 @@ Return strict JSON with:
 - key_points: 3-6 concrete learning points
 - interview_takeaways: 1-4 points the user can say in an interview
 - follow_up_questions: 1-4 questions worth practicing next
+
+All JSON string values must use the payload's requested language. If
+language == "zh-CN", write Chinese titles, summaries, interview takeaways, and
+questions. Keep technical terms, framework names, class names, annotations, and
+code identifiers in their conventional spelling.
