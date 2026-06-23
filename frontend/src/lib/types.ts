@@ -71,6 +71,7 @@ export interface WorkspaceArtifactSummary {
   id: string;
   kind: string;
   relative_path: string;
+  display_name: string;
   revision: number;
   processing_status: string;
   index_status: string;
@@ -163,6 +164,20 @@ export interface InterviewTurn {
 export interface InterviewSessionCreatedResponse {
   session: InterviewSession;
   turn: InterviewTurn;
+}
+
+export interface InterviewSessionDetailResponse {
+  session: InterviewSession;
+  config: InterviewConfigResponse;
+  turns: InterviewTurn[];
+}
+
+export interface InterviewSessionHistoryItem extends InterviewSessionDetailResponse {
+  resumable: boolean;
+}
+
+export interface InterviewSessionListResponse {
+  sessions: InterviewSessionHistoryItem[];
 }
 
 export interface AnswerFeedback {

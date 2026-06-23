@@ -45,6 +45,7 @@
   "interview_settings": "面试设置",
   "select_model": "选择模型",
   "reset_session": "清空对话",
+  "retry_report": "重试报告",
   "error_title": "出现问题",
   "composer": {
     "label": "面试输入框",
@@ -56,7 +57,7 @@
     "answer_placeholder": "写下你的回答...",
     "follow_up_placeholder": "回答这次追问...",
     "start_placeholder": "公司、岗位、JD 或面试重点，直接发送即可开始。",
-    "idle_placeholder": "本轮已完成。继续下一题或结束面试。"
+    "idle_placeholder": "本轮已完成。"
   },
   "streaming": {
     "label": "助手正在处理",
@@ -66,9 +67,9 @@
     "follow_up": "正在生成追问反馈..."
   },
   "guidance": {
-    "continue": "主回答已保存。你可以继续提交追问回答，或者直接进入下一题。",
-    "follow_up_complete": "追问反馈已生成。准备好后可以继续下一题。",
-    "final_round": "最后一轮已完成。点击“结束面试”生成报告并关闭本次会话。"
+    "continue": "主回答已保存。如助手提出追问，请继续作答。",
+    "follow_up_complete": "追问反馈已生成。",
+    "final_round": "最后一轮已完成，报告将自动生成。"
   },
   "mode_options": {
     "comprehensive": "综合面试",

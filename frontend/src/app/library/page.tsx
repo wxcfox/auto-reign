@@ -51,7 +51,9 @@ export default function LibraryPage() {
     return artifacts.filter((artifact) => {
       const matchesKeyword =
         !normalizedKeyword ||
-        `${artifact.relative_path} ${artifact.kind}`.toLowerCase().includes(normalizedKeyword);
+        `${artifact.display_name} ${artifact.relative_path} ${artifact.kind}`
+          .toLowerCase()
+          .includes(normalizedKeyword);
       const matchesKind = !selectedKind || artifact.kind === selectedKind;
       return matchesKeyword && matchesKind;
     });
@@ -173,7 +175,7 @@ export default function LibraryPage() {
               <Link className="library-file-row" href={`/library/${artifact.id}`} key={artifact.id}>
                 <div>
                   <p className="document-source">{t(`kinds.${artifact.kind}`, artifact.kind)}</p>
-                  <h3>{artifact.relative_path}</h3>
+                  <h3>{artifact.display_name}</h3>
                 </div>
                 <StatusPill
                   label={artifact.recovery_required ? t("common:states.checking") : artifact.processing_status}
@@ -187,7 +189,7 @@ export default function LibraryPage() {
         <aside className="library-preview" aria-label={t("preview_title")}>
           <div>
             <p className="eyebrow">{t("preview_title")}</p>
-            <h2>{previewArtifact ? previewArtifact.relative_path : t("preview_empty")}</h2>
+            <h2>{previewArtifact ? previewArtifact.display_name : t("preview_empty")}</h2>
           </div>
           {previewArtifact ? (
             <div className="library-preview-meta">

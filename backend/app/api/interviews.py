@@ -17,6 +17,8 @@ from app.schemas.interviews import (
     InterviewConfigResponse,
     InterviewSessionCreatedResponse,
     InterviewSessionDetailResponse,
+    InterviewSessionHistoryItemResponse,
+    InterviewSessionListResponse,
 )
 from app.schemas.reports import ReportResponse
 from app.services.index_service import IndexService
@@ -94,6 +96,17 @@ def _follow_up_feedback_payload(data: dict[str, Any]) -> dict[str, Any]:
     return FollowUpFeedbackResponse.model_validate(data).model_dump(mode="json")
 
 
+def _finish_session_payload(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "session": InterviewSessionDetailResponse(
+            session=data["session"],
+            config=data["session"].config,
+            turns=data["session"].turns,
+        ).session.model_dump(mode="json"),
+        "report": ReportResponse.model_validate(data["report"]).model_dump(mode="json"),
+    }
+
+
 @router.get("/interview-configs/last", response_model=InterviewConfigResponse)
 def get_last_config(session: Session = Depends(get_session)) -> InterviewConfigResponse:
     config = InterviewService().get_last_config(session)
@@ -106,6 +119,22 @@ def save_last_config(
 ) -> InterviewConfigResponse:
     config = InterviewService().save_last_config(session, config_in)
     return InterviewConfigResponse.model_validate(config)
+
+
+@router.get("/interview-sessions", response_model=InterviewSessionListResponse)
+def list_sessions(session: Session = Depends(get_session)) -> InterviewSessionListResponse:
+    details = InterviewService().list_session_details(session)
+    return InterviewSessionListResponse(
+        sessions=[
+            InterviewSessionHistoryItemResponse(
+                session=interview_session,
+                config=config,
+                turns=turns,
+                resumable=resumable,
+            )
+            for interview_session, config, turns, resumable in details
+        ]
+    )
 
 
 @router.post("/interview-sessions", response_model=InterviewSessionCreatedResponse)
@@ -220,3 +249,9 @@ def finish_session(session_id: str, session: Session = Depends(get_session)) -> 
         ).session,
         "report": ReportResponse.model_validate(report),
     }
+
+
+@router.post("/interview-sessions/{session_id}/finish/stream")
+def finish_session_stream(session_id: str, session: Session = Depends(get_session)) -> StreamingResponse:
+    events = InterviewService().stream_finish_session(session, session_id)
+    return _streaming_response(events, _finish_session_payload, session)

@@ -18,6 +18,7 @@ const artifacts = [
     id: "knowledge-1",
     kind: "knowledge",
     relative_path: "knowledge/redis.md",
+    display_name: "redis.md",
     revision: 2,
     processing_status: "completed",
     index_status: "completed",
@@ -27,7 +28,8 @@ const artifacts = [
   {
     id: "source-1",
     kind: "source",
-    relative_path: "sources/resume.md",
+    relative_path: "sources/documents/229ca53a-resume.md",
+    display_name: "resume.md",
     revision: 1,
     processing_status: "completed",
     index_status: "completed",
@@ -54,7 +56,8 @@ describe("LibraryPage", () => {
 
     fireEvent.click(sources);
 
-    expect(screen.getAllByText("sources/resume.md").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("resume.md").length).toBeGreaterThan(0);
+    expect(screen.queryByText("229ca53a-resume.md")).not.toBeInTheDocument();
     expect(screen.queryByText("knowledge/redis.md")).not.toBeInTheDocument();
   });
 });

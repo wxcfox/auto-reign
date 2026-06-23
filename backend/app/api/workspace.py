@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -66,6 +67,7 @@ class ArtifactSummaryResponse(BaseModel):
     id: str
     kind: str
     relative_path: str
+    display_name: str
     revision: int
     processing_status: str
     index_status: str
@@ -361,12 +363,19 @@ def _summary(artifact) -> ArtifactSummaryResponse:
         id=artifact.id,
         kind=artifact.kind,
         relative_path=artifact.relative_path,
+        display_name=_display_name(artifact),
         revision=artifact.revision,
         processing_status=artifact.processing_status,
         index_status=artifact.index_status,
         recovery_required=artifact.recovery_required,
         allowed_operations=sorted(ALLOWED_OPERATIONS.get(artifact.kind, set())),
     )
+
+
+def _display_name(artifact) -> str:
+    if artifact.kind == "source" and artifact.source_filename:
+        return artifact.source_filename
+    return Path(artifact.relative_path).name
 
 
 def _extract_plan_tasks(body: str) -> list[str]:

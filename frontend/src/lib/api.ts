@@ -9,6 +9,8 @@ import type {
   InterviewConfig,
   InterviewConfigResponse,
   InterviewSessionCreatedResponse,
+  InterviewSessionDetailResponse,
+  InterviewSessionListResponse,
   LearningNoteRequest,
   LearningNoteResponse,
   MemoryResponse,
@@ -151,6 +153,14 @@ export function createInterviewSession(
     method: "POST",
     body: JSON.stringify(config),
   });
+}
+
+export function listInterviewSessions(): Promise<InterviewSessionListResponse> {
+  return apiJson<InterviewSessionListResponse>("/api/interview-sessions");
+}
+
+export function getInterviewSession(sessionId: string): Promise<InterviewSessionDetailResponse> {
+  return apiJson<InterviewSessionDetailResponse>(`/api/interview-sessions/${sessionId}`);
 }
 
 export type StreamCallbacks = {
@@ -317,6 +327,17 @@ export function finishInterview(sessionId: string): Promise<FinishInterviewRespo
   return apiJson<FinishInterviewResponse>(`/api/interview-sessions/${sessionId}/finish`, {
     method: "POST",
   });
+}
+
+export function finishInterviewStream(
+  sessionId: string,
+  callbacks: StreamCallbacks,
+): Promise<FinishInterviewResponse> {
+  return apiStream<FinishInterviewResponse>(
+    `/api/interview-sessions/${sessionId}/finish/stream`,
+    undefined,
+    callbacks,
+  );
 }
 
 export function getHealth(): Promise<HealthResponse> {

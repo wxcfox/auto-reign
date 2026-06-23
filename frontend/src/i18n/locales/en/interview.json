@@ -45,6 +45,7 @@
   "interview_settings": "Interview settings",
   "select_model": "Select model",
   "reset_session": "Clear chat",
+  "retry_report": "Retry report",
   "error_title": "Something went wrong",
   "composer": {
     "label": "Interview composer",
@@ -56,7 +57,7 @@
     "answer_placeholder": "Write your answer...",
     "follow_up_placeholder": "Answer the follow-up...",
     "start_placeholder": "Company, role, JD, or focus. Press send to start.",
-    "idle_placeholder": "This turn is complete. Continue to the next question or finish."
+    "idle_placeholder": "This turn is complete."
   },
   "streaming": {
     "label": "Assistant is working",
@@ -66,9 +67,9 @@
     "follow_up": "Generating follow-up feedback..."
   },
   "guidance": {
-    "continue": "Answer saved. Submit the follow-up answer if you want more depth, or continue to the next question.",
-    "follow_up_complete": "Follow-up feedback is ready. Continue to the next question when you are ready.",
-    "final_round": "Final round complete. Click Finish to generate the report and close this session."
+    "continue": "Answer saved. Submit the follow-up answer if the assistant asked one.",
+    "follow_up_complete": "Follow-up feedback is ready.",
+    "final_round": "Final round complete. The report will be generated automatically."
   },
   "mode_options": {
     "comprehensive": "Comprehensive",

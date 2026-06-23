@@ -65,6 +65,60 @@ def test_stream_create_session_returns_question_delta_and_result(client: TestCli
     assert "Backend Engineer" in body
 
 
+def test_list_interview_sessions_includes_history_context(client: TestClient) -> None:
+    active = client.post(
+        "/api/interview-sessions",
+        json={**CONFIG, "extra_prompt": "Active backend interview", "target_rounds": 2},
+    ).json()
+    active_session_id = active["session"]["id"]
+    completed = client.post(
+        "/api/interview-sessions",
+        json={**CONFIG, "extra_prompt": "Completed backend interview", "target_rounds": 1},
+    ).json()
+    completed_session_id = completed["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{completed_session_id}/answer",
+        json={"answer": "I would give a concise architecture answer."},
+    )
+    finished = client.post(f"/api/interview-sessions/{completed_session_id}/finish")
+    assert finished.status_code == 200
+
+    listed = client.get("/api/interview-sessions")
+
+    assert listed.status_code == 200
+    sessions = listed.json()["sessions"]
+    assert [item["session"]["id"] for item in sessions] == [completed_session_id, active_session_id]
+    assert sessions[0]["resumable"] is False
+    assert sessions[0]["config"]["extra_prompt"] == "Completed backend interview"
+    assert sessions[0]["turns"][0]["answer"] == "I would give a concise architecture answer."
+    assert sessions[1]["resumable"] is True
+    assert sessions[1]["config"]["extra_prompt"] == "Active backend interview"
+    assert sessions[1]["turns"][0]["question"]
+
+
+def test_stream_finish_returns_summary_delta_and_result(client: TestClient) -> None:
+    created = client.post(
+        "/api/interview-sessions",
+        json={**CONFIG, "target_rounds": 1},
+    ).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I would explain clear service boundaries."},
+    )
+
+    response = client.post(f"/api/interview-sessions/{session_id}/finish/stream")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: delta" in body
+    assert "event: result" in body
+    assert "Backend Engineer interview for OpenAI" in body
+    assert '"report"' in body
+    assert '"status":"completed"' in body
+
+
 def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monkeypatch) -> None:
     def fail_embed_texts(_self, _texts):
         raise AssertionError("embedding should not run for an empty library")
