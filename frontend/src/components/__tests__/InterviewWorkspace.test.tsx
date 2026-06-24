@@ -14,17 +14,13 @@ import {
 } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
-  createInterviewSession: vi.fn(),
   createInterviewSessionStream: vi.fn(),
   getInterviewSession: vi.fn(),
   getLastInterviewConfig: vi.fn(),
   getModels: vi.fn(),
-  nextQuestion: vi.fn(),
   nextQuestionStream: vi.fn(),
   saveLastInterviewConfig: vi.fn(),
-  submitAnswer: vi.fn(),
   submitAnswerStream: vi.fn(),
-  submitFollowUpAnswer: vi.fn(),
   submitFollowUpAnswerStream: vi.fn(),
 }));
 

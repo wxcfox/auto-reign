@@ -182,7 +182,7 @@ def test_healthy_managed_process_is_reused(tmp_path) -> None:
         state_path,
         health_url_for=lambda item: f"http://127.0.0.1:{item.port}/",
         command_for_pid=lambda pid: "npm next-marker",
-        http_probe=lambda url, timeout: True,
+        http_probe=lambda _url, _timeout: True,
     )
 
     assert state == start_module.ServiceState(pid=84, port=3100, marker="next-marker")
@@ -223,22 +223,22 @@ def test_start_stack_checks_ports_before_dependencies_and_migrations(tmp_path, m
     monkeypatch.setattr(
         start_module,
         "start_dependency_containers",
-        lambda root, runtime_env: side_effects.append("docker"),
+        lambda _root, _runtime_env: side_effects.append("docker"),
     )
     monkeypatch.setattr(
         start_module,
         "wait_for_dependencies",
-        lambda root, runtime_env: side_effects.append("wait"),
+        lambda _root, _runtime_env: side_effects.append("wait"),
     )
     monkeypatch.setattr(
         start_module,
         "prepare_backend",
-        lambda root, runtime_env: side_effects.append("alembic"),
+        lambda _root, _runtime_env: side_effects.append("alembic"),
     )
     monkeypatch.setattr(
         start_module,
         "prepare_frontend",
-        lambda root, runtime_env: side_effects.append("npm"),
+        lambda _root, _runtime_env: side_effects.append("npm"),
     )
     monkeypatch.setattr(start_module, "require_no_checkout_service_listener", lambda service_cwd, service_name: None)
 
@@ -263,7 +263,7 @@ def test_healthy_managed_state_accepts_listener_owned_by_expected_project_dir(tm
         state_path,
         health_url_for=lambda item: f"http://127.0.0.1:{item.port}/api/health",
         command_for_pid=lambda pid: "/usr/bin/python3 uvicorn app.main:app --port 8300",
-        http_probe=lambda url, timeout: True,
+        http_probe=lambda _url, _timeout: True,
         cwd_for_pid=lambda pid: start_module.Path(start_module.__file__).resolve().parents[1] / "backend",
         listener_pid_for_port_fn=lambda port: 301,
     )
