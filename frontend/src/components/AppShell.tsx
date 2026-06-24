@@ -220,15 +220,11 @@ export function AppShell({ children }: AppShellProps) {
           ) : null}
           {sessions.map((item) => {
             const title = sessionTitle(item);
-            if (!item.resumable) {
-              return (
-                <button className="sidebar-history-item" disabled key={item.session.id} type="button">
-                  <MessageSquareText size={16} aria-hidden="true" />
-                  <span className="sidebar-label">{title}</span>
-                  <small className="sidebar-label">{t("states.completed")}</small>
-                </button>
-              );
-            }
+            const stateLabel = item.session.status === "completed"
+              ? t("states.completed")
+              : item.resumable
+                ? t("states.working")
+                : t("states.unavailable");
             return (
               <Link
                 className="sidebar-history-item"
@@ -238,7 +234,7 @@ export function AppShell({ children }: AppShellProps) {
               >
                 <MessageSquareText size={16} aria-hidden="true" />
                 <span className="sidebar-label">{title}</span>
-                <small className="sidebar-label">{t("states.working")}</small>
+                <small className="sidebar-label">{stateLabel}</small>
               </Link>
             );
           })}

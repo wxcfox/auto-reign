@@ -106,8 +106,8 @@ describe("AppShell", () => {
 
     const activeSessionLink = await screen.findByRole("link", { name: /Active backend interview/i });
     expect(activeSessionLink).toHaveAttribute("href", "/interview?session=active-session");
-    expect(screen.getByRole("button", { name: /Completed backend interview/i }))
-      .toBeDisabled();
+    expect(screen.getByRole("link", { name: /Completed backend interview/i }))
+      .toHaveAttribute("href", "/interview?session=completed-session");
 
     const libraryLink = screen.getByRole("link", { name: /Library/i });
     const moreButton = screen.getByRole("button", { name: /More/i });
@@ -193,8 +193,8 @@ describe("AppShell", () => {
 
     window.dispatchEvent(new Event("auto-reign:interview-sessions-changed"));
 
-    expect(await screen.findByRole("button", { name: /Completed refreshed interview/i }))
-      .toBeDisabled();
+    expect(await screen.findByRole("link", { name: /Completed refreshed interview/i }))
+      .toHaveAttribute("href", "/interview?session=done-session");
     expect(screen.queryByRole("link", { name: /Initial backend interview/i })).not.toBeInTheDocument();
     expect(listInterviewSessions).toHaveBeenCalledTimes(2);
   });
