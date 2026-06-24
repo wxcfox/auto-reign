@@ -11,9 +11,11 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   createInterviewSessionStream,
+  finishInterviewSessionStream,
   getInterviewSession,
   getLastInterviewConfig,
   getModels,
+  getReports,
   nextQuestionStream,
   saveLastInterviewConfig,
   submitAnswerStream,
@@ -45,7 +47,7 @@ const defaultConfig: InterviewConfig = {
 type ComposerMode = "start" | "answer" | "follow-up" | "next" | "idle";
 
 type StreamingDraft = {
-  kind: "question" | "feedback" | "follow-up-feedback";
+  kind: "question" | "feedback" | "follow-up-feedback" | "summary";
   meta: string;
   text: string;
   turnId?: string;
@@ -124,6 +126,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamingDraft, setStreamingDraft] = useState<StreamingDraft | null>(null);
+  const [sessionSummary, setSessionSummary] = useState<string | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [openingContext, setOpeningContext] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -231,6 +234,24 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         setOpeningContext(loadedConfig.extra_prompt.trim() || null);
         setComposerValue("");
         setStreamingDraft(null);
+        setSessionSummary(null);
+        if (detail.session.status === "completed" && detail.session.report_path) {
+          getReports()
+            .then((reportList) => {
+              if (cancelled) {
+                return;
+              }
+              const report = reportList.reports.find(
+                (item) => item.session_id === detail.session.id,
+              );
+              setSessionSummary(report?.summary ?? null);
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setSessionSummary(null);
+              }
+            });
+        }
       })
       .catch((loadError) => {
         if (!cancelled) {
@@ -311,6 +332,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
     setError(null);
     const startContext = composerValue.trim();
     setOpeningContext(startContext || null);
+    setSessionSummary(null);
     setStreamingDraft({ kind: "question", meta: t("question", { index: 1 }), text: "" });
     try {
       const activeConfig: InterviewConfig = {
@@ -368,6 +390,8 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       if (!response.follow_up_question.trim()) {
         if (activeSession.current_round < config.target_rounds) {
           await handleNextQuestion(activeSession);
+        } else {
+          await handleFinishSession(activeSession);
         }
       }
     } catch (answerError) {
@@ -424,6 +448,8 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       applyFollowUpFeedback(currentTurn.id, response);
       if (activeSession.current_round < config.target_rounds) {
         await handleNextQuestion(activeSession);
+      } else {
+        await handleFinishSession(activeSession);
       }
     } catch (followUpError) {
       setError(getErrorMessage(followUpError, t, "interview:errors.follow_up"));
@@ -484,6 +510,33 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
     }
   }
 
+  async function handleFinishSession(activeSession = session) {
+    if (!activeSession || activeSession.status !== "active") {
+      return;
+    }
+    setBusyAction("finish");
+    setError(null);
+    setStreamingDraft({
+      kind: "summary",
+      meta: t("overall_summary"),
+      text: "",
+    });
+    try {
+      const response = await finishInterviewSessionStream(activeSession.id, {
+        onDelta: appendStreamingDelta,
+      });
+      setSession(response.session);
+      setSessionSummary(response.report.summary);
+      setComposerValue("");
+      notifyInterviewSessionsChanged();
+    } catch (finishError) {
+      setError(getErrorMessage(finishError, t, "interview:errors.finish"));
+    } finally {
+      setStreamingDraft(null);
+      setBusyAction(null);
+    }
+  }
+
   function handleComposerSubmit() {
     if (composerMode === "start") {
       void handleStart();
@@ -516,15 +569,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
 
   return (
     <div className="chat-workspace">
-      <header className="chat-topbar">
-        <span className="chat-topbar-title">
-          {session
-            ? t("round_current", { current: session.current_round })
-            : t("not_started")}
-        </span>
-        <span className="chat-topbar-model">{config.chat_model || t("model_unavailable")}</span>
-      </header>
-
       <div className="chat-transcript" ref={transcriptRef}>
         {turns.length === 0 && !streamingDraft ? (
           <section className="chat-empty" aria-label={t("empty_label")}>
@@ -667,6 +711,18 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                 <p>{streamingDraft.text}</p>
               </ChatMessage>
             ) : null}
+            {sessionSummary ? (
+              <ChatMessage meta={t("overall_summary")}>
+                <p>{sessionSummary}</p>
+              </ChatMessage>
+            ) : null}
+            {!sessionSummary &&
+            streamingDraft?.kind === "summary" &&
+            streamingDraft.text ? (
+              <ChatMessage meta={streamingDraft.meta}>
+                <p>{streamingDraft.text}</p>
+              </ChatMessage>
+            ) : null}
           </div>
         )}
 
@@ -678,6 +734,8 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                 ? t("streaming.feedback")
                 : busyAction === "follow-up"
                   ? t("streaming.follow_up")
+                  : busyAction === "finish"
+                    ? t("streaming.summary")
                   : busyAction === "next"
                     ? t("streaming.question")
                     : t("streaming.start")}
