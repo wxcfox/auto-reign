@@ -125,15 +125,6 @@ export function saveLastInterviewConfig(
   });
 }
 
-export function createInterviewSession(
-  config: InterviewConfig,
-): Promise<InterviewSessionCreatedResponse> {
-  return apiJson<InterviewSessionCreatedResponse>("/api/interview-sessions", {
-    method: "POST",
-    body: JSON.stringify(config),
-  });
-}
-
 export function listInterviewSessions(): Promise<InterviewSessionListResponse> {
   return apiJson<InterviewSessionListResponse>("/api/interview-sessions");
 }
@@ -245,13 +236,6 @@ export function createInterviewSessionStream(
   );
 }
 
-export function submitAnswer(sessionId: string, answer: string): Promise<AnswerFeedback> {
-  return apiJson<AnswerFeedback>(`/api/interview-sessions/${sessionId}/answer`, {
-    method: "POST",
-    body: JSON.stringify({ answer }),
-  });
-}
-
 export function submitAnswerStream(
   sessionId: string,
   answer: string,
@@ -264,16 +248,6 @@ export function submitAnswerStream(
   );
 }
 
-export function submitFollowUpAnswer(
-  sessionId: string,
-  answer: string,
-): Promise<FollowUpFeedback> {
-  return apiJson<FollowUpFeedback>(`/api/interview-sessions/${sessionId}/follow-up-answer`, {
-    method: "POST",
-    body: JSON.stringify({ answer }),
-  });
-}
-
 export function submitFollowUpAnswerStream(
   sessionId: string,
   answer: string,
@@ -283,16 +257,6 @@ export function submitFollowUpAnswerStream(
     `/api/interview-sessions/${sessionId}/follow-up-answer/stream`,
     { answer },
     callbacks,
-  );
-}
-
-export function nextQuestion(
-  sessionId: string,
-  intent = "",
-): Promise<InterviewSessionCreatedResponse> {
-  return apiJson<InterviewSessionCreatedResponse>(
-    `/api/interview-sessions/${sessionId}/next-question`,
-    intent ? { method: "POST", body: JSON.stringify({ intent }) } : { method: "POST" },
   );
 }
 

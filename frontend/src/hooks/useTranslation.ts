@@ -17,18 +17,10 @@ export function useTranslation(namespace?: string | string[]) {
   };
 
   const getCurrentLanguage = () => i18n.language;
-  const getSupportedLanguages = () => [...supportedLanguages];
-
   return {
     t,
     changeLanguage,
     getCurrentLanguage,
-    getSupportedLanguages,
     i18n,
   };
 }
-
-export const languageNames: Record<string, string> = {
-  en: "English",
-  "zh-CN": "简体中文",
-};

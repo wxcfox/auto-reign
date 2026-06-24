@@ -425,18 +425,6 @@ a:focus-visible {
   padding: 0;
 }
 
-.language-switcher {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-}
-
-.language-switcher select {
-  padding-left: 10px;
-}
-
 .page-stack {
   display: grid;
   gap: 24px;
@@ -1214,10 +1202,6 @@ a:focus-visible {
   border-radius: 14px;
   background: var(--surface);
   padding: 14px;
-}
-
-.advanced-settings .language-switcher {
-  grid-column: 1 / -1;
 }
 
 .advanced-settings label:has(textarea),
