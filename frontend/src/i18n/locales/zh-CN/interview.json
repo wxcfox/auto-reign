@@ -40,6 +40,7 @@
   "follow_up_feedback": "追问反馈",
   "next_question": "下一题",
   "next_question_busy": "下一题生成中...",
+  "overall_summary": "整体评价",
   "completed": "已完成",
   "select_model": "选择模型",
   "error_title": "出现问题",
@@ -62,7 +63,8 @@
     "start": "正在准备第一题...",
     "question": "正在生成下一题...",
     "feedback": "正在生成反馈...",
-    "follow_up": "正在生成追问反馈..."
+    "follow_up": "正在生成追问反馈...",
+    "summary": "正在生成整体评价..."
   },
   "guidance": {
     "continue": "主回答已保存。如助手提出追问，请继续作答。",
@@ -73,6 +75,7 @@
     "start": "开始面试失败。",
     "answer": "提交回答失败。",
     "follow_up": "提交追问失败。",
-    "next": "加载下一题失败。"
+    "next": "加载下一题失败。",
+    "finish": "结束面试失败。"
   }
 }

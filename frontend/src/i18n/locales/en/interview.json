@@ -40,6 +40,7 @@
   "follow_up_feedback": "Follow-up feedback",
   "next_question": "Next question",
   "next_question_busy": "Generating next question...",
+  "overall_summary": "Overall summary",
   "completed": "Completed",
   "select_model": "Select model",
   "error_title": "Something went wrong",
@@ -62,7 +63,8 @@
     "start": "Preparing your first question...",
     "question": "Generating the next question...",
     "feedback": "Generating feedback...",
-    "follow_up": "Generating follow-up feedback..."
+    "follow_up": "Generating follow-up feedback...",
+    "summary": "Generating overall summary..."
   },
   "guidance": {
     "continue": "Answer saved. Submit the follow-up answer if the assistant asked one.",
@@ -73,6 +75,7 @@
     "start": "Failed to start interview.",
     "answer": "Failed to submit answer.",
     "follow_up": "Failed to submit follow-up.",
-    "next": "Failed to load next question."
+    "next": "Failed to load next question.",
+    "finish": "Failed to finish interview."
   }
 }

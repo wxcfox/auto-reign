@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InterviewWorkspace } from "../InterviewWorkspace";
 import {
   createInterviewSessionStream,
+  finishInterviewSessionStream,
   getInterviewSession,
   getLastInterviewConfig,
   getModels,
+  getReports,
   nextQuestionStream,
   saveLastInterviewConfig,
   submitAnswerStream,
@@ -15,9 +17,11 @@ import {
 
 vi.mock("@/lib/api", () => ({
   createInterviewSessionStream: vi.fn(),
+  finishInterviewSessionStream: vi.fn(),
   getInterviewSession: vi.fn(),
   getLastInterviewConfig: vi.fn(),
   getModels: vi.fn(),
+  getReports: vi.fn(),
   nextQuestionStream: vi.fn(),
   saveLastInterviewConfig: vi.fn(),
   submitAnswerStream: vi.fn(),
@@ -80,6 +84,15 @@ const secondTurn = {
   follow_up_question: null,
 };
 
+const baseReport = {
+  id: "report-1",
+  session_id: "session-1",
+  report_path: "reports/session-1.md",
+  summary: "Overall summary: you covered the core tradeoffs and should tighten examples.",
+  weaknesses: ["Need sharper examples"],
+  created_at: "2026-06-23T00:10:00Z",
+};
+
 describe("InterviewWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,6 +102,7 @@ describe("InterviewWorkspace", () => {
     vi.mocked(getLastInterviewConfig).mockResolvedValue(baseConfig);
     vi.mocked(saveLastInterviewConfig).mockResolvedValue(baseConfig);
     vi.mocked(getInterviewSession).mockRejectedValue(new Error("not used"));
+    vi.mocked(getReports).mockResolvedValue({ reports: [] });
     vi.mocked(submitFollowUpAnswerStream).mockResolvedValue({
       feedback: "Follow-up feedback",
       missing_points: [],
@@ -100,16 +114,29 @@ describe("InterviewWorkspace", () => {
       should_write_high_frequency: false,
       tested_points: [],
     });
+    vi.mocked(finishInterviewSessionStream).mockImplementation(async (_sessionId, handlers) => {
+      handlers.onDelta(baseReport.summary);
+      return {
+        session: {
+          ...baseSession,
+          status: "completed",
+          ended_at: "2026-06-23T00:10:00Z",
+          report_path: baseReport.report_path,
+        },
+        report: baseReport,
+      };
+    });
   });
 
   it("renders a centered empty chat state with model controls and composer", async () => {
-    render(<InterviewWorkspace />);
+    const { container } = render(<InterviewWorkspace />);
 
     expect(await screen.findByText(/Ready when you are/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Select model/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Message Auto Reign/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Interview settings/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Target company/i)).not.toBeInTheDocument();
+    expect(container.querySelector(".chat-topbar")).toBeNull();
   });
 
   it("starts an interview from natural language context in the composer", async () => {
@@ -288,7 +315,7 @@ describe("InterviewWorkspace", () => {
     expect(nextQuestionStream).toHaveBeenCalledWith("session-1", expect.any(Object), "");
   });
 
-  it("does not auto-finish after the requested round and lets the user continue naturally", async () => {
+  it("streams an overall summary and completes when the requested final round has no follow-up", async () => {
     vi.mocked(getLastInterviewConfig).mockResolvedValue({ ...baseConfig, target_rounds: 1 });
     vi.mocked(createInterviewSessionStream).mockResolvedValue({
       session: { ...baseSession, current_round: 1 },
@@ -306,13 +333,6 @@ describe("InterviewWorkspace", () => {
       should_write_high_frequency: false,
       tested_points: [],
     });
-    vi.mocked(nextQuestionStream).mockImplementation(async (_sessionId, handlers) => {
-      handlers.onDelta(secondTurn.question);
-      return {
-        session: { ...baseSession, current_round: 2 },
-        turn: secondTurn,
-      };
-    });
 
     render(<InterviewWorkspace />);
 
@@ -324,20 +344,63 @@ describe("InterviewWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
 
     expect(await screen.findByText(/Final feedback/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Retry report/i })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
-      target: { value: "再来一题，问 MySQL" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Next question/i }));
+    expect(await screen.findByText(baseReport.summary)).toBeInTheDocument();
+    expect(finishInterviewSessionStream).toHaveBeenCalledWith("session-1", expect.any(Object));
+    expect(nextQuestionStream).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Message Auto Reign/i)).toBeDisabled();
+  });
 
-    await waitFor(() =>
-      expect(nextQuestionStream).toHaveBeenCalledWith(
-        "session-1",
-        expect.any(Object),
-        "再来一题，问 MySQL",
-      ),
-    );
-    expect(await screen.findByText(secondTurn.question)).toBeInTheDocument();
+  it("waits for final follow-up feedback before streaming the overall summary", async () => {
+    vi.mocked(getLastInterviewConfig).mockResolvedValue({ ...baseConfig, target_rounds: 1 });
+    vi.mocked(createInterviewSessionStream).mockResolvedValue({
+      session: { ...baseSession, current_round: 1 },
+      turn: firstTurn,
+    });
+    vi.mocked(submitAnswerStream).mockResolvedValue({
+      feedback: "Final main feedback.",
+      missing_points: [],
+      follow_up_question: "What would you monitor after shipping?",
+      weaknesses: [],
+      review_suggestions: [],
+      better_answer: "",
+      mastery_change: "unchanged",
+      should_write_weakness: false,
+      should_write_high_frequency: false,
+      tested_points: [],
+    });
+    vi.mocked(submitFollowUpAnswerStream).mockResolvedValue({
+      feedback: "Final follow-up feedback.",
+      missing_points: [],
+      weaknesses: [],
+      review_suggestions: [],
+      better_answer: "",
+      mastery_change: "unchanged",
+      should_write_weakness: false,
+      should_write_high_frequency: false,
+      tested_points: [],
+    });
+
+    render(<InterviewWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start interview/i }));
+    expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I would give a concise final answer." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send answer/i }));
+
+    expect(await screen.findByText(/Final main feedback/i)).toBeInTheDocument();
+    expect(screen.getByText(/What would you monitor/i)).toBeInTheDocument();
+    expect(finishInterviewSessionStream).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "I would monitor error rate and latency." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send follow-up/i }));
+
+    expect(await screen.findByText(/Final follow-up feedback/i)).toBeInTheDocument();
+    expect(await screen.findByText(baseReport.summary)).toBeInTheDocument();
+    expect(finishInterviewSessionStream).toHaveBeenCalledWith("session-1", expect.any(Object));
   });
 
   it("loads an existing active interview session from history", async () => {
@@ -362,8 +425,14 @@ describe("InterviewWorkspace", () => {
   });
 
   it("loads a completed interview from history without enabling new chat input", async () => {
+    vi.mocked(getReports).mockResolvedValue({ reports: [baseReport] });
     vi.mocked(getInterviewSession).mockResolvedValue({
-      session: { ...baseSession, status: "completed", ended_at: "2026-06-23T00:10:00Z" },
+      session: {
+        ...baseSession,
+        status: "completed",
+        ended_at: "2026-06-23T00:10:00Z",
+        report_path: baseReport.report_path,
+      },
       config: baseConfig,
       turns: [
         {
@@ -377,6 +446,7 @@ describe("InterviewWorkspace", () => {
     render(<InterviewWorkspace sessionId="session-1" />);
 
     expect(await screen.findByText(firstTurn.question)).toBeInTheDocument();
+    expect(await screen.findByText(baseReport.summary)).toBeInTheDocument();
     expect(screen.getByLabelText(/Message Auto Reign/i)).toBeDisabled();
   });
 

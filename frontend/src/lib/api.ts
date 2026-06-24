@@ -6,6 +6,7 @@ import type {
   InterviewConfigResponse,
   InterviewSessionCreatedResponse,
   InterviewSessionDetailResponse,
+  InterviewSessionFinishResponse,
   InterviewSessionListResponse,
   LearningNoteRequest,
   LearningNoteResponse,
@@ -268,6 +269,17 @@ export function nextQuestionStream(
   return apiStream<InterviewSessionCreatedResponse>(
     `/api/interview-sessions/${sessionId}/next-question/stream`,
     intent ? { intent } : undefined,
+    callbacks,
+  );
+}
+
+export function finishInterviewSessionStream(
+  sessionId: string,
+  callbacks: StreamCallbacks,
+): Promise<InterviewSessionFinishResponse> {
+  return apiStream<InterviewSessionFinishResponse>(
+    `/api/interview-sessions/${sessionId}/finish/stream`,
+    undefined,
     callbacks,
   );
 }

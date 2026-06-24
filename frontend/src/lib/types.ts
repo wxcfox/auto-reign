@@ -173,6 +173,11 @@ export interface InterviewSessionCreatedResponse {
   turn: InterviewTurn;
 }
 
+export interface InterviewSessionFinishResponse {
+  session: InterviewSession;
+  report: ReportRecord;
+}
+
 export interface InterviewSessionDetailResponse {
   session: InterviewSession;
   config: InterviewConfigResponse;
