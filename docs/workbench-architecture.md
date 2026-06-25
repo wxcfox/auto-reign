@@ -128,6 +128,8 @@ Qdrant 保存可检索 chunk 向量，任何 collection 都应能从文件工作
 
 资料库从原始资料到检索上下文的完整流程见 [资料库数据流](knowledge-data-flow.md)。
 
+RAG 组件层使用 LangChain 的 splitter、embedding、Qdrant vectorstore 和 retriever；workspace 协议、provenance、active collection、可索引规则、上下文优先级和 prompt 安全边界仍由 Auto Reign 应用代码控制。
+
 默认进入向量索引的内容：
 
 - Markdown 和 TXT 原始资料。

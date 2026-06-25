@@ -157,7 +157,9 @@ OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-comp
 
 ## 资料库
 
-上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。上传原始文件保存到 `DATA_DIR/workspace/sources/documents`；“新学习”自由文本原文追加到 `DATA_DIR/workspace/inbox/YYYY-MM-DD.md`，并按主题合并生成使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」格式的 `knowledge` 短卡片。PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/workspace/sources/extracted`。真实面试粘贴记录保存到 `DATA_DIR/workspace/raw`，并更新 `review/high-frequency.md` 和 `review/status.md`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识、题库、项目、真实面试、高频复盘和练习内容会被切块并以向量形式保存到 Qdrant。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
+上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。上传原始文件保存到 `DATA_DIR/workspace/sources/documents`；“新学习”自由文本原文追加到 `DATA_DIR/workspace/inbox/YYYY-MM-DD.md`，并按主题合并生成使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」格式的 `knowledge` 短卡片。PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/workspace/sources/extracted`。真实面试粘贴记录保存到 `DATA_DIR/workspace/raw`，并更新 `review/high-frequency.md` 和 `review/status.md`。资料入库统一通过 workspace API 完成：上传资料使用 `POST /api/workspace/materials/upload`，学习笔记使用 `POST /api/workspace/learning-notes/stream`，真实面试记录使用 `POST /api/workspace/real-interview-records`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识、题库、项目、真实面试、高频复盘和练习内容会被切块并以向量形式保存到 Qdrant。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
+
+索引和检索只读取 workspace artifact 的 active collection。Markdown/递归切块、embedding、Qdrant vectorstore 和 retriever 由 LangChain 组件处理；workspace 协议、provenance、可索引规则、active collection 发布、检索后处理、上下文预算和 prompt 安全边界由 Auto Reign 应用代码控制。
 
 面试出题、回答点评和追问点评都会结合候选人画像、目标画像、掌握状态、复习状态、高频问题、项目材料和资料库检索片段。点评结果会包含更好的面试说法、掌握状态变化、是否写入薄弱点、是否写入高频题和本题考察点。检索片段只作为不可信的个人来源材料使用，不会覆盖系统指令，也不会被当作新的用户事实自动写回。
 

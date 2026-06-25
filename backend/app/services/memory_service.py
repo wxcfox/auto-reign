@@ -12,10 +12,8 @@ from app.repositories.database import (
     MemoryFileRepository,
     ReportRepository,
 )
-from app.repositories.vector_store import VectorChunk, stable_vector_id
 from app.services.model_service import MemoryUpdateRequest, ModelService, ReportGenerationRequest
 from app.services.learning_artifact_service import LearningArtifactService
-from app.services.rag_service import RagService
 
 def memory_layout(language: str) -> dict[str, dict[str, str]]:
     if language == "zh-CN":
@@ -72,11 +70,9 @@ class MemoryService:
         self,
         settings: Settings | None = None,
         model_service: ModelService | None = None,
-        rag_service: RagService | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.model_service = model_service or ModelService()
-        self.rag_service = rag_service or RagService(self.settings)
         self.session_repository = InterviewSessionRepository()
         self.turn_repository = InterviewTurnRepository()
         self.report_repository = ReportRepository()
@@ -161,7 +157,8 @@ class MemoryService:
         interview_session.status = "completed"
         interview_session.ended_at = datetime.now(UTC)
         interview_session.report_path = str(report_path)
-        self.index_report_and_memory(session, report, memory_files)
+        for memory_file in memory_files:
+            memory_file.last_indexed_at = None
         session.flush()
         return interview_session, report
 
@@ -195,48 +192,6 @@ class MemoryService:
             updated_at = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             files[kind] = (path.read_text(encoding="utf-8"), updated_at)
         return files
-
-    def index_report_and_memory(
-        self, session: Session, report: Report, memory_files: list[MemoryFile]
-    ) -> None:
-        del session
-        chunks: list[VectorChunk] = []
-        report_text = Path(report.report_path).read_text(encoding="utf-8")
-        for index, chunk in enumerate(self.rag_service.split_text(report_text)):
-            chunks.append(
-                VectorChunk(
-                    id=stable_vector_id("report", report.id, index),
-                    content=chunk,
-                    embedding=self.rag_service.embed_texts([chunk])[0],
-                    metadata={
-                        "source_type": "report",
-                        "session_id": report.session_id,
-                        "source_id": report.id,
-                        "chunk_index": index,
-                        "collection": self.settings.qdrant_collection,
-                        "title": "Interview Report",
-                    },
-                )
-            )
-        for memory_file in memory_files:
-            text = Path(memory_file.file_path).read_text(encoding="utf-8")
-            for index, chunk in enumerate(self.rag_service.split_text(text)):
-                chunks.append(
-                    VectorChunk(
-                        id=stable_vector_id("memory", memory_file.id, index),
-                        content=chunk,
-                        embedding=self.rag_service.embed_texts([chunk])[0],
-                        metadata={
-                            "source_type": "memory",
-                            "memory_kind": memory_file.kind,
-                            "source_id": memory_file.id,
-                            "chunk_index": index,
-                            "collection": self.settings.qdrant_collection,
-                            "title": memory_file.kind,
-                        },
-                    )
-                )
-        self.rag_service.vector_store.upsert_chunks(self.settings.qdrant_collection, chunks)
 
     def _update_memory_files(
         self,

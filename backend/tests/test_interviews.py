@@ -122,10 +122,20 @@ def test_stream_finish_returns_summary_delta_and_result(client: TestClient) -> N
 
 
 def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monkeypatch) -> None:
-    def fail_embed_texts(_self, _texts):
+    def fail_embed_query(_self, _text):
         raise AssertionError("embedding should not run for an empty library")
 
-    monkeypatch.setattr("app.services.rag_service.RagService.embed_texts", fail_embed_texts)
+    def fail_search(*_args, **_kwargs):
+        raise AssertionError("workspace search should not run for an empty library")
+
+    monkeypatch.setattr(
+        "app.services.embedding_service.DeterministicEmbeddings.embed_query",
+        fail_embed_query,
+    )
+    monkeypatch.setattr(
+        "app.services.workspace_vector_store.WorkspaceVectorStore.search",
+        fail_search,
+    )
 
     created = client.post("/api/interview-sessions", json=CONFIG)
 

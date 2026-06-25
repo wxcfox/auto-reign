@@ -63,6 +63,43 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     assert "# 面试复盘报告" in report_files[0].read_text(encoding="utf-8")
 
 
+def test_finish_does_not_index_legacy_report_or_memory_vectors(
+    client: TestClient, monkeypatch
+) -> None:
+    config = {
+        "target_company": "OpenAI",
+        "target_role": "Backend Engineer",
+        "job_description": "Build AI app infrastructure.",
+        "extra_prompt": "Focus on weakness reinforcement.",
+        "language": "zh-CN",
+        "mode": "weakness_reinforcement",
+        "chat_model_provider": "openai",
+        "chat_model": "gpt-4.1-mini",
+        "target_rounds": 1,
+    }
+    created = client.post("/api/interview-sessions", json=config).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I use tests and clear services."},
+    )
+    calls: list[str] = []
+
+    def fail_upsert(*_args, **_kwargs):
+        calls.append("upsert")
+        raise AssertionError("finish should not write report or memory vectors")
+
+    monkeypatch.setattr(
+        "app.services.workspace_vector_store.WorkspaceVectorStore.upsert_documents",
+        fail_upsert,
+    )
+
+    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
+
+    assert finished.status_code == 200
+    assert calls == []
+
+
 def test_finish_uses_extra_prompt_as_target_context_when_structured_fields_are_blank(
     client: TestClient,
 ) -> None:

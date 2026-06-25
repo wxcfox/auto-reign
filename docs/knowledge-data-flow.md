@@ -20,14 +20,14 @@ flowchart TD
   I --> J["扫描工作区文件和 sidecar 元数据"]
   J --> K["把 artifact 元数据写入 MySQL"]
   K --> L["重建向量索引"]
-  L --> M["读取可索引文本：原文、提取文本、知识、题库、项目、真实面试、高频卡和练习记录"]
-  M --> N["切分为带重叠窗口的 chunk"]
-  N --> O["使用配置的 embedding provider 生成向量"]
-  O --> P["把 chunk 向量和元数据写入 Qdrant"]
+  L --> M["读取可索引 artifact 正文：原文、提取文本、知识、题库、项目、真实面试、高频卡和练习记录"]
+  M --> N["LangChain Markdown/递归切块"]
+  N --> O["LangChain embedding 生成向量"]
+  O --> P["LangChain QdrantVectorStore 写入 chunk 向量和元数据"]
   P --> Q["在工作区设置中记录活跃向量 collection"]
-  Q --> R["面试服务根据目标、题目和回答构造检索 query"]
-  R --> S["对检索 query 生成 embedding"]
-  S --> T["查询活跃 Qdrant collection"]
+  Q --> R["WorkspaceRetrievalService 生成 query plan"]
+  R --> S["LangChain retriever 查询 active collection"]
+  S --> T["Auto Reign 后处理、来源多样性和上下文预算"]
   T --> U["把检索片段注入出题、回答点评和追问点评 prompt"]
 ```
 
@@ -38,7 +38,7 @@ flowchart TD
 - `DATA_DIR/workspace/sources/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。
 - `DATA_DIR/workspace/knowledge/`、`DATA_DIR/workspace/questions/`、`DATA_DIR/workspace/projects/`、`DATA_DIR/workspace/raw/`、`DATA_DIR/workspace/review/`、`DATA_DIR/workspace/profile/`、`DATA_DIR/workspace/practice/`、`DATA_DIR/workspace/state/` 和 `DATA_DIR/workspace/reports/` 保存系统管理的 Markdown 资产。
 - MySQL 保存工作区 artifact 投影、处理状态、索引状态、修订版本、会话和报告元数据。
-- Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 可以从文件工作区和 MySQL artifact 投影重新构建。
+- Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 可以从文件工作区和 MySQL artifact 投影重新构建。LangChain 负责 Markdown/递归切块、embedding、QdrantVectorStore 写入和 retriever 查询，Auto Reign 负责 workspace 协议、provenance、可索引规则、active collection 发布、检索后处理和上下文预算。
 
 ## 索引规则
 
@@ -59,4 +59,4 @@ flowchart TD
 
 ## 面试点评检索
 
-面试出题先读取候选人画像、目标画像、掌握状态、复习状态和高频问题，再使用用户自然语言提示、当前题目和轮次构造检索 query。项目深挖模式会优先加入 `projects/` 材料。回答点评和追问点评会额外结合当前题目、用户回答、项目材料、历史薄弱点和检索片段。检索片段只作为不可信用户资料使用，不能覆盖系统 prompt，也不能把 AI 生成报告当作新的事实来源。
+面试出题先读取候选人画像、目标画像、掌握状态、复习状态和高频问题，再使用用户自然语言提示、当前题目和轮次构造检索 query plan。项目深挖模式会优先加入 `projects/` 材料。LangChain retriever 只查询当前 workspace active collection；Auto Reign 会对结果做分数阈值、单 artifact 上限、来源多样性和上下文预算控制。回答点评和追问点评会额外结合当前题目、用户回答、项目材料、历史薄弱点和检索片段。检索片段只作为不可信用户资料使用，不能覆盖系统 prompt，也不能把 AI 生成报告当作新的事实来源。
