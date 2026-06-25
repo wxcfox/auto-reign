@@ -988,6 +988,10 @@ a:focus-visible {
   background: var(--background);
 }
 
+.interview-workspace {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
 .chat-topbar {
   display: flex;
   align-items: center;

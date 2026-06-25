@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,6 +140,20 @@ describe("InterviewWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Interview settings/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Target company/i)).not.toBeInTheDocument();
     expect(container.querySelector(".chat-topbar")).toBeNull();
+  });
+
+  it("uses a two-row chat layout when the interview view has no topbar", async () => {
+    const { container } = render(<InterviewWorkspace />);
+
+    expect(await screen.findByText(/Ready when you are/i)).toBeInTheDocument();
+    const workspace = container.firstElementChild;
+    expect(workspace).toHaveClass("chat-workspace", "interview-workspace");
+    expect(workspace?.querySelector(".chat-topbar")).toBeNull();
+
+    const css = readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf-8");
+    expect(css).toMatch(
+      /\.interview-workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;/s,
+    );
   });
 
   it("starts an interview from natural language context in the composer", async () => {
