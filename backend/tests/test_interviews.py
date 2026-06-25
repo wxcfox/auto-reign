@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 
+from app.services.retrieval_query_planner import RetrievalRequest
+
 
 DEFAULT_QWEN_CONFIG = {
     "target_company": "",
@@ -181,8 +183,9 @@ def test_create_session_reads_workspace_state_before_question_generation(
     )
     client.post("/api/workspace/rebuild-projection")
 
-    def capture_search(_self, _session, query: str, limit: int):
-        assert limit == 4
+    def capture_search(_self, _session, request: RetrievalRequest):
+        assert request.purpose == "question_generation"
+        assert request.limit == 4
         return [
             {
                 "content": "题卡：Redis 缓存击穿需要互斥锁、逻辑过期和降级预案。",
@@ -259,15 +262,100 @@ def test_create_session_auto_indexes_pending_workspace_artifacts(
     assert any(artifact["index_status"] == "completed" for artifact in indexed)
 
 
+def test_workspace_retrieval_service_uses_query_plan(client: TestClient) -> None:
+    captured_requests: list[RetrievalRequest] = []
+    captured_searches: list[dict[str, object]] = []
+
+    class FakePlanner:
+        def plan(self, request: RetrievalRequest):
+            captured_requests.append(request)
+            from app.services.retrieval_query_planner import RetrievalQueryPlan
+
+            return RetrievalQueryPlan(
+                semantic_query=f"planned {request.query}",
+                artifact_kinds=("knowledge",),
+                candidate_limit=6,
+                final_limit=2,
+                score_threshold=0.0,
+                max_per_artifact=1,
+                purpose=request.purpose,
+            )
+
+    class FakeStore:
+        def has_searchable_content(self, collection_name: str) -> bool:
+            return True
+
+        def search(self, collection_name: str, query: str, *, limit: int, metadata_filter=None):
+            from app.services.workspace_vector_store import WorkspaceVectorHit
+
+            captured_searches.append(
+                {
+                    "collection_name": collection_name,
+                    "query": query,
+                    "limit": limit,
+                    "metadata_filter": metadata_filter,
+                }
+            )
+            return [
+                WorkspaceVectorHit(
+                    content="Redis cache stampede",
+                    score=0.9,
+                    metadata={
+                        "artifact_id": "a1",
+                        "artifact_kind": "knowledge",
+                        "source_type": "artifact",
+                        "relative_path": "knowledge/redis.md",
+                    },
+                )
+            ]
+
+    from app.services.workspace_retrieval_service import WorkspaceRetrievalService
+
+    with client.app.state.session_factory() as session:
+        service = WorkspaceRetrievalService(
+            vector_store=FakeStore(),
+            query_planner=FakePlanner(),
+        )
+        hits = service.search(
+            session,
+            RetrievalRequest(
+                purpose="question_generation",
+                query="Redis",
+                mode="comprehensive",
+                limit=2,
+            ),
+        )
+
+    assert hits == [
+        {
+            "content": "Redis cache stampede",
+            "score": 0.9,
+            "source_type": "artifact",
+            "source_id": "a1",
+            "artifact_kind": "knowledge",
+            "relative_path": "knowledge/redis.md",
+        }
+    ]
+    assert captured_requests[0].purpose == "question_generation"
+    assert captured_requests[0].query == "Redis"
+    assert captured_searches[0]["query"] == "planned Redis"
+    assert captured_searches[0]["limit"] == 6
+    metadata_filter = captured_searches[0]["metadata_filter"]
+    assert metadata_filter.must[0].key == "metadata.artifact_kind"
+    assert metadata_filter.must[0].match.any == ["knowledge"]
+
+
 def test_natural_language_target_context_drives_workspace_retrieval(
     client: TestClient,
     monkeypatch,
 ) -> None:
     queries: list[str] = []
+    purposes: list[str] = []
 
-    def capture_search(_self, _session, query: str, limit: int):
-        assert limit == 4
-        queries.append(query)
+    def capture_search(_self, _session, request: RetrievalRequest):
+        assert request.limit == 4
+        purposes.append(request.purpose)
+        queries.append(request.query)
         return []
 
     monkeypatch.setattr(
@@ -288,13 +376,25 @@ def test_natural_language_target_context_drives_workspace_retrieval(
         json={"answer": "我会结合 Redis、限流和服务拆分说明。"},
     )
     assert answer.status_code == 200
+    follow_up = client.post(
+        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        json={"answer": "我会补充超时、降级和监控告警。"},
+    )
+    assert follow_up.status_code == 200
     next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
     assert next_question.status_code == 200
 
     assert queries[0] == "面试字节后端岗位，JD 关注缓存和高并发。"
     assert "面试字节后端岗位，JD 关注缓存和高并发。" in queries[1]
     assert "我会结合 Redis、限流和服务拆分说明。" in queries[1]
-    assert queries[2] == "面试字节后端岗位，JD 关注缓存和高并发。 round 2"
+    assert "我会补充超时、降级和监控告警。" in queries[2]
+    assert queries[3] == "面试字节后端岗位，JD 关注缓存和高并发。 round 2"
+    assert purposes == [
+        "question_generation",
+        "answer_feedback",
+        "follow_up_feedback",
+        "question_generation",
+    ]
 
 
 def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None:
@@ -337,6 +437,7 @@ def test_answer_feedback_uses_workspace_retrieval_context(
 
     captured_contexts: list[list[str]] = []
     captured_queries: list[str] = []
+    captured_purposes: list[str] = []
     artifacts = client.app.state.artifact_service
     artifacts.create_markdown(
         "profile/candidate.md",
@@ -350,10 +451,13 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     )
     client.post("/api/workspace/rebuild-projection")
 
-    def capture_search(_self, _session, query: str, limit: int):
-        captured_queries.append(query)
-        assert limit == 4
-        if "Redis cache stampede" in query and "I use mutex locks" in query:
+    def capture_search(_self, _session, request: RetrievalRequest):
+        captured_purposes.append(request.purpose)
+        captured_queries.append(request.query)
+        assert request.limit == 4
+        if request.purpose != "answer_feedback":
+            return []
+        if "Redis cache stampede" in request.query and "I use mutex locks" in request.query:
             return [
                 {
                     "content": "Use mutex locks and logical expiration for cache breakdown.",
@@ -417,6 +521,7 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     assert "缓存击穿和降级预案" in context_text
     assert "本题考察点" in context_text
     assert "Use mutex locks and logical expiration for cache breakdown." in context_text
+    assert "answer_feedback" in captured_purposes
     assert any("Redis cache stampede" in query for query in captured_queries)
 
     artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]

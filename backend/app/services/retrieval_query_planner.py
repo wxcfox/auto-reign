@@ -40,7 +40,7 @@ class RetrievalQueryPlanner:
         if request.mode == "project_deep_dive":
             return RetrievalQueryPlan(
                 semantic_query=f"projects 项目 项目经历 {query}".strip(),
-                artifact_kinds=("project", "knowledge", "practice"),
+                artifact_kinds=("project", "knowledge", "practice", "source", "extracted"),
                 candidate_limit=candidate_limit,
                 final_limit=final_limit,
                 score_threshold=0.25,
@@ -57,6 +57,8 @@ class RetrievalQueryPlanner:
                     "project",
                     "high_frequency",
                     "practice",
+                    "source",
+                    "extracted",
                 ),
                 candidate_limit=candidate_limit,
                 final_limit=final_limit,
@@ -68,7 +70,7 @@ class RetrievalQueryPlanner:
         if request.purpose == "follow_up_feedback":
             return RetrievalQueryPlan(
                 semantic_query=query,
-                artifact_kinds=("question_bank", "practice", "knowledge"),
+                artifact_kinds=("question_bank", "practice", "knowledge", "source", "extracted"),
                 candidate_limit=candidate_limit,
                 final_limit=final_limit,
                 score_threshold=0.25,
@@ -78,7 +80,14 @@ class RetrievalQueryPlanner:
 
         return RetrievalQueryPlan(
             semantic_query=query,
-            artifact_kinds=("question_bank", "knowledge", "project", "high_frequency"),
+            artifact_kinds=(
+                "question_bank",
+                "knowledge",
+                "project",
+                "high_frequency",
+                "source",
+                "extracted",
+            ),
             candidate_limit=candidate_limit,
             final_limit=final_limit,
             score_threshold=0.25,
