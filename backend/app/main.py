@@ -5,12 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.interviews import router as interviews_router
 from app.api.memory import router as memory_router
 from app.api.models import router as models_router
-from app.api.rag import router as rag_router
 from app.api.reports import router as reports_router
 from app.api.workspace import router as workspace_router
 from app.core.config import get_settings
@@ -54,12 +52,10 @@ def create_app() -> FastAPI:
     app.state.session_factory = session_factory
     app.state.workspace_service = workspace_service
     app.state.artifact_service = artifact_service
-    app.include_router(documents_router)
     app.include_router(health_router)
     app.include_router(interviews_router)
     app.include_router(memory_router)
     app.include_router(models_router)
-    app.include_router(rag_router)
     app.include_router(reports_router)
     app.include_router(workspace_router)
     return app

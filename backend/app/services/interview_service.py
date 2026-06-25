@@ -22,9 +22,10 @@ from app.services.model_service import (
     ModelService,
     QuestionGenerationRequest,
 )
-from app.services.memory_service import MemoryService
-from app.services.rag_service import RagService
 from app.services.artifact_service import ArtifactService
+from app.services.context_assembler import ContextAssembler
+from app.services.memory_service import MemoryService
+from app.services.retrieval_query_planner import RetrievalPurpose, RetrievalRequest
 from app.services.workspace_service import WorkspaceService
 from app.services.workspace_retrieval_service import WorkspaceRetrievalService
 
@@ -92,8 +93,8 @@ class InterviewService:
         session_repository: InterviewSessionRepository | None = None,
         turn_repository: InterviewTurnRepository | None = None,
         model_service: ModelService | None = None,
-        rag_service: RagService | None = None,
         retrieval_service: WorkspaceRetrievalService | None = None,
+        context_assembler: ContextAssembler | None = None,
         artifact_repository: ArtifactRepository | None = None,
         artifact_service: ArtifactService | None = None,
         workspace_service: WorkspaceService | None = None,
@@ -102,8 +103,8 @@ class InterviewService:
         self.session_repository = session_repository or InterviewSessionRepository()
         self.turn_repository = turn_repository or InterviewTurnRepository()
         self.model_service = model_service or ModelService()
-        self.rag_service = rag_service or RagService()
         self.retrieval_service = retrieval_service or WorkspaceRetrievalService()
+        self.context_assembler = context_assembler or ContextAssembler()
         self.artifact_repository = artifact_repository or ArtifactRepository()
         self.artifact_service = artifact_service
         self.workspace_service = workspace_service
@@ -422,6 +423,7 @@ class InterviewService:
             config,
             question=turn.follow_up_question,
             answer=answer,
+            retrieval_purpose="follow_up_feedback",
         )
         evaluation = self.model_service.evaluate_answer(
             AnswerEvaluationRequest(
@@ -470,6 +472,7 @@ class InterviewService:
             config,
             question=turn.follow_up_question,
             answer=answer,
+            retrieval_purpose="follow_up_feedback",
         )
         request = AnswerEvaluationRequest(
             question=turn.follow_up_question,
@@ -730,25 +733,35 @@ class InterviewService:
         *,
         question: str,
         answer: str,
+        retrieval_purpose: RetrievalPurpose = "answer_feedback",
     ) -> list[str]:
+        direct_context = self._direct_workspace_context(session)
+        project_context = self._project_context(session)
         context_hits = self.retrieval_service.search(
             session,
-            _answer_context_query(
-                target_company=config.target_company,
-                target_role=config.target_role,
-                job_description=config.job_description,
-                extra_prompt=config.extra_prompt,
-                question=question,
-                answer=answer,
+            RetrievalRequest(
+                purpose=retrieval_purpose,
+                query=_answer_context_query(
+                    target_company=config.target_company,
+                    target_role=config.target_role,
+                    job_description=config.job_description,
+                    extra_prompt=config.extra_prompt,
+                    question=question,
+                    answer=answer,
+                ),
+                mode=config.mode,
+                limit=4,
             ),
-            limit=4,
         )
-        return [
-            *self._direct_workspace_context(session),
-            *self._project_context(session),
-            f"[本题考察点]\n围绕当前题目识别考察点：{question}",
-            *[self._retrieved_context_text(hit) for hit in context_hits],
-        ]
+        retrieved_context = [self._retrieved_context_text(hit) for hit in context_hits]
+        return self.context_assembler.assemble(
+            direct_context=direct_context,
+            project_context=project_context,
+            retrieved_context=[
+                f"[本题考察点]\n围绕当前题目识别考察点：{question}",
+                *retrieved_context,
+            ],
+        )
 
     def _question_context(
         self,
@@ -757,16 +770,23 @@ class InterviewService:
         *,
         mode: str = "comprehensive",
     ) -> tuple[list[str], list[dict[str, object]]]:
-        search_query = query
+        direct_context = self._direct_workspace_context(session)
         project_context = self._project_context(session) if mode == "project_deep_dive" else []
-        if mode == "project_deep_dive":
-            search_query = f"projects 项目 项目经历 {query}".strip()
-        context_hits = self.retrieval_service.search(session, search_query, limit=4)
-        context = [
-            *self._direct_workspace_context(session),
-            *project_context,
-            *[self._retrieved_context_text(hit) for hit in context_hits],
-        ]
+        context_hits = self.retrieval_service.search(
+            session,
+            RetrievalRequest(
+                purpose="question_generation",
+                query=query,
+                mode=mode,
+                limit=4,
+            ),
+        )
+        retrieved_context = [self._retrieved_context_text(hit) for hit in context_hits]
+        context = self.context_assembler.assemble(
+            direct_context=direct_context,
+            project_context=project_context,
+            retrieved_context=retrieved_context,
+        )
         return context, context_hits
 
     def _direct_workspace_context(self, session: Session) -> list[str]:

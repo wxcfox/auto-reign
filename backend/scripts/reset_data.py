@@ -12,7 +12,7 @@ from sqlalchemy.engine import Engine
 
 from app.core.config import get_settings
 from app.db.session import create_engine_for_settings
-from app.repositories.qdrant_store import get_qdrant_store
+from app.services.workspace_vector_store import get_workspace_vector_store
 from app.services.workspace_service import WorkspaceService
 
 
@@ -20,13 +20,13 @@ def reset_data(
     *,
     data_dir: Path,
     engine: Engine,
-    qdrant_store,
+    vector_store,
     qdrant_collection: str,
     workspace_collection: str,
     run_migrations: Callable[[], None],
 ) -> Path | None:
     backup = _backup_data_dir(data_dir)
-    _delete_qdrant_collections(qdrant_store, qdrant_collection, workspace_collection)
+    _delete_qdrant_collections(vector_store, qdrant_collection, workspace_collection)
     _drop_all_tables(engine)
     run_migrations()
     WorkspaceService(data_dir / "workspace").initialize()
@@ -57,13 +57,13 @@ def _drop_all_tables(engine: Engine) -> None:
 
 
 def _delete_qdrant_collections(
-    qdrant_store, qdrant_collection: str, workspace_collection: str
+    vector_store, qdrant_collection: str, workspace_collection: str
 ) -> None:
-    qdrant_store.delete_collection(qdrant_collection)
+    vector_store.delete_collection(qdrant_collection)
     prefix = f"{workspace_collection}__"
-    for collection_name in qdrant_store.list_collections():
+    for collection_name in vector_store.list_collections():
         if collection_name.startswith(prefix):
-            qdrant_store.delete_collection(collection_name)
+            vector_store.delete_collection(collection_name)
 
 
 def main() -> None:
@@ -76,7 +76,7 @@ def main() -> None:
     backup = reset_data(
         data_dir=settings.data_dir,
         engine=engine,
-        qdrant_store=get_qdrant_store(),
+        vector_store=get_workspace_vector_store(),
         qdrant_collection=settings.qdrant_collection,
         workspace_collection=settings.qdrant_collection,
         run_migrations=run_migrations,

@@ -5,13 +5,14 @@ from sqlalchemy import create_engine, inspect
 
 
 EXPECTED_TABLES = {
-    "documents",
-    "document_chunks",
     "interview_configs",
     "interview_sessions",
     "interview_turns",
     "reports",
     "memory_files",
+    "workspace_settings",
+    "artifacts",
+    "processing_jobs",
 }
 
 

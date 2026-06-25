@@ -1,24 +1,4 @@
-from dataclasses import dataclass
-from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
-
-
-VectorMetadataValue = str | int | float | bool | list[str]
-
-
-@dataclass(frozen=True)
-class VectorChunk:
-    id: str
-    content: str
-    embedding: list[float]
-    metadata: dict[str, VectorMetadataValue]
-
-
-@dataclass(frozen=True)
-class VectorSearchHit:
-    content: str
-    score: float
-    metadata: dict[str, Any]
 
 
 class VectorStoreError(Exception):
@@ -27,26 +7,6 @@ class VectorStoreError(Exception):
 
 class VectorStoreUnavailable(VectorStoreError):
     pass
-
-
-class VectorDimensionMismatch(VectorStoreError):
-    pass
-
-
-class VectorStore(Protocol):
-    def upsert_chunks(self, collection_name: str, chunks: list[VectorChunk]) -> None: ...
-
-    def delete_document_chunks(self, collection_name: str, document_id: str) -> None: ...
-
-    def delete_collection(self, collection_name: str) -> None: ...
-
-    def list_collections(self) -> list[str]: ...
-
-    def has_searchable_content(self, collection_name: str) -> bool: ...
-
-    def search(
-        self, collection_name: str, query_embedding: list[float], limit: int
-    ) -> list[VectorSearchHit]: ...
 
 
 def stable_vector_id(source_type: str, source_id: str, chunk_index: int) -> str:

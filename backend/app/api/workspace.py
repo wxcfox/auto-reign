@@ -241,7 +241,7 @@ def delete_artifact(
     index_service = IndexService()
     target_collection = workspace_settings.active_collection or index_service.settings.qdrant_collection
     try:
-        index_service.vector_store.delete_document_chunks(target_collection, artifact_id)
+        index_service.vector_store.delete_artifact_chunks(target_collection, artifact_id)
     except VectorStoreError as exc:
         raise service_unavailable(
             "vector_delete_failed",

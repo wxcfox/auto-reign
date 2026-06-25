@@ -32,8 +32,10 @@
     "delete": "Delete"
   },
   "categories": {
-    "title": "Categories",
-    "all": "All files"
+    "title": "Document categories",
+    "all": "All files",
+    "collapse": "Collapse document categories",
+    "expand": "Expand document categories"
   },
   "owners": {
     "sources": "Sources",

@@ -6,17 +6,18 @@ from collections.abc import Callable
 from threading import Lock
 
 from fastapi import HTTPException
+from langchain_core.documents import Document
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db import models
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
-from app.repositories.qdrant_store import get_qdrant_store
-from app.repositories.vector_store import VectorChunk, VectorStore, VectorStoreError, stable_vector_id
+from app.repositories.vector_store import VectorStoreError
 from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
+from app.services.artifact_document_service import ArtifactDocumentBuilder, ArtifactTextSplitter
 from app.services.artifact_service import ArtifactService, InvalidFrontMatter
-from app.services.rag_service import RagService
+from app.services.workspace_vector_store import WorkspaceVectorStore, get_workspace_vector_store
 from app.services.workspace_service import WorkspaceService
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,18 @@ class IndexService:
         self,
         *,
         settings: Settings | None = None,
-        vector_store: VectorStore | None = None,
-        embedder: RagService | None = None,
+        vector_store: WorkspaceVectorStore | None = None,
+        document_builder: ArtifactDocumentBuilder | None = None,
+        text_splitter: ArtifactTextSplitter | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.vector_store = vector_store or get_qdrant_store()
-        self.embedder = embedder or RagService(settings=self.settings, vector_store=self.vector_store)
+        self.vector_store = vector_store or (
+            WorkspaceVectorStore(settings=self.settings)
+            if settings is not None
+            else get_workspace_vector_store()
+        )
+        self.document_builder = document_builder or ArtifactDocumentBuilder()
+        self.text_splitter = text_splitter or ArtifactTextSplitter()
 
     def index_artifact(
         self,
@@ -45,7 +52,7 @@ class IndexService:
     ) -> models.Artifact:
         target_collection = collection_name or self.settings.qdrant_collection
         try:
-            build = self._build_chunks_for_artifact(artifact, workspace)
+            build = self._build_documents_for_artifact(artifact, workspace)
         except (OSError, UnicodeError, HTTPException, InvalidFrontMatter, RuntimeError):
             artifact.index_status = "stale"
             session.flush()
@@ -56,9 +63,11 @@ class IndexService:
             session.flush()
             return artifact
         try:
-            self.vector_store.delete_document_chunks(target_collection, artifact.id)
-            if build.chunks:
-                self.vector_store.upsert_chunks(target_collection, build.chunks)
+            if build.documents:
+                self.vector_store.prepare_documents(build.documents)
+            self.vector_store.delete_artifact_chunks(target_collection, artifact.id)
+            if build.documents:
+                self.vector_store.upsert_documents(target_collection, build.documents)
             artifact.index_status = "completed"
         except VectorStoreError:
             artifact.index_status = "stale"
@@ -127,15 +136,24 @@ class IndexService:
                 artifacts = artifact_repository.list(session)
                 for artifact in artifacts:
                     try:
-                        build = self._build_chunks_for_artifact(artifact, workspace)
+                        build = self._build_documents_for_artifact(artifact, workspace)
                     except (OSError, UnicodeError, HTTPException, InvalidFrontMatter, RuntimeError):
                         stale_ids.append(artifact.id)
                         continue
                     if build.status == "stale":
                         stale_ids.append(artifact.id)
                         continue
-                    if build.chunks:
-                        self.vector_store.upsert_chunks(new_collection, build.chunks)
+                    if build.documents:
+                        try:
+                            self.vector_store.upsert_documents(new_collection, build.documents)
+                        except VectorStoreError as exc:
+                            logger.info(
+                                "Workspace artifact %s could not be indexed: %s",
+                                artifact.id,
+                                exc,
+                            )
+                            stale_ids.append(artifact.id)
+                            continue
                     completed_ids.append(artifact.id)
         except Exception:
             self._delete_collection_best_effort(new_collection)
@@ -176,36 +194,17 @@ class IndexService:
             if collection_name.startswith(prefix) and collection_name != active_collection:
                 self._delete_collection_best_effort(collection_name)
 
-    def _build_chunks_for_artifact(
+    def _build_documents_for_artifact(
         self, artifact: models.Artifact, workspace: WorkspaceService
     ) -> "_BuildResult":
         if artifact.recovery_required or artifact.processing_status == "needs_recovery":
-            return _BuildResult(status="stale", chunks=[])
+            return _BuildResult(status="stale", documents=[])
         text = self._read_indexable_text(artifact, workspace)
         if text is None:
-            return _BuildResult(status="completed", chunks=[])
-        chunk_texts = self.embedder.split_text(text)
-        embeddings = self.embedder.embed_texts(chunk_texts)
-        chunks = [
-            VectorChunk(
-                id=stable_vector_id("artifact", artifact.id, index),
-                content=chunk,
-                embedding=embedding,
-                metadata={
-                    "source_type": "artifact",
-                    "document_id": artifact.id,
-                    "source_id": artifact.id,
-                    "artifact_id": artifact.id,
-                    "artifact_kind": artifact.kind,
-                    "relative_path": artifact.relative_path,
-                    "chunk_index": index,
-                    "source_refs": artifact.source_refs,
-                    "evidence_refs": artifact.evidence_refs,
-                },
-            )
-            for index, (chunk, embedding) in enumerate(zip(chunk_texts, embeddings, strict=True))
-        ]
-        return _BuildResult(status="completed", chunks=chunks)
+            return _BuildResult(status="completed", documents=[])
+        document = self.document_builder.build(artifact, text)
+        documents = self.text_splitter.split([document])
+        return _BuildResult(status="completed", documents=documents)
 
     def _read_indexable_text(
         self, artifact: models.Artifact, workspace: WorkspaceService
@@ -243,6 +242,6 @@ class IndexService:
 
 
 class _BuildResult:
-    def __init__(self, *, status: str, chunks: list[VectorChunk]) -> None:
+    def __init__(self, *, status: str, documents: list[Document]) -> None:
         self.status = status
-        self.chunks = chunks
+        self.documents = documents

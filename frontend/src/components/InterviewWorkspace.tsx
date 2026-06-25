@@ -568,7 +568,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
   })();
 
   return (
-    <div className="chat-workspace">
+    <div className="chat-workspace interview-workspace">
       <div className="chat-transcript" ref={transcriptRef}>
         {turns.length === 0 && !streamingDraft ? (
           <section className="chat-empty" aria-label={t("empty_label")}>

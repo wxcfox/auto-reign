@@ -988,6 +988,10 @@ a:focus-visible {
   background: var(--background);
 }
 
+.interview-workspace {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
 .chat-topbar {
   display: flex;
   align-items: center;
@@ -1507,22 +1511,75 @@ a:focus-visible {
   font-size: 1.55rem;
 }
 
-.library-upload-panel {
-  padding: 14px;
-}
-
 .library-browser {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 560px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 
-.library-categories {
+.library-browser[data-categories-collapsed="true"] {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.library-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 12px;
   min-width: 0;
   border-right: 1px solid var(--border);
   padding: 16px 14px 16px 0;
+}
+
+.library-sidebar[data-collapsed="true"] {
+  justify-items: center;
+  padding-right: 8px;
+}
+
+.library-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.library-sidebar-header .eyebrow {
+  margin: 0;
+}
+
+.library-sidebar-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.library-sidebar-toggle:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.library-upload-control {
+  position: relative;
+  display: grid;
+  gap: 6px;
+}
+
+.library-upload-button {
+  min-height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.library-upload-control .form-error {
+  width: min(260px, 72vw);
+  margin: 0;
 }
 
 .library-category-list {
@@ -1572,6 +1629,15 @@ a:focus-visible {
 
 .library-file-heading {
   margin-bottom: 12px;
+}
+
+.library-file-actions {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.library-file-actions .search-field {
+  width: min(260px, 34vw);
 }
 
 .library-table-scroll {
@@ -1791,9 +1857,22 @@ a:focus-visible {
     padding: 18px 14px;
   }
 
-  .library-categories {
+  .library-browser[data-categories-collapsed="true"] {
+    grid-template-columns: 1fr;
+  }
+
+  .library-sidebar {
     border: 0;
     padding: 16px 0;
+  }
+
+  .library-sidebar[data-collapsed="true"] {
+    justify-items: stretch;
+    padding: 16px 0;
+  }
+
+  .library-sidebar[data-collapsed="true"] .library-sidebar-header {
+    justify-content: flex-start;
   }
 
   .library-files {

@@ -45,7 +45,7 @@ def test_reset_backs_up_data_drops_reflected_tables_and_deletes_workspace_collec
     backup = reset_data(
         data_dir=data_dir,
         engine=engine,
-        qdrant_store=store,
+        vector_store=store,
         qdrant_collection="v1",
         workspace_collection="workspace",
         run_migrations=run_migrations,
@@ -69,7 +69,7 @@ def test_reset_aborts_if_qdrant_delete_fails(tmp_path: Path) -> None:
         reset_data(
             data_dir=data_dir,
             engine=engine,
-            qdrant_store=FakeStore(fail=True),
+            vector_store=FakeStore(fail=True),
             qdrant_collection="v1",
             workspace_collection="workspace",
             run_migrations=lambda: None,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Pencil, Search, Trash2 } from "lucide-react";
+import { FileText, PanelLeftClose, PanelLeftOpen, Pencil, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { DocumentUploader } from "@/components/DocumentUploader";
@@ -39,6 +39,7 @@ export default function LibraryPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [categoriesCollapsed, setCategoriesCollapsed] = useState(false);
 
   async function loadArtifacts() {
     setLoading(true);
@@ -136,28 +137,51 @@ export default function LibraryPage() {
         </div>
       </header>
 
-      <section className="tool-panel library-upload-panel" aria-label={t("upload_label")}>
-        <DocumentUploader onUploaded={() => void loadArtifacts()} />
-      </section>
-
-      <section className="library-browser" aria-labelledby="artifact-list-heading">
-        <aside className="library-categories" aria-label={t("categories.title")}>
-          <p className="eyebrow">{t("categories.title")}</p>
-          <div className="library-category-list">
-            {categoryItems.map((item) => (
-              <button
-                aria-label={`${item.label} ${item.count}`}
-                aria-pressed={selectedKind === item.kind}
-                data-active={selectedKind === item.kind}
-                key={item.kind || "all"}
-                onClick={() => setSelectedKind(item.kind)}
-                type="button"
-              >
-                <span>{item.label}</span>
-                <strong>{item.count}</strong>
-              </button>
-            ))}
+      <section
+        className="library-browser"
+        data-categories-collapsed={categoriesCollapsed}
+        aria-labelledby="artifact-list-heading"
+      >
+        <aside
+          className="library-sidebar"
+          data-collapsed={categoriesCollapsed}
+          aria-label={t("categories.title")}
+        >
+          <div className="library-sidebar-header">
+            {categoriesCollapsed ? null : <p className="eyebrow">{t("categories.title")}</p>}
+            <button
+              aria-label={
+                categoriesCollapsed ? t("categories.expand") : t("categories.collapse")
+              }
+              className="library-sidebar-toggle"
+              onClick={() => setCategoriesCollapsed((current) => !current)}
+              title={categoriesCollapsed ? t("categories.expand") : t("categories.collapse")}
+              type="button"
+            >
+              {categoriesCollapsed ? (
+                <PanelLeftOpen size={16} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={16} aria-hidden="true" />
+              )}
+            </button>
           </div>
+          {categoriesCollapsed ? null : (
+            <div className="library-category-list">
+              {categoryItems.map((item) => (
+                <button
+                  aria-label={`${item.label} ${item.count}`}
+                  aria-pressed={selectedKind === item.kind}
+                  data-active={selectedKind === item.kind}
+                  key={item.kind || "all"}
+                  onClick={() => setSelectedKind(item.kind)}
+                  type="button"
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.count}</strong>
+                </button>
+              ))}
+            </div>
+          )}
         </aside>
 
         <div className="library-files">
@@ -166,7 +190,7 @@ export default function LibraryPage() {
               <p className="eyebrow">{t("browser_eyebrow")}</p>
               <h2 id="artifact-list-heading">{t("browser_title")}</h2>
             </div>
-            <div className="filter-row">
+            <div className="filter-row library-file-actions">
               <label className="search-field">
                 <Search aria-hidden="true" size={17} />
                 <span className="sr-only">{t("keyword_label")}</span>
@@ -177,6 +201,7 @@ export default function LibraryPage() {
                   value={keyword}
                 />
               </label>
+              <DocumentUploader onUploaded={() => void loadArtifacts()} />
             </div>
           </div>
 
