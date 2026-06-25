@@ -166,36 +166,21 @@ export default function LibraryPage() {
             </button>
           </div>
           {categoriesCollapsed ? null : (
-            <>
-              <div className="library-sidebar-tools">
-                <label className="search-field">
-                  <Search aria-hidden="true" size={17} />
-                  <span className="sr-only">{t("keyword_label")}</span>
-                  <input
-                    onChange={(event) => setKeyword(event.target.value)}
-                    placeholder={t("keyword_placeholder")}
-                    type="search"
-                    value={keyword}
-                  />
-                </label>
-                <DocumentUploader onUploaded={() => void loadArtifacts()} />
-              </div>
-              <div className="library-category-list">
-                {categoryItems.map((item) => (
-                  <button
-                    aria-label={`${item.label} ${item.count}`}
-                    aria-pressed={selectedKind === item.kind}
-                    data-active={selectedKind === item.kind}
-                    key={item.kind || "all"}
-                    onClick={() => setSelectedKind(item.kind)}
-                    type="button"
-                  >
-                    <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="library-category-list">
+              {categoryItems.map((item) => (
+                <button
+                  aria-label={`${item.label} ${item.count}`}
+                  aria-pressed={selectedKind === item.kind}
+                  data-active={selectedKind === item.kind}
+                  key={item.kind || "all"}
+                  onClick={() => setSelectedKind(item.kind)}
+                  type="button"
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.count}</strong>
+                </button>
+              ))}
+            </div>
           )}
         </aside>
 
@@ -204,6 +189,19 @@ export default function LibraryPage() {
             <div>
               <p className="eyebrow">{t("browser_eyebrow")}</p>
               <h2 id="artifact-list-heading">{t("browser_title")}</h2>
+            </div>
+            <div className="filter-row library-file-actions">
+              <label className="search-field">
+                <Search aria-hidden="true" size={17} />
+                <span className="sr-only">{t("keyword_label")}</span>
+                <input
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder={t("keyword_placeholder")}
+                  type="search"
+                  value={keyword}
+                />
+              </label>
+              <DocumentUploader onUploaded={() => void loadArtifacts()} />
             </div>
           </div>
 

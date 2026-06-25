@@ -17,10 +17,12 @@ class RecordingWorkspaceVectorStore:
         *,
         fail_prepare: bool = False,
         fail_upsert: bool = False,
+        fail_upsert_artifact_ids: set[str] | None = None,
         fail_delete_collection: bool = False,
     ) -> None:
         self.fail_prepare = fail_prepare
         self.fail_upsert = fail_upsert
+        self.fail_upsert_artifact_ids = fail_upsert_artifact_ids or set()
         self.fail_delete_collection = fail_delete_collection
         self.prepared: list[list[Document]] = []
         self.upserts: list[tuple[str, list[Document]]] = []
@@ -34,7 +36,8 @@ class RecordingWorkspaceVectorStore:
         self.prepared.append(documents)
 
     def upsert_documents(self, collection_name: str, documents: list[Document]) -> None:
-        if self.fail_upsert:
+        artifact_ids = {str(document.metadata.get("artifact_id")) for document in documents}
+        if self.fail_upsert or artifact_ids.intersection(self.fail_upsert_artifact_ids):
             raise VectorStoreUnavailable("upsert failed")
         self.collections.add(collection_name)
         self.upserts.append((collection_name, documents))
@@ -267,12 +270,16 @@ def test_rebuild_index_builds_new_collection_and_swaps_pointer(client, workspace
     assert "auto_reign_test__orphan" in store.deleted_collections
 
 
-def test_rebuild_index_failure_keeps_old_pointer_and_deletes_partial_collection(
+def test_rebuild_index_marks_failed_artifacts_stale_and_keeps_indexing_others(
     client, workspace_stack
 ) -> None:
     workspace, artifacts, repository = workspace_stack
-    artifacts.create_markdown("knowledge/fail-rebuild.md", kind="knowledge", body="# Fail\n")
-    store = RecordingWorkspaceVectorStore(fail_upsert=True)
+    failed = artifacts.create_markdown("knowledge/fail-rebuild.md", kind="knowledge", body="# Fail\n")
+    healthy = artifacts.create_markdown("knowledge/healthy-rebuild.md", kind="knowledge", body="# Healthy\n")
+    store = RecordingWorkspaceVectorStore(
+        fail_upsert_artifact_ids={failed.front_matter.id}
+    )
+    store.collections.add("auto_reign_test__old")
     service = IndexService(vector_store=store)
     settings_repository = WorkspaceSettingsRepository()
 
@@ -282,15 +289,28 @@ def test_rebuild_index_failure_keeps_old_pointer_and_deletes_partial_collection(
         settings.active_collection = "auto_reign_test__old"
         session.commit()
 
-    with pytest.raises(VectorStoreUnavailable):
-        service.rebuild_index(
-            client.app.state.session_factory,
-            workspace,
-            repository,
-            settings_repository=settings_repository,
-        )
+    service.rebuild_index(
+        client.app.state.session_factory,
+        workspace,
+        repository,
+        settings_repository=settings_repository,
+    )
 
     with _session(client) as session:
-        assert settings_repository.get_or_create(session).active_collection == "auto_reign_test__old"
-    assert any(name.startswith("auto_reign_test__") for name in store.deleted_collections)
-    assert "auto_reign_test__old" not in store.deleted_collections
+        settings = settings_repository.get_or_create(session)
+        statuses = {
+            row.id: row.index_status
+            for row in repository.list(session)
+        }
+        assert settings.active_collection.startswith("auto_reign_test__")
+        assert settings.active_collection != "auto_reign_test__old"
+        assert statuses[failed.front_matter.id] == "stale"
+        assert statuses[healthy.front_matter.id] == "completed"
+    indexed_ids = {
+        document.metadata["artifact_id"]
+        for _, documents in store.upserts
+        for document in documents
+    }
+    assert failed.front_matter.id not in indexed_ids
+    assert healthy.front_matter.id in indexed_ids
+    assert "auto_reign_test__old" in store.deleted_collections

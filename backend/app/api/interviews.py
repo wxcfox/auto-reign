@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import not_found
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
+from app.repositories.vector_store import VectorStoreError
 from app.schemas.interviews import (
     AnswerFeedbackResponse,
     AnswerRequest,
@@ -26,11 +28,23 @@ from app.services.index_service import IndexService
 from app.services.interview_service import InterviewService
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 def get_session(request: Request) -> Iterator[Session]:
     with session_scope(request.app.state.session_factory) as session:
         yield session
+
+
+def _ensure_index_current_best_effort(request: Request) -> None:
+    try:
+        IndexService().ensure_current(
+            request.app.state.session_factory,
+            request.app.state.workspace_service,
+            ArtifactRepository(),
+        )
+    except VectorStoreError as exc:
+        logger.info("Workspace index refresh unavailable for interview flow: %s", exc)
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -167,11 +181,7 @@ def list_sessions(session: Session = Depends(get_session)) -> InterviewSessionLi
 def create_session(
     config_in: InterviewConfigIn, request: Request, session: Session = Depends(get_session)
 ) -> InterviewSessionCreatedResponse:
-    IndexService().ensure_current(
-        request.app.state.session_factory,
-        request.app.state.workspace_service,
-        ArtifactRepository(),
-    )
+    _ensure_index_current_best_effort(request)
     interview_session, turn = _interview_service(request).create_session(session, config_in)
     return InterviewSessionCreatedResponse(
         session=interview_session,
@@ -183,11 +193,7 @@ def create_session(
 def create_session_stream(
     config_in: InterviewConfigIn, request: Request, session: Session = Depends(get_session)
 ) -> StreamingResponse:
-    IndexService().ensure_current(
-        request.app.state.session_factory,
-        request.app.state.workspace_service,
-        ArtifactRepository(),
-    )
+    _ensure_index_current_best_effort(request)
     events = _interview_service(request).stream_create_session(session, config_in)
     return _streaming_response(events, _session_created_payload, session)
 
@@ -260,11 +266,7 @@ async def next_question(
     request: Request,
     session: Session = Depends(get_session),
 ) -> InterviewSessionCreatedResponse:
-    IndexService().ensure_current(
-        request.app.state.session_factory,
-        request.app.state.workspace_service,
-        ArtifactRepository(),
-    )
+    _ensure_index_current_best_effort(request)
     interview_session, turn = _interview_service(request).next_question(
         session,
         session_id,
@@ -279,11 +281,7 @@ async def next_question_stream(
     request: Request,
     session: Session = Depends(get_session),
 ) -> StreamingResponse:
-    IndexService().ensure_current(
-        request.app.state.session_factory,
-        request.app.state.workspace_service,
-        ArtifactRepository(),
-    )
+    _ensure_index_current_best_effort(request)
     events = _interview_service(request).stream_next_question(
         session,
         session_id,

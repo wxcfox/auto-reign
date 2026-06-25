@@ -77,20 +77,20 @@ describe("LibraryPage", () => {
     expect(screen.queryByText("knowledge/redis.md")).not.toBeInTheDocument();
   });
 
-  it("places search and upload above the document categories", async () => {
+  it("places search and upload in the file list heading", async () => {
     const { container } = render(<LibraryPage />);
 
     expect(await screen.findByRole("button", { name: /Knowledge cards\s+1/i })).toBeInTheDocument();
-    const tools = container.querySelector(".library-sidebar-tools");
-    const categoryList = container.querySelector(".library-category-list");
     const fileHeading = container.querySelector(".library-file-heading");
+    const searchbox = screen.getByRole("searchbox", { name: /Filter by keyword/i });
+    const upload = screen.getByRole("button", { name: /Upload/i });
 
-    expect(tools).toContainElement(screen.getByRole("searchbox", { name: /Filter by keyword/i }));
-    expect(tools).toContainElement(screen.getByRole("button", { name: /Upload/i }));
+    expect(fileHeading).toContainElement(searchbox);
+    expect(fileHeading).toContainElement(upload);
     expect(
-      tools!.compareDocumentPosition(categoryList!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      searchbox.compareDocumentPosition(upload) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(fileHeading?.querySelector(".search-field")).toBeNull();
+    expect(container.querySelector(".library-sidebar-tools")).toBeNull();
     expect(container.querySelector(".library-upload-panel")).toBeNull();
   });
 

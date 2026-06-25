@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.repositories.vector_store import VectorStoreUnavailable
 from app.services.retrieval_query_planner import RetrievalRequest
 
 
@@ -135,6 +136,25 @@ def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monk
     monkeypatch.setattr(
         "app.services.workspace_vector_store.WorkspaceVectorStore.search",
         fail_search,
+    )
+
+    created = client.post("/api/interview-sessions", json=CONFIG)
+
+    assert created.status_code == 200
+    body = created.json()
+    assert body["turn"]["question"]
+    assert body["turn"]["retrieved_context_refs"] == []
+
+
+def test_create_session_degrades_when_index_refresh_is_unavailable(
+    client: TestClient, monkeypatch
+) -> None:
+    def fail_ensure_current(*_args, **_kwargs):
+        raise VectorStoreUnavailable("qdrant unavailable")
+
+    monkeypatch.setattr(
+        "app.services.index_service.IndexService.ensure_current",
+        fail_ensure_current,
     )
 
     created = client.post("/api/interview-sessions", json=CONFIG)

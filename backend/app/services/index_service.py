@@ -144,7 +144,16 @@ class IndexService:
                         stale_ids.append(artifact.id)
                         continue
                     if build.documents:
-                        self.vector_store.upsert_documents(new_collection, build.documents)
+                        try:
+                            self.vector_store.upsert_documents(new_collection, build.documents)
+                        except VectorStoreError as exc:
+                            logger.info(
+                                "Workspace artifact %s could not be indexed: %s",
+                                artifact.id,
+                                exc,
+                            )
+                            stale_ids.append(artifact.id)
+                            continue
                     completed_ids.append(artifact.id)
         except Exception:
             self._delete_collection_best_effort(new_collection)

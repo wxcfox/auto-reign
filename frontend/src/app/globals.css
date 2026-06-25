@@ -1565,17 +1565,6 @@ a:focus-visible {
   color: var(--text);
 }
 
-.library-sidebar-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px;
-}
-
-.library-sidebar-tools .search-field {
-  min-width: 0;
-}
-
 .library-upload-control {
   position: relative;
   display: grid;
@@ -1640,6 +1629,15 @@ a:focus-visible {
 
 .library-file-heading {
   margin-bottom: 12px;
+}
+
+.library-file-actions {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.library-file-actions .search-field {
+  width: min(260px, 34vw);
 }
 
 .library-table-scroll {
