@@ -5,7 +5,7 @@ import LibraryPage from "./page";
 import { deleteWorkspaceArtifact, getWorkspaceArtifacts } from "@/lib/api";
 
 vi.mock("@/components/DocumentUploader", () => ({
-  DocumentUploader: () => <div>Uploader</div>,
+  DocumentUploader: () => <button type="button">Upload</button>,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -75,6 +75,23 @@ describe("LibraryPage", () => {
     expect(screen.queryByLabelText(/Preview/i)).not.toBeInTheDocument();
     expect(screen.queryByText("229ca53a-resume.md")).not.toBeInTheDocument();
     expect(screen.queryByText("knowledge/redis.md")).not.toBeInTheDocument();
+  });
+
+  it("places search and upload above the document categories", async () => {
+    const { container } = render(<LibraryPage />);
+
+    expect(await screen.findByRole("button", { name: /Knowledge cards\s+1/i })).toBeInTheDocument();
+    const tools = container.querySelector(".library-sidebar-tools");
+    const categoryList = container.querySelector(".library-category-list");
+    const fileHeading = container.querySelector(".library-file-heading");
+
+    expect(tools).toContainElement(screen.getByRole("searchbox", { name: /Filter by keyword/i }));
+    expect(tools).toContainElement(screen.getByRole("button", { name: /Upload/i }));
+    expect(
+      tools!.compareDocumentPosition(categoryList!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(fileHeading?.querySelector(".search-field")).toBeNull();
+    expect(container.querySelector(".library-upload-panel")).toBeNull();
   });
 
   it("deletes a workspace artifact from the table action", async () => {

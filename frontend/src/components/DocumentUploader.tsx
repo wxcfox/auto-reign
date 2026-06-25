@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { Upload } from "lucide-react";
 
 import { useTranslation } from "@/hooks/useTranslation";
@@ -14,52 +14,46 @@ type DocumentUploaderProps = {
 
 export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
   const { t } = useTranslation("library");
-  const [files, setFiles] = useState<File[]>([]);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setFiles(Array.from(event.target.files ?? []));
-    setError(null);
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (files.length === 0 || uploading) {
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    if (selectedFiles.length === 0 || uploading) {
       return;
     }
 
-    const form = event.currentTarget;
     setUploading(true);
     setError(null);
     try {
-      const response = await uploadMaterials(files);
+      const response = await uploadMaterials(selectedFiles);
       onUploaded(response);
-      setFiles([]);
-      form.reset();
     } catch (uploadError) {
       setError(getErrorMessage(uploadError, t, "common:errors.generic_upload"));
     } finally {
+      event.target.value = "";
       setUploading(false);
     }
   }
 
   return (
-    <form className="upload-tool" onSubmit={handleSubmit}>
-      <div>
-        <label className="field-label" htmlFor="document-file">
-          {t("uploader.label")}
-        </label>
-        <input
-          accept=".md,.txt,.pdf,.docx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          id="document-file"
-          multiple
-          onChange={handleFileChange}
-          type="file"
-        />
-        <p className="field-hint">{t("uploader.hint", "Markdown/TXT/PDF/DOCX files are organized automatically.")}</p>
-      </div>
-      <button className="button button-primary" disabled={files.length === 0 || uploading} type="submit">
+    <div className="library-upload-control">
+      <input
+        accept=".md,.txt,.pdf,.docx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        aria-label={t("upload_label")}
+        className="sr-only"
+        multiple
+        onChange={handleFileChange}
+        ref={inputRef}
+        type="file"
+      />
+      <button
+        className="button button-primary library-upload-button"
+        disabled={uploading}
+        onClick={() => inputRef.current?.click()}
+        type="button"
+      >
         <Upload aria-hidden="true" size={17} />
         {uploading ? t("uploader.uploading") : t("common:actions.upload")}
       </button>
@@ -68,6 +62,6 @@ export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
           {error}
         </p>
       ) : null}
-    </form>
+    </div>
   );
 }

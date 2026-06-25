@@ -32,8 +32,10 @@
     "delete": "删除"
   },
   "categories": {
-    "title": "分类",
-    "all": "全部文件"
+    "title": "文档分类",
+    "all": "全部文件",
+    "collapse": "收起文档分类",
+    "expand": "展开文档分类"
   },
   "owners": {
     "sources": "原始资料",
