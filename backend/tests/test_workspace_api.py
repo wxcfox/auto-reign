@@ -411,8 +411,8 @@ def test_workspace_artifact_delete_keeps_file_when_vector_delete_fails(
     artifact_path = workspace.resolve_path("knowledge/keep-me.md")
 
     class FailingVectorStore:
-        def delete_document_chunks(self, collection_name: str, document_id: str) -> None:
-            raise VectorStoreUnavailable(f"{collection_name}:{document_id}")
+        def delete_artifact_chunks(self, collection_name: str, artifact_id: str) -> None:
+            raise VectorStoreUnavailable(f"{collection_name}:{artifact_id}")
 
     class FailingIndexService:
         settings = SimpleNamespace(qdrant_collection="auto_reign_test")

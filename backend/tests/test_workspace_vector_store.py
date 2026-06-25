@@ -6,6 +6,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 
 from app.repositories.vector_store import VectorStoreUnavailable, stable_vector_id
+from app.core.config import Settings
 from app.services.embedding_service import DeterministicEmbeddings
 from app.services.workspace_vector_store import WorkspaceVectorHit, WorkspaceVectorStore
 
@@ -157,6 +158,22 @@ def test_upsert_documents_is_a_no_op_for_empty_input(
 
     assert FakeLangChainQdrant.instances == []
     assert client.calls == []
+
+
+def test_delete_does_not_initialize_embeddings_when_provider_is_unconfigured(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        deterministic_model_fallback=False,
+        qwen_api_key=None,
+    )
+    client = FakeQdrantClient()
+    store = WorkspaceVectorStore(settings=settings, client=client)
+
+    store.delete_artifact_chunks("workspace", "a1")
+
+    assert [name for name, _ in client.calls] == ["collection_exists", "delete"]
 
 
 def test_upsert_documents_maps_langchain_failures_to_unavailable(

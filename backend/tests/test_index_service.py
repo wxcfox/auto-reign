@@ -1,42 +1,57 @@
 from pathlib import Path
 
 import pytest
+from langchain_core.documents import Document
 
 from app.repositories.artifact_repository import ArtifactRepository
-from app.repositories.vector_store import VectorChunk, VectorStoreError, stable_vector_id
+from app.repositories.vector_store import VectorStoreUnavailable
 from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
 from app.services.artifact_service import ArtifactService
 from app.services.index_service import IndexService
 from app.services.workspace_service import WorkspaceService
 
 
-class RecordingVectorStore:
-    def __init__(self, *, fail_upsert: bool = False, fail_delete_collection: bool = False) -> None:
+class RecordingWorkspaceVectorStore:
+    def __init__(
+        self,
+        *,
+        fail_prepare: bool = False,
+        fail_upsert: bool = False,
+        fail_delete_collection: bool = False,
+    ) -> None:
+        self.fail_prepare = fail_prepare
         self.fail_upsert = fail_upsert
         self.fail_delete_collection = fail_delete_collection
-        self.upserts: list[tuple[str, list[VectorChunk]]] = []
-        self.deleted_documents: list[tuple[str, str]] = []
+        self.prepared: list[list[Document]] = []
+        self.upserts: list[tuple[str, list[Document]]] = []
+        self.deleted_artifacts: list[tuple[str, str]] = []
         self.deleted_collections: list[str] = []
         self.collections: set[str] = set()
 
-    def upsert_chunks(self, collection_name: str, chunks: list[VectorChunk]) -> None:
-        if self.fail_upsert:
-            raise VectorStoreError("upsert failed")
-        self.collections.add(collection_name)
-        self.upserts.append((collection_name, chunks))
+    def prepare_documents(self, documents: list[Document]) -> None:
+        if self.fail_prepare:
+            raise VectorStoreUnavailable("prepare failed")
+        self.prepared.append(documents)
 
-    def delete_document_chunks(self, collection_name: str, document_id: str) -> None:
-        self.deleted_documents.append((collection_name, document_id))
+    def upsert_documents(self, collection_name: str, documents: list[Document]) -> None:
+        if self.fail_upsert:
+            raise VectorStoreUnavailable("upsert failed")
+        self.collections.add(collection_name)
+        self.upserts.append((collection_name, documents))
+
+    def delete_artifact_chunks(self, collection_name: str, artifact_id: str) -> None:
+        self.deleted_artifacts.append((collection_name, artifact_id))
 
     def has_searchable_content(self, collection_name: str) -> bool:
         return collection_name in self.collections
 
-    def search(self, collection_name: str, query_embedding: list[float], limit: int):
+    def search(self, collection_name: str, query: str, *, limit: int, metadata_filter=None):
+        del collection_name, query, limit, metadata_filter
         return []
 
     def delete_collection(self, collection_name: str) -> None:
         if self.fail_delete_collection:
-            raise VectorStoreError("delete failed")
+            raise VectorStoreUnavailable("delete failed")
         self.deleted_collections.append(collection_name)
         self.collections.discard(collection_name)
 
@@ -44,18 +59,10 @@ class RecordingVectorStore:
         return sorted(self.collections)
 
 
-class FakeEmbedder:
-    def __init__(self, *, fail: bool = False) -> None:
-        self.fail = fail
-
-    def split_text(self, text: str, chunk_size: int = 900, overlap: int = 120) -> list[str]:
-        del chunk_size, overlap
-        return [chunk for chunk in text.split("\n\n") if chunk.strip()]
-
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        if self.fail:
-            raise RuntimeError("embedding failed")
-        return [[float(index + 1), 0.0] for index, _ in enumerate(texts)]
+class FailingTextSplitter:
+    def split(self, documents: list[Document]) -> list[Document]:
+        del documents
+        raise RuntimeError("split failed")
 
 
 @pytest.fixture
@@ -83,7 +90,17 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         media_type="application/pdf",
         content=b"%PDF",
     )
-    artifacts.create_markdown("knowledge/python.md", kind="knowledge", body="# Python\n\nGIL")
+    extracted = artifacts.create_markdown(
+        "sources/extracted/resume.md",
+        kind="extracted",
+        body="# Extracted resume\n\npdf text",
+    )
+    knowledge = artifacts.create_markdown(
+        "knowledge/python.md",
+        kind="knowledge",
+        body="# Python\n\nGIL",
+        source_refs=[f"source:{text_source.artifact_id}"],
+    )
     question_card = artifacts.create_markdown(
         "questions/cache-stampede.md",
         kind="question_bank",
@@ -94,16 +111,35 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         kind="project",
         body="# Order cache\n\nhot key mitigation project",
     )
-    artifacts.create_markdown("reports/session.md", kind="report", body="# Report\n\nDo not index")
-    artifacts.create_markdown(
+    interview_record = artifacts.create_markdown(
+        "raw/20260625.md",
+        kind="interview_record",
+        body="# Interview\n\nRedis cache breakdown question",
+    )
+    high_frequency = artifacts.create_markdown(
+        "review/high-frequency.md",
+        kind="high_frequency",
+        body="# High frequency\n\nTwo phase commit",
+    )
+    practice = artifacts.create_markdown(
+        "practice/session-1.md",
+        kind="practice",
+        body="# Practice\n\nAnswer evidence",
+    )
+    report = artifacts.create_markdown(
+        "reports/session.md",
+        kind="report",
+        body="# Report\n\nDo not index",
+    )
+    recovery = artifacts.create_markdown(
         "knowledge/recovery.md",
         kind="knowledge",
         body="# Recovery\n",
         recovery_required=True,
         recovery_reason="manual repair required",
     )
-    store = RecordingVectorStore()
-    service = IndexService(vector_store=store, embedder=FakeEmbedder())
+    store = RecordingWorkspaceVectorStore()
+    service = IndexService(vector_store=store)
 
     with _session(client) as session:
         workspace.rebuild_projection(session, repository, artifacts)
@@ -113,17 +149,49 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         session.commit()
 
     indexed_ids = {
-        chunk.metadata["artifact_id"] for _, chunks in store.upserts for chunk in chunks
+        document.metadata["artifact_id"]
+        for _, documents in store.upserts
+        for document in documents
     }
-    assert text_source.artifact_id in indexed_ids
-    assert question_card.front_matter.id in indexed_ids
-    assert project.front_matter.id in indexed_ids
+    assert {
+        text_source.artifact_id,
+        extracted.front_matter.id,
+        knowledge.front_matter.id,
+        question_card.front_matter.id,
+        project.front_matter.id,
+        interview_record.front_matter.id,
+        high_frequency.front_matter.id,
+        practice.front_matter.id,
+    }.issubset(indexed_ids)
     assert binary_source.artifact_id not in indexed_ids
-    assert {row.kind: row.index_status for row in rows}["report"] == "completed"
+    assert report.front_matter.id not in indexed_ids
+    assert recovery.front_matter.id not in indexed_ids
+
+    documents = [document for _, upserted in store.upserts for document in upserted]
+    assert all(isinstance(document, Document) for document in documents)
     assert "Do not index" not in {
-        chunk.content for _, chunks in store.upserts for chunk in chunks
+        document.page_content for document in documents
     }
-    assert all(chunk.metadata["source_refs"] == [] for _, chunks in store.upserts for chunk in chunks)
+    knowledge_document = next(
+        document
+        for document in documents
+        if document.metadata["artifact_id"] == knowledge.front_matter.id
+    )
+    assert knowledge_document.metadata["source_type"] == "artifact"
+    assert knowledge_document.metadata["document_id"] == knowledge.front_matter.id
+    assert knowledge_document.metadata["source_id"] == knowledge.front_matter.id
+    assert knowledge_document.metadata["artifact_kind"] == "knowledge"
+    assert knowledge_document.metadata["relative_path"] == "knowledge/python.md"
+    assert knowledge_document.metadata["source_refs"] == [f"source:{text_source.artifact_id}"]
+    assert knowledge_document.metadata["chunk_index"] == 0
+
+    statuses = {row.id: row.index_status for row in rows}
+    assert statuses[report.front_matter.id] == "completed"
+    assert statuses[binary_source.artifact_id] == "completed"
+    assert statuses[recovery.front_matter.id] == "stale"
+    assert ("auto_reign_test", report.front_matter.id) in store.deleted_artifacts
+    assert ("auto_reign_test", binary_source.artifact_id) in store.deleted_artifacts
+    assert ("auto_reign_test", recovery.front_matter.id) not in store.deleted_artifacts
 
 
 def test_index_artifact_marks_stale_when_build_fails_without_deleting_live_vectors(
@@ -131,8 +199,8 @@ def test_index_artifact_marks_stale_when_build_fails_without_deleting_live_vecto
 ) -> None:
     workspace, artifacts, repository = workspace_stack
     created = artifacts.create_markdown("knowledge/fail.md", kind="knowledge", body="# Fail\n")
-    store = RecordingVectorStore()
-    service = IndexService(vector_store=store, embedder=FakeEmbedder(fail=True))
+    store = RecordingWorkspaceVectorStore()
+    service = IndexService(vector_store=store, text_splitter=FailingTextSplitter())
 
     with _session(client) as session:
         workspace.rebuild_projection(session, repository, artifacts)
@@ -140,7 +208,28 @@ def test_index_artifact_marks_stale_when_build_fails_without_deleting_live_vecto
         service.index_artifact(session, row, workspace)
         session.commit()
 
-    assert store.deleted_documents == []
+    assert store.deleted_artifacts == []
+    assert store.upserts == []
+    with _session(client) as session:
+        assert repository.get(session, created.front_matter.id).index_status == "stale"
+
+
+def test_index_artifact_marks_stale_when_embedding_prepare_fails_without_deleting_vectors(
+    client, workspace_stack
+) -> None:
+    workspace, artifacts, repository = workspace_stack
+    created = artifacts.create_markdown("knowledge/prepare-fail.md", kind="knowledge", body="# Fail\n")
+    store = RecordingWorkspaceVectorStore(fail_prepare=True)
+    service = IndexService(vector_store=store)
+
+    with _session(client) as session:
+        workspace.rebuild_projection(session, repository, artifacts)
+        row = repository.get(session, created.front_matter.id)
+        service.index_artifact(session, row, workspace)
+        session.commit()
+
+    assert store.deleted_artifacts == []
+    assert store.upserts == []
     with _session(client) as session:
         assert repository.get(session, created.front_matter.id).index_status == "stale"
 
@@ -148,9 +237,9 @@ def test_index_artifact_marks_stale_when_build_fails_without_deleting_live_vecto
 def test_rebuild_index_builds_new_collection_and_swaps_pointer(client, workspace_stack) -> None:
     workspace, artifacts, repository = workspace_stack
     created = artifacts.create_markdown("knowledge/swap.md", kind="knowledge", body="# Swap\n")
-    store = RecordingVectorStore()
+    store = RecordingWorkspaceVectorStore()
     store.collections.update({"auto_reign_test__old", "auto_reign_test__orphan"})
-    service = IndexService(vector_store=store, embedder=FakeEmbedder())
+    service = IndexService(vector_store=store)
     settings_repository = WorkspaceSettingsRepository()
 
     with _session(client) as session:
@@ -172,6 +261,8 @@ def test_rebuild_index_builds_new_collection_and_swaps_pointer(client, workspace
         assert settings.active_collection.startswith("auto_reign_test__")
         assert settings.active_collection != "auto_reign_test__old"
         assert row.index_status == "completed"
+    assert store.upserts
+    assert all(isinstance(document, Document) for _, documents in store.upserts for document in documents)
     assert "auto_reign_test__old" in store.deleted_collections
     assert "auto_reign_test__orphan" in store.deleted_collections
 
@@ -181,8 +272,8 @@ def test_rebuild_index_failure_keeps_old_pointer_and_deletes_partial_collection(
 ) -> None:
     workspace, artifacts, repository = workspace_stack
     artifacts.create_markdown("knowledge/fail-rebuild.md", kind="knowledge", body="# Fail\n")
-    store = RecordingVectorStore(fail_upsert=True)
-    service = IndexService(vector_store=store, embedder=FakeEmbedder())
+    store = RecordingWorkspaceVectorStore(fail_upsert=True)
+    service = IndexService(vector_store=store)
     settings_repository = WorkspaceSettingsRepository()
 
     with _session(client) as session:
@@ -191,7 +282,7 @@ def test_rebuild_index_failure_keeps_old_pointer_and_deletes_partial_collection(
         settings.active_collection = "auto_reign_test__old"
         session.commit()
 
-    with pytest.raises(VectorStoreError):
+    with pytest.raises(VectorStoreUnavailable):
         service.rebuild_index(
             client.app.state.session_factory,
             workspace,
@@ -202,17 +293,4 @@ def test_rebuild_index_failure_keeps_old_pointer_and_deletes_partial_collection(
     with _session(client) as session:
         assert settings_repository.get_or_create(session).active_collection == "auto_reign_test__old"
     assert any(name.startswith("auto_reign_test__") for name in store.deleted_collections)
-
-
-def test_stable_vector_id_is_used_for_workspace_artifacts(client, workspace_stack) -> None:
-    workspace, artifacts, repository = workspace_stack
-    created = artifacts.create_markdown("knowledge/id.md", kind="knowledge", body="# ID\n")
-    store = RecordingVectorStore()
-    service = IndexService(vector_store=store, embedder=FakeEmbedder())
-
-    with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        row = repository.get(session, created.front_matter.id)
-        service.index_artifact(session, row, workspace, collection_name="workspace")
-
-    assert store.upserts[0][1][0].id == stable_vector_id("artifact", created.front_matter.id, 0)
+    assert "auto_reign_test__old" not in store.deleted_collections

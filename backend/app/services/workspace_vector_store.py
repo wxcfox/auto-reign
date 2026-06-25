@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from langchain_core.documents import Document
@@ -38,7 +39,23 @@ class WorkspaceVectorStore:
     ) -> None:
         self.settings = settings or get_settings()
         self.client = client or self._build_client()
-        self.embeddings = embeddings or EmbeddingService(self.settings).embeddings
+        self._embeddings = embeddings
+
+    @property
+    def embeddings(self) -> Embeddings:
+        if self._embeddings is None:
+            self._embeddings = EmbeddingService(self.settings).embeddings
+        return self._embeddings
+
+    def prepare_documents(self, documents: list[Document]) -> None:
+        if not documents:
+            return
+        try:
+            self.embeddings.embed_documents([document.page_content for document in documents])
+        except VectorStoreUnavailable:
+            raise
+        except Exception as exc:
+            raise VectorStoreUnavailable("Qdrant LangChain embedding preparation failed") from exc
 
     def upsert_documents(self, collection_name: str, documents: list[Document]) -> None:
         if not documents:
@@ -177,3 +194,8 @@ class WorkspaceVectorStore:
         source_id = metadata.get("artifact_id") or metadata.get("source_id") or "artifact"
         chunk_index = int(metadata.get("chunk_index", 0))
         return stable_vector_id("artifact", str(source_id), chunk_index)
+
+
+@lru_cache
+def get_workspace_vector_store() -> WorkspaceVectorStore:
+    return WorkspaceVectorStore()
