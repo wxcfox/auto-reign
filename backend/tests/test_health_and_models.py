@@ -39,7 +39,7 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
 
 def test_frontend_origin_is_allowed(client: TestClient) -> None:
     response = client.options(
-        "/api/documents",
+        "/api/health",
         headers={
             "Origin": "http://localhost:3000",
             "Access-Control-Request-Method": "GET",

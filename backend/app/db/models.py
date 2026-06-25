@@ -40,43 +40,6 @@ class Base(DeclarativeBase):
     pass
 
 
-class Document(Base):
-    __tablename__ = "documents"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    collection: Mapped[str] = mapped_column(String(120), default="default")
-    source_filename: Mapped[str] = mapped_column(String(255))
-    file_path: Mapped[str] = mapped_column(String(1024))
-    file_type: Mapped[str] = mapped_column(String(32))
-    title: Mapped[str] = mapped_column(String(255))
-    summary: Mapped[str] = mapped_column(Text)
-    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
-    knowledge_points: Mapped[list[str]] = mapped_column(JSON, default=list)
-    weakness_candidates: Mapped[list[str]] = mapped_column(JSON, default=list)
-    analysis_status: Mapped[str] = mapped_column(String(32), default="pending")
-    index_status: Mapped[str] = mapped_column(String(32), default="pending")
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
-
-    chunks: Mapped[list["DocumentChunk"]] = relationship(
-        back_populates="document", cascade="all, delete-orphan"
-    )
-
-
-class DocumentChunk(Base):
-    __tablename__ = "document_chunks"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
-    chunk_index: Mapped[int] = mapped_column(Integer)
-    content_hash: Mapped[str] = mapped_column(String(128))
-    vector_collection: Mapped[str] = mapped_column(String(120))
-    vector_id: Mapped[str] = mapped_column(String(255), unique=True)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-
-    document: Mapped[Document] = relationship(back_populates="chunks")
-
-
 class InterviewConfig(Base):
     __tablename__ = "interview_configs"
 

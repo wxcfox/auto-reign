@@ -1,44 +1,7 @@
-from collections.abc import Iterable
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import models
-
-
-class DocumentRepository:
-    def add(self, session: Session, document: models.Document) -> models.Document:
-        session.add(document)
-        session.flush()
-        return document
-
-    def get(self, session: Session, document_id: str) -> models.Document | None:
-        return session.get(models.Document, document_id)
-
-    def list(self, session: Session) -> list[models.Document]:
-        return list(session.scalars(select(models.Document).order_by(models.Document.created_at.desc())))
-
-
-class DocumentChunkRepository:
-    def add_many(self, session: Session, chunks: Iterable[models.DocumentChunk]) -> None:
-        session.add_all(list(chunks))
-        session.flush()
-
-    def delete_for_document(self, session: Session, document_id: str) -> None:
-        for chunk in session.scalars(
-            select(models.DocumentChunk).where(models.DocumentChunk.document_id == document_id)
-        ):
-            session.delete(chunk)
-        session.flush()
-
-    def list_for_document(self, session: Session, document_id: str) -> list[models.DocumentChunk]:
-        return list(
-            session.scalars(
-                select(models.DocumentChunk)
-                .where(models.DocumentChunk.document_id == document_id)
-                .order_by(models.DocumentChunk.chunk_index)
-            )
-        )
 
 
 class InterviewConfigRepository:
