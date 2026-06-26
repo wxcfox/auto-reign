@@ -1,8 +1,23 @@
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
 
 from app.repositories.vector_store import VectorStoreUnavailable
+
+
+def _sse_result(body: str) -> dict[str, object]:
+    for frame in body.strip().split("\n\n"):
+        lines = frame.splitlines()
+        if "event: result" not in lines:
+            continue
+        data = "\n".join(
+            line.removeprefix("data:").strip()
+            for line in lines
+            if line.startswith("data:")
+        )
+        return json.loads(data)
+    raise AssertionError("SSE response did not include a result event.")
 
 
 def test_workspace_status_is_initialized_on_startup(client) -> None:
@@ -127,7 +142,7 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
 
     response = client.post(
-        "/api/workspace/learning-notes",
+        "/api/workspace/learning-notes/stream",
         json={
             "text": "今天学习了 Redis 缓存穿透、布隆过滤器和空值缓存。",
             "language": "zh-CN",
@@ -137,7 +152,7 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     )
 
     assert response.status_code == 200
-    body = response.json()
+    body = _sse_result(response.text)
     assert body["source"]["duplicate"] is False
     assert re.match(r"inbox/\d{4}-\d{2}-\d{2}\.md", body["source"]["relative_path"])
     assert body["artifact"]["kind"] == "knowledge"
@@ -167,7 +182,7 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
 
 def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) -> None:
     class FixedModelService:
-        def summarize_learning_note(
+        def stream_learning_note_summary(
             self,
             text: str,
             *,
@@ -175,14 +190,12 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
             provider: str | None = None,
             model: str | None = None,
         ):
-            from app.services.model_service import LearningNoteSummaryResult
-
-            return LearningNoteSummaryResult(
-                title="Redis 缓存穿透",
-                summary=f"已整理：{text}",
-                key_points=["布隆过滤器和空值缓存是常见治理方案。"],
-                interview_takeaways=["先说明风险，再说明布隆过滤器和空值缓存的取舍。"],
-                follow_up_questions=["布隆过滤器误判会带来什么影响？"],
+            yield (
+                "# Redis 缓存穿透\n\n"
+                f"## 摘要\n\n已整理：{text}\n\n"
+                "## 关键点\n\n- 布隆过滤器和空值缓存是常见治理方案。\n\n"
+                "## 面试表达\n\n- 先说明风险，再说明布隆过滤器和空值缓存的取舍。\n\n"
+                "## 可追问问题\n\n- 布隆过滤器误判会带来什么影响？"
             )
 
     class RecordingIndexService:
@@ -192,20 +205,22 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
     monkeypatch.setattr("app.api.workspace.ModelService", FixedModelService)
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
 
-    first = client.post(
-        "/api/workspace/learning-notes",
+    first_response = client.post(
+        "/api/workspace/learning-notes/stream",
         json={
             "text": "第一次：缓存穿透可以用布隆过滤器挡住不存在的 key。",
             "language": "zh-CN",
         },
-    ).json()
-    second = client.post(
-        "/api/workspace/learning-notes",
+    )
+    second_response = client.post(
+        "/api/workspace/learning-notes/stream",
         json={
             "text": "第二次：空值缓存也可以降低数据库压力。",
             "language": "zh-CN",
         },
-    ).json()
+    )
+    first = _sse_result(first_response.text)
+    second = _sse_result(second_response.text)
 
     artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
     knowledge_artifacts = [artifact for artifact in artifacts if artifact["kind"] == "knowledge"]

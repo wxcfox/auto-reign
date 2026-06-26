@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-from collections import Counter
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -14,14 +13,6 @@ from app.core.config import Settings, get_settings
 from app.core.errors import bad_gateway, service_unavailable
 
 logger = logging.getLogger(__name__)
-
-
-class DocumentAnalysisResult(BaseModel):
-    title: str
-    summary: str
-    tags: list[str] = Field(default_factory=list)
-    knowledge_points: list[str] = Field(default_factory=list)
-    weakness_candidates: list[str] = Field(default_factory=list)
 
 
 class LearningNoteSummaryResult(BaseModel):
@@ -94,15 +85,6 @@ class ModelService:
         self.settings = settings or get_settings()
         self.client_factory = client_factory
         self.prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
-
-    def analyze_document(self, text: str) -> DocumentAnalysisResult:
-        if self.settings.deterministic_model_fallback:
-            return self._fallback_document_analysis(text)
-        return self._structured_chat(
-            "document_analysis.md",
-            {"document": text},
-            DocumentAnalysisResult,
-        )
 
     def summarize_learning_note(
         self,
@@ -474,22 +456,6 @@ class ModelService:
             )
         return provider, resolved_model, api_key, base_url
 
-    def _fallback_document_analysis(self, text: str) -> DocumentAnalysisResult:
-        title = self._title_from_markdown(text)
-        summary = self._summary_from_text(text)
-        tags = self._tags_from_text(text)
-        knowledge_points = self._knowledge_points_from_text(text)
-        weakness_candidates = [
-            f"Review {tags[0]} tradeoffs" if tags else "Review core project tradeoffs"
-        ]
-        return DocumentAnalysisResult(
-            title=title,
-            summary=summary,
-            tags=tags,
-            knowledge_points=knowledge_points,
-            weakness_candidates=weakness_candidates,
-        )
-
     def _fallback_report(self, request: ReportGenerationRequest) -> str:
         weaknesses = sorted(
             {
@@ -620,21 +586,3 @@ class ModelService:
             ),
         ]
         return "\n\n".join(sections)
-
-    def _summary_from_text(self, text: str) -> str:
-        compact = " ".join(text.split())
-        if not compact:
-            return "Empty document."
-        return compact[:180]
-
-    def _tags_from_text(self, text: str) -> list[str]:
-        words = [word.lower() for word in re.findall(r"[A-Za-z][A-Za-z0-9_-]*", text)]
-        stop_words = {"with", "that", "this", "from", "have", "built", "systems"}
-        counts = Counter(word for word in words if len(word) > 3 and word not in stop_words)
-        return [word for word, _ in counts.most_common(5)] or ["document"]
-
-    def _knowledge_points_from_text(self, text: str) -> list[str]:
-        compact = " ".join(text.split())
-        if not compact:
-            return ["Document is empty and needs more source material."]
-        return [compact[:120]]
