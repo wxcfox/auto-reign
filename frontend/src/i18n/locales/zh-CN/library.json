@@ -6,20 +6,14 @@
   "delete_confirm": "确定删除“{{name}}”吗？此操作会删除本地 workspace 中对应文件。",
   "edit_named": "编辑 {{name}}",
   "delete_named": "删除 {{name}}",
-  "indexed_eyebrow": "已索引资料",
-  "documents_title": "文档",
   "browser_title": "文件",
   "browser_eyebrow": "自动整理",
   "upload_label": "上传资料",
   "keyword_label": "按关键词筛选",
   "keyword_placeholder": "搜索文件",
-  "tag_label": "按标签筛选",
-  "tag_placeholder": "标签",
   "loading": "文档加载中...",
   "empty": "上传简历、JD、资料笔记或学习记录后，系统会自动整理到这里。",
   "empty_filtered": "当前分类或搜索条件下没有匹配文件。",
-  "no_summary": "暂无摘要。",
-  "updated": "更新于 {{value}}",
   "table": {
     "name": "名称",
     "owner": "归属",
@@ -68,18 +62,5 @@
     "label": "文档",
     "hint": "支持 Markdown/TXT/PDF/DOCX，系统会自动整理。",
     "uploading": "上传中..."
-  },
-  "detail": {
-    "back": "资料库",
-    "loading": "文档加载中...",
-    "save_success": "保存成功。",
-    "save_reindex_success": "保存成功，已重建索引。",
-    "source_analysis": "分析：{{status}}",
-    "source_index": "索引：{{status}}",
-    "title_label": "标题",
-    "summary_label": "摘要",
-    "tags_label": "标签",
-    "knowledge_points_label": "知识点",
-    "weakness_candidates_label": "薄弱项候选"
   }
 }

@@ -1,70 +1,40 @@
 # Claude Code Instructions
 
-## Required Context
+## 必读上下文
 
-Before implementing the next Auto Reign development cycle, read these files in
-order:
+实现 Auto Reign 的较大开发任务前，按顺序阅读：
 
 1. `AGENTS.md`
 2. `README.md`
-3. `docs/superpowers/specs/2026-06-22-filesystem-first-interview-workbench-design.md`
-4. The current backend, frontend, Alembic migrations, startup scripts, and tests
-   relevant to the phase being planned.
+3. `docs/workbench-architecture.md`
+4. `docs/knowledge-data-flow.md`
+5. 与当前任务相关的后端、前端、Alembic 迁移、启动脚本和测试。
 
-`README.md` describes the currently runnable v1. The filesystem-first design is
-the canonical target behavior and intentionally replaces the v1 document,
-memory, retrieval, and review assumptions.
+`README.md` 描述当前可运行实现；`docs/workbench-architecture.md` 是长期产品与架构边界；资料入库、索引和检索细节以 `docs/knowledge-data-flow.md` 为准。
 
-## Implementation Gate
+## 实施约束
 
-Do not start by implementing the entire design. First create a detailed,
-phased plan under `docs/superpowers/plans/`. The plan is a temporary working
-artifact for the current phase, not durable project documentation. The plan
-must:
+涉及工作台架构、存储、入库、检索、面试流程或主界面的较大变更时，先在 `docs/superpowers/plans/` 写分阶段实施计划。计划是临时工作产物，不是长期文档。计划应列出精确文件、测试、迁移影响、数据重置影响和验证命令，并保持每个阶段结束时应用可运行。
 
-- follow the four phases in the canonical design;
-- name every file to create, modify, rename, or delete;
-- define exact Pydantic contracts, database columns, API requests/responses,
-  background job transitions, and filesystem update rules;
-- include a failing test before each behavioral implementation task;
-- list focused and phase-level verification commands;
-- identify the explicit local data reset required by incompatible schema or
-  workspace changes;
-- keep the application runnable after every phase.
+实现时按计划逐步推进。准备 PR 前，删除已完成的一次性计划，或把仍然有效的决策沉淀到 `README.md`、`docs/workbench-architecture.md`、`docs/knowledge-data-flow.md` 或其他专题文档。不要把过时计划留作历史归档。
 
-Implement only after the plan is coherent and internally reviewed. Work through
-the plan task by task, verify each task, and make small intentional commits.
-Before opening or updating a PR, delete completed one-off plans or promote the
-lasting decisions into the canonical docs. Do not leave completed task plans in
-the repository as historical clutter.
+## 产品规则
 
-## Non-Negotiable Product Rules
+- 用户应专注于上传真实资料和练习回答，而不是维护标签、文档角色、trust level、chunk 或索引。
+- 原始资料和真实回答是不可变证据；修正、整理和 AI 生成内容是单独 artifact。
+- 上传笔记只表示用户准备过什么，不能当作通用正确答案。
+- 只有真实练习证据可以改变 mastery 状态。
+- 文件是长期学习资产；MySQL 保存运行状态和可重建投影；Qdrant 是可重建检索索引。
+- LLM 只返回经过校验的结构化建议；文件系统、数据库和向量写入由确定性应用代码执行。
+- 用户可见 Markdown 按 artifact 语义决定是否可编辑，保存后重新投影和索引。
+- 当前复习重点不超过三个。
+- 不为已替代的旧行为保留兼容分支。
+- 绝不能静默删除本地用户数据。
 
-- The user spends time uploading real material and practicing answers, not
-  maintaining tags, document roles, trust levels, chunks, or indexes.
-- Original sources and answers are immutable evidence. Corrections and generated
-  material are separate artifacts.
-- Uploaded notes personalize questions but are not authoritative correctness
-  references.
-- Only observed interview answers can change mastery state.
-- Files are the durable learning assets. MySQL stores operational state and
-  rebuildable projections; Qdrant is a rebuildable retrieval index.
-- LLMs return validated structured proposals. Application code owns filesystem,
-  database, and vector mutations.
-- User-visible Markdown is editable according to the artifact-specific rules in
-  the design and is reprocessed automatically.
-- The active learning plan contains no more than three priorities.
-- Do not preserve v1 behavior through compatibility branches when it conflicts
-  with the target design.
-- Never silently delete existing local data.
+## 工程纪律
 
-## Engineering Discipline
-
-- Prefer the simplest implementation that satisfies the approved design.
-- State assumptions in the implementation plan instead of making hidden choices.
-- Keep changes scoped to the current task and remove only code made obsolete by
-  that task.
-- Use test-driven development for behavior changes.
-- Run the canonical checks in `AGENTS.md` before declaring a phase complete.
-- Do not claim completion based on code inspection alone; report fresh command
-  output and any checks that could not run.
+- 优先采用满足当前设计的最简单实现。
+- 对行为变更先添加聚焦测试，再改实现。
+- 改动范围只覆盖当前任务，删除确实已被当前任务淘汰的代码。
+- 使用 `AGENTS.md` 中的权威命令做提交前验证。
+- 不要只凭代码检查声称完成；报告最新验证命令和无法运行的检查。

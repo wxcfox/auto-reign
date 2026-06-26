@@ -315,25 +315,6 @@ async def upload_materials(
     )
 
 
-@router.post("/learning-notes", response_model=LearningNoteResponse)
-def record_learning_note(
-    payload: LearningNoteRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-) -> LearningNoteResponse:
-    note = payload.text.strip()
-    if not note:
-        raise bad_request("learning_note_empty", "Learning note text is required.")
-
-    summary = ModelService().summarize_learning_note(
-        note,
-        language=payload.language,
-        provider=payload.provider,
-        model=payload.model,
-    )
-    return _persist_learning_note(note, payload.language, summary, request, background_tasks)
-
-
 @router.post("/learning-notes/stream")
 def record_learning_note_stream(
     payload: LearningNoteRequest,

@@ -6,20 +6,14 @@
   "delete_confirm": "Delete \"{{name}}\"? This removes the matching local workspace file.",
   "edit_named": "Edit {{name}}",
   "delete_named": "Delete {{name}}",
-  "indexed_eyebrow": "Indexed material",
-  "documents_title": "Documents",
   "browser_title": "Files",
   "browser_eyebrow": "Auto organized",
   "upload_label": "Upload material",
   "keyword_label": "Filter by keyword",
   "keyword_placeholder": "Search files",
-  "tag_label": "Filter by tag",
-  "tag_placeholder": "Tag",
   "loading": "Loading documents...",
   "empty": "Upload a resume, JD, source note, or learning note and it will appear here.",
   "empty_filtered": "No files match the current category or search.",
-  "no_summary": "No summary available.",
-  "updated": "Updated {{value}}",
   "table": {
     "name": "Name",
     "owner": "Owner",
@@ -68,18 +62,5 @@
     "label": "Document",
     "hint": "Markdown/TXT/PDF/DOCX, organized automatically.",
     "uploading": "Uploading..."
-  },
-  "detail": {
-    "back": "Library",
-    "loading": "Loading document...",
-    "save_success": "Saved.",
-    "save_reindex_success": "Saved and reindexed.",
-    "source_analysis": "Analysis: {{status}}",
-    "source_index": "Index: {{status}}",
-    "title_label": "Title",
-    "summary_label": "Summary",
-    "tags_label": "Tags",
-    "knowledge_points_label": "Knowledge points",
-    "weakness_candidates_label": "Weakness candidates"
   }
 }
