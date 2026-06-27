@@ -175,6 +175,8 @@ def test_mysql_offline_migration_does_not_set_json_defaults(monkeypatch, capsys)
     assert "follow_up_weaknesses JSON NOT NULL" in stdout
     assert "follow_up_review_suggestions JSON NOT NULL" in stdout
     assert "follow_up_tested_points JSON NOT NULL" in stdout
+    assert "better_answer TEXT NOT NULL DEFAULT" not in stdout
+    assert "follow_up_better_answer TEXT NOT NULL DEFAULT" not in stdout
     assert "JSON NOT NULL DEFAULT '[]'" not in stdout
     assert "relative_path VARCHAR(1024)" not in stdout
     assert "relative_path VARCHAR(512)" in stdout

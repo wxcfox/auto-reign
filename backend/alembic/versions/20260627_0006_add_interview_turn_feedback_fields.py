@@ -17,11 +17,30 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def upgrade() -> None:
-    op.add_column(
-        "interview_turns",
-        sa.Column("better_answer", sa.Text(), nullable=False, server_default=""),
+def _add_text_column_with_empty_value(column_name: str) -> None:
+    dialect_name = op.get_context().dialect.name
+    if dialect_name != "mysql":
+        op.add_column(
+            "interview_turns",
+            sa.Column(column_name, sa.Text(), nullable=False, server_default=""),
+        )
+        return
+
+    op.add_column("interview_turns", sa.Column(column_name, sa.Text(), nullable=True))
+    op.execute(
+        sa.text(f"UPDATE interview_turns SET {column_name} = :empty_text WHERE {column_name} IS NULL")
+        .bindparams(empty_text="")
     )
+    op.alter_column(
+        "interview_turns",
+        column_name,
+        existing_type=sa.Text(),
+        nullable=False,
+    )
+
+
+def upgrade() -> None:
+    _add_text_column_with_empty_value("better_answer")
     op.add_column(
         "interview_turns",
         sa.Column("mastery_change", sa.String(length=64), nullable=False, server_default="unchanged"),
