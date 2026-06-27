@@ -3,46 +3,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
 import i18next from "@/i18n/setup";
-import { listInterviewSessions } from "@/lib/api";
+import { listConversations } from "@/lib/api";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/interview",
 }));
 
 vi.mock("@/lib/api", () => ({
-  listInterviewSessions: vi.fn(),
+  listConversations: vi.fn(),
 }));
 
 describe("AppShell", () => {
-  function sessionResponse(label: string, status: "active" | "completed", id = `${status}-session`) {
+  function conversationResponse(label: string, kind: "interview" | "learning", id: string) {
     return {
-      sessions: [
+      conversations: [
         {
-          resumable: status === "active",
-          session: {
-            id,
-            config_id: "config-1",
-            status,
-            current_round: 1,
-            started_at: "2026-06-23T00:00:00Z",
-            ended_at: status === "completed" ? "2026-06-23T00:10:00Z" : null,
-            report_path: status === "completed" ? "reports/completed.md" : null,
-          },
-          config: {
-            id: "config-1",
-            target_company: "",
-            target_role: "",
-            job_description: "",
-            extra_prompt: label,
-            language: "en",
-            mode: "comprehensive",
-            chat_model_provider: "qwen",
-            chat_model: "qwen3.7-plus",
-            target_rounds: 2,
-            is_last_used: false,
-            updated_at: "2026-06-23T00:00:00Z",
-          },
-          turns: [],
+          id,
+          kind,
+          title: label,
+          href: kind === "interview" ? `/interview?session=${id}` : `/learn?session=${id}`,
+          started_at: "2026-06-23T00:00:00Z",
+          updated_at: "2026-06-23T00:10:00Z",
+          last_message: `${label} latest message`,
         },
       ],
     };
@@ -57,36 +39,10 @@ describe("AppShell", () => {
       // Tests run without persistent localStorage.
     }
     document.documentElement.dataset.theme = "light";
-    vi.mocked(listInterviewSessions).mockResolvedValue({
-      sessions: [
-        ...sessionResponse("Active backend interview", "active", "active-session").sessions,
-        {
-          resumable: false,
-          session: {
-            id: "completed-session",
-            config_id: "config-2",
-            status: "completed",
-            current_round: 1,
-            started_at: "2026-06-23T00:01:00Z",
-            ended_at: "2026-06-23T00:10:00Z",
-            report_path: "reports/completed.md",
-          },
-          config: {
-            id: "config-2",
-            target_company: "",
-            target_role: "",
-            job_description: "",
-            extra_prompt: "Completed backend interview",
-            language: "en",
-            mode: "comprehensive",
-            chat_model_provider: "qwen",
-            chat_model: "qwen3.7-plus",
-            target_rounds: 1,
-            is_last_used: false,
-            updated_at: "2026-06-23T00:00:00Z",
-          },
-          turns: [],
-        },
+    vi.mocked(listConversations).mockResolvedValue({
+      conversations: [
+        ...conversationResponse("Active backend interview", "interview", "active-session").conversations,
+        ...conversationResponse("Redis cache learning", "learning", "learning-session").conversations,
       ],
     });
   });
@@ -106,8 +62,10 @@ describe("AppShell", () => {
 
     const activeSessionLink = await screen.findByRole("link", { name: /Active backend interview/i });
     expect(activeSessionLink).toHaveAttribute("href", "/interview?session=active-session");
-    expect(screen.getByRole("link", { name: /Completed backend interview/i }))
-      .toHaveAttribute("href", "/interview?session=completed-session");
+    expect(screen.getByRole("link", { name: /Redis cache learning/i }))
+      .toHaveAttribute("href", "/learn?session=learning-session");
+    expect(screen.queryByText(/Completed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Working/i)).not.toBeInTheDocument();
 
     const libraryLink = screen.getByRole("link", { name: /Library/i });
     const moreButton = screen.getByRole("button", { name: /More/i });
@@ -178,9 +136,9 @@ describe("AppShell", () => {
   });
 
   it("refreshes sidebar history when interview sessions change", async () => {
-    vi.mocked(listInterviewSessions)
-      .mockResolvedValueOnce(sessionResponse("Initial backend interview", "active", "initial-session"))
-      .mockResolvedValueOnce(sessionResponse("Completed refreshed interview", "completed", "done-session"));
+    vi.mocked(listConversations)
+      .mockResolvedValueOnce(conversationResponse("Initial backend interview", "interview", "initial-session"))
+      .mockResolvedValueOnce(conversationResponse("Refreshed learning", "learning", "done-session"));
 
     render(
       <AppShell>
@@ -191,11 +149,11 @@ describe("AppShell", () => {
     expect(await screen.findByRole("link", { name: /Initial backend interview/i }))
       .toHaveAttribute("href", "/interview?session=initial-session");
 
-    window.dispatchEvent(new Event("auto-reign:interview-sessions-changed"));
+    window.dispatchEvent(new Event("auto-reign:conversations-changed"));
 
-    expect(await screen.findByRole("link", { name: /Completed refreshed interview/i }))
-      .toHaveAttribute("href", "/interview?session=done-session");
+    expect(await screen.findByRole("link", { name: /Refreshed learning/i }))
+      .toHaveAttribute("href", "/learn?session=done-session");
     expect(screen.queryByRole("link", { name: /Initial backend interview/i })).not.toBeInTheDocument();
-    expect(listInterviewSessions).toHaveBeenCalledTimes(2);
+    expect(listConversations).toHaveBeenCalledTimes(2);
   });
 });

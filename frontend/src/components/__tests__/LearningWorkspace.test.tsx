@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LearningWorkspace } from "../LearningWorkspace";
 import i18next from "@/i18n/setup";
-import { getModels, recordLearningNoteStream } from "@/lib/api";
+import { getConversation, getModels, recordLearningNoteStream } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
+  getConversation: vi.fn(),
   getModels: vi.fn(),
   recordLearningNoteStream: vi.fn(),
 }));
 
 const learningResponse = {
+  conversation_id: "learning-session",
   source: {
     artifact_id: "source-1",
     relative_path: "inbox/learning-note.md",
@@ -58,6 +60,7 @@ describe("LearningWorkspace", () => {
     vi.mocked(getModels).mockResolvedValue({
       providers: [{ provider: "qwen", models: ["qwen3.7-plus"] }],
     });
+    vi.mocked(getConversation).mockRejectedValue(new Error("not used"));
     vi.mocked(recordLearningNoteStream).mockImplementation(async (_payload, handlers) => {
       handlers.onDelta("# Redis cache\n\n## Summary\n\nRedis cache penetration and Bloom filters.");
       return learningResponse;
@@ -85,10 +88,54 @@ describe("LearningWorkspace", () => {
     expect(screen.getByText(/knowledge\/redis.md/)).toBeInTheDocument();
     expect(recordLearningNoteStream).toHaveBeenCalledWith(
       expect.objectContaining({
+        conversation_id: undefined,
         text: "今天学习了 Redis 缓存穿透和布隆过滤器。",
         provider: "qwen",
         model: "qwen3.7-plus",
       }),
+      expect.any(Object),
+    );
+  });
+
+  it("loads an existing learning conversation and appends to it", async () => {
+    vi.mocked(getConversation).mockResolvedValue({
+      id: "learning-session",
+      kind: "learning",
+      title: "Redis cache learning",
+      href: "/learn?session=learning-session",
+      started_at: "2026-06-27T00:00:00Z",
+      updated_at: "2026-06-27T00:00:00Z",
+      last_message: "Redis cache penetration",
+      messages: [
+        {
+          id: "message-1",
+          role: "user",
+          message_type: "learning_input",
+          content: "今天学习了 Redis 缓存穿透。",
+          created_at: "2026-06-27T00:00:00Z",
+          metadata: {},
+        },
+        {
+          id: "message-2",
+          role: "assistant",
+          message_type: "learning_summary",
+          content: "# Redis cache\n\n- 30 秒面试说法：\n  - Explain cache clearly.",
+          created_at: "2026-06-27T00:00:01Z",
+          metadata: { artifact_path: "knowledge/redis.md" },
+        },
+      ],
+    });
+
+    render(<LearningWorkspace sessionId="learning-session" />);
+
+    expect(await screen.findByText(/今天学习了 Redis/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Message Auto Reign/i), {
+      target: { value: "继续学习布隆过滤器。" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Record learning/i }));
+
+    expect(recordLearningNoteStream).toHaveBeenCalledWith(
+      expect.objectContaining({ conversation_id: "learning-session" }),
       expect.any(Object),
     );
   });

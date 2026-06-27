@@ -41,6 +41,7 @@ from app.schemas.workspace import (
 from app.services.artifact_service import ArtifactConflict
 from app.services.ingestion_service import IngestionService, UploadItem
 from app.services.index_service import IndexService
+from app.services.learning_conversation_service import LearningConversationService
 from app.services.markdown_utils import (
     markdown_list_items,
     markdown_sections,
@@ -259,6 +260,8 @@ def record_learning_note_stream(
     note = payload.text.strip()
     if not note:
         raise bad_request("learning_note_empty", "Learning note text is required.")
+    if payload.conversation_id:
+        _require_learning_conversation(request, payload.conversation_id)
 
     def body() -> Iterator[str]:
         chunks: list[str] = []
@@ -280,6 +283,12 @@ def record_learning_note_stream(
             service = _workspace_content_service(request)
             response = _learning_note_response(
                 service.persist_learning_note(note, payload.language, summary)
+            )
+            response.conversation_id = _persist_learning_conversation(
+                request,
+                payload,
+                note,
+                response,
             )
             _enqueue_index_rebuild(request, background_tasks)
             yield sse_event("result", response.model_dump(mode="json"))
@@ -351,8 +360,52 @@ def _enqueue_index_rebuild(request: Request, background_tasks: BackgroundTasks) 
     )
 
 
+def _persist_learning_conversation(
+    request: Request,
+    payload: LearningNoteRequest,
+    note: str,
+    response: LearningNoteResponse,
+) -> str:
+    conversation_service = LearningConversationService()
+    with session_scope(request.app.state.session_factory) as session:
+        learning_session = conversation_service.get_or_create_session(
+            session,
+            conversation_id=payload.conversation_id,
+            title=response.summary.title,
+            language=payload.language,
+            provider=payload.provider,
+            model=payload.model,
+        )
+        conversation_service.append_note_exchange(
+            session,
+            learning_session,
+            note=note,
+            assistant_markdown=_learning_assistant_message(response),
+            summary=response.summary,
+            source_artifact_id=response.source.artifact_id,
+            source_relative_path=response.source.relative_path,
+            artifact_id=response.artifact.id,
+            artifact_path=response.artifact.relative_path,
+        )
+        return learning_session.id
+
+
+def _require_learning_conversation(request: Request, conversation_id: str) -> None:
+    conversation_service = LearningConversationService()
+    with session_scope(request.app.state.session_factory) as session:
+        conversation_service.require_session(session, conversation_id)
+
+
+def _learning_assistant_message(response: LearningNoteResponse) -> str:
+    title = response.summary.title.strip()
+    if not title:
+        return response.card_markdown
+    return f"# {title}\n\n{response.card_markdown.strip()}"
+
+
 def _learning_note_response(result: LearningNotePersistenceResult) -> LearningNoteResponse:
     return LearningNoteResponse(
+        conversation_id="",
         source=UploadedSourceResponse(
             artifact_id=result.source.artifact_id,
             relative_path=result.source.relative_path,

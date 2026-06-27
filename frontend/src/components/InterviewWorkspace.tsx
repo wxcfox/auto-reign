@@ -23,7 +23,7 @@ import {
   submitFollowUpAnswerStream,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
-import { notifyInterviewSessionsChanged } from "@/lib/interview-events";
+import { notifyConversationsChanged } from "@/lib/conversation-events";
 import type {
   AnswerFeedback,
   FollowUpFeedback,
@@ -348,7 +348,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       });
       setSession(created.session);
       setTurns([created.turn]);
-      notifyInterviewSessionsChanged();
+      notifyConversationsChanged();
       setComposerValue("");
     } catch (startError) {
       setError(getErrorMessage(startError, t, "interview:errors.start"));
@@ -525,7 +525,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       setSession(response.session);
       setSessionSummary(response.report.summary);
       setComposerValue("");
-      notifyInterviewSessionsChanged();
+      notifyConversationsChanged();
     } catch (finishError) {
       setError(getErrorMessage(finishError, t, "interview:errors.finish"));
     } finally {

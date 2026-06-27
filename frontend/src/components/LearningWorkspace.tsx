@@ -7,9 +7,15 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ModelPicker } from "@/components/ModelPicker";
 import { useTranslation } from "@/hooks/useTranslation";
-import { getModels, recordLearningNoteStream } from "@/lib/api";
+import { getConversation, getModels, recordLearningNoteStream } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
-import type { LearningNoteResponse, ModelProvider, ProviderName } from "@/lib/types";
+import { notifyConversationsChanged } from "@/lib/conversation-events";
+import type {
+  ConversationMessage,
+  LearningNoteResponse,
+  ModelProvider,
+  ProviderName,
+} from "@/lib/types";
 
 type LearningMessage = {
   id: string;
@@ -17,6 +23,10 @@ type LearningMessage = {
   meta: string;
   content: string;
   artifactPath?: string;
+};
+
+type LearningWorkspaceProps = {
+  sessionId?: string;
 };
 
 const defaultModel = {
@@ -30,11 +40,32 @@ function responseToMarkdown(response: LearningNoteResponse, language: "en" | "zh
   return `# ${title}\n\n${response.card_markdown.trim()}`;
 }
 
-export function LearningWorkspace() {
+function conversationMessageToLearningMessage(
+  message: ConversationMessage,
+  translate: (key: string) => string,
+): LearningMessage {
+  const artifactPath =
+    typeof message.metadata.artifact_path === "string" ? message.metadata.artifact_path : undefined;
+  return {
+    id: message.id,
+    tone: message.role,
+    meta:
+      message.role === "user"
+        ? translate("message_meta")
+        : message.role === "assistant"
+          ? translate("summary_meta")
+          : translate("error_title"),
+    content: message.content,
+    artifactPath,
+  };
+}
+
+export function LearningWorkspace({ sessionId }: LearningWorkspaceProps = {}) {
   const { t, getCurrentLanguage } = useTranslation("learning");
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ProviderName>(defaultModel.provider);
   const [selectedModel, setSelectedModel] = useState(defaultModel.model);
+  const [conversationId, setConversationId] = useState<string | null>(sessionId ?? null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [messages, setMessages] = useState<LearningMessage[]>([]);
   const [composerValue, setComposerValue] = useState("");
@@ -70,6 +101,41 @@ export function LearningWorkspace() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setConversationId(null);
+      return;
+    }
+    let cancelled = false;
+    setBusy(true);
+    setError(null);
+    getConversation(sessionId)
+      .then((conversation) => {
+        if (cancelled) {
+          return;
+        }
+        setConversationId(conversation.id);
+        setMessages(
+          conversation.messages.map((message) =>
+            conversationMessageToLearningMessage(message, (key) => t(key)),
+          ),
+        );
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(getErrorMessage(loadError, t, "learning:errors.load"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBusy(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, t]);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -116,6 +182,7 @@ export function LearningWorkspace() {
     try {
       const response = await recordLearningNoteStream(
         {
+          conversation_id: conversationId ?? undefined,
           text,
           language: responseLanguage,
           provider: selectedProvider,
@@ -128,6 +195,7 @@ export function LearningWorkspace() {
           },
         },
       );
+      setConversationId(response.conversation_id);
       setMessages((current) => [
         ...current,
         {
@@ -138,6 +206,7 @@ export function LearningWorkspace() {
           artifactPath: response.artifact.relative_path,
         },
       ]);
+      notifyConversationsChanged();
     } catch (recordError) {
       setError(getErrorMessage(recordError, t, "learning:errors.record"));
     } finally {

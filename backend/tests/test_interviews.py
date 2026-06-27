@@ -69,7 +69,7 @@ def test_stream_create_session_returns_question_delta_and_result(client: TestCli
     assert "Backend Engineer" in body
 
 
-def test_list_interview_sessions_includes_history_context(client: TestClient) -> None:
+def test_conversation_history_includes_interview_context(client: TestClient) -> None:
     active = client.post(
         "/api/interview-sessions",
         json={**CONFIG, "extra_prompt": "Active backend interview", "target_rounds": 2},
@@ -87,17 +87,20 @@ def test_list_interview_sessions_includes_history_context(client: TestClient) ->
     finished = client.post(f"/api/interview-sessions/{completed_session_id}/finish")
     assert finished.status_code == 200
 
-    listed = client.get("/api/interview-sessions")
+    listed = client.get("/api/conversations")
 
     assert listed.status_code == 200
-    sessions = listed.json()["sessions"]
-    assert [item["session"]["id"] for item in sessions] == [completed_session_id, active_session_id]
-    assert sessions[0]["resumable"] is False
-    assert sessions[0]["config"]["extra_prompt"] == "Completed backend interview"
-    assert sessions[0]["turns"][0]["answer"] == "I would give a concise architecture answer."
-    assert sessions[1]["resumable"] is True
-    assert sessions[1]["config"]["extra_prompt"] == "Active backend interview"
-    assert sessions[1]["turns"][0]["question"]
+    conversations = listed.json()["conversations"]
+    assert [item["id"] for item in conversations] == [completed_session_id, active_session_id]
+    assert conversations[0]["kind"] == "interview"
+    assert conversations[0]["title"] == "Completed backend interview"
+    assert "resumable" not in conversations[0]
+    assert conversations[1]["title"] == "Active backend interview"
+
+    detail = client.get(f"/api/conversations/{completed_session_id}").json()
+    assert "I would give a concise architecture answer." in [
+        message["content"] for message in detail["messages"]
+    ]
 
 
 def test_stream_finish_returns_summary_delta_and_result(client: TestClient) -> None:

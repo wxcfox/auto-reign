@@ -69,3 +69,42 @@ class ReportRepository:
 
     def list(self, session: Session) -> list[models.Report]:
         return list(session.scalars(select(models.Report).order_by(models.Report.created_at.desc())))
+
+
+class LearningSessionRepository:
+    def add(
+        self,
+        session: Session,
+        learning_session: models.LearningSession,
+    ) -> models.LearningSession:
+        session.add(learning_session)
+        session.flush()
+        return learning_session
+
+    def get(self, session: Session, session_id: str) -> models.LearningSession | None:
+        return session.get(models.LearningSession, session_id)
+
+    def list_recent(self, session: Session, limit: int = 50) -> list[models.LearningSession]:
+        return list(
+            session.scalars(
+                select(models.LearningSession)
+                .order_by(models.LearningSession.updated_at.desc())
+                .limit(limit)
+            )
+        )
+
+
+class LearningMessageRepository:
+    def add(self, session: Session, message: models.LearningMessage) -> models.LearningMessage:
+        session.add(message)
+        session.flush()
+        return message
+
+    def list_for_session(self, session: Session, session_id: str) -> list[models.LearningMessage]:
+        return list(
+            session.scalars(
+                select(models.LearningMessage)
+                .where(models.LearningMessage.session_id == session_id)
+                .order_by(models.LearningMessage.created_at)
+            )
+        )

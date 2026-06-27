@@ -20,8 +20,6 @@ from app.schemas.interviews import (
     InterviewConfigResponse,
     InterviewSessionCreatedResponse,
     InterviewSessionDetailResponse,
-    InterviewSessionHistoryItemResponse,
-    InterviewSessionListResponse,
     NextQuestionRequest,
 )
 from app.schemas.reports import ReportResponse
@@ -142,22 +140,6 @@ def save_last_config(
 ) -> InterviewConfigResponse:
     config = InterviewService().save_last_config(session, config_in)
     return InterviewConfigResponse.model_validate(config)
-
-
-@router.get("/interview-sessions", response_model=InterviewSessionListResponse)
-def list_sessions(session: Session = Depends(get_session)) -> InterviewSessionListResponse:
-    details = InterviewService().list_session_details(session)
-    return InterviewSessionListResponse(
-        sessions=[
-            InterviewSessionHistoryItemResponse(
-                session=interview_session,
-                config=config,
-                turns=turns,
-                resumable=resumable,
-            )
-            for interview_session, config, turns, resumable in details
-        ]
-    )
 
 
 @router.post("/interview-sessions", response_model=InterviewSessionCreatedResponse)

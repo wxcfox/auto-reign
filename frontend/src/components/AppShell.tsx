@@ -21,9 +21,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { listInterviewSessions } from "@/lib/api";
-import { INTERVIEW_SESSIONS_CHANGED_EVENT } from "@/lib/interview-events";
-import type { InterviewSessionHistoryItem } from "@/lib/types";
+import { listConversations } from "@/lib/api";
+import { CONVERSATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
+import type { ConversationHistoryItem } from "@/lib/types";
 
 type AppShellProps = {
   children: ReactNode;
@@ -76,11 +76,11 @@ function writeSidebarCollapsed(collapsed: boolean) {
 export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
   const { changeLanguage, getCurrentLanguage, t } = useTranslation("common");
-  const [sessions, setSessions] = useState<InterviewSessionHistoryItem[]>([]);
+  const [conversations, setConversations] = useState<ConversationHistoryItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
-  const sessionRefreshId = useRef(0);
+  const conversationRefreshId = useRef(0);
   const primaryNavItems = [
     { href: "/library", label: t("nav.library"), icon: Database },
   ];
@@ -94,30 +94,30 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     let cancelled = false;
-    async function refreshSessions() {
-      const refreshId = sessionRefreshId.current + 1;
-      sessionRefreshId.current = refreshId;
+    async function refreshConversations() {
+      const refreshId = conversationRefreshId.current + 1;
+      conversationRefreshId.current = refreshId;
       try {
-        const response = await listInterviewSessions();
-        if (!cancelled && refreshId === sessionRefreshId.current) {
-          setSessions(response.sessions);
+        const response = await listConversations();
+        if (!cancelled && refreshId === conversationRefreshId.current) {
+          setConversations(response.conversations);
         }
       } catch {
-        if (!cancelled && refreshId === sessionRefreshId.current) {
-          setSessions([]);
+        if (!cancelled && refreshId === conversationRefreshId.current) {
+          setConversations([]);
         }
       }
     }
 
-    void refreshSessions();
-    const handleSessionsChanged = () => {
-      void refreshSessions();
+    void refreshConversations();
+    const handleConversationsChanged = () => {
+      void refreshConversations();
     };
-    window.addEventListener(INTERVIEW_SESSIONS_CHANGED_EVENT, handleSessionsChanged);
+    window.addEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
 
     return () => {
       cancelled = true;
-      window.removeEventListener(INTERVIEW_SESSIONS_CHANGED_EVENT, handleSessionsChanged);
+      window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
     };
   }, []);
 
@@ -129,18 +129,6 @@ export function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     writeSidebarCollapsed(sidebarCollapsed);
   }, [sidebarCollapsed]);
-
-  function sessionTitle(item: InterviewSessionHistoryItem) {
-    const naturalContext = item.config.extra_prompt.trim();
-    if (naturalContext) {
-      return naturalContext;
-    }
-    const structured = [item.config.target_company, item.config.target_role]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join(" ");
-    return structured || t("nav.untitled_session");
-  }
 
   const currentLanguage = getCurrentLanguage();
   const nextLanguage = currentLanguage === "zh-CN" ? "en" : "zh-CN";
@@ -215,26 +203,21 @@ export function AppShell({ children }: AppShellProps) {
         </section>
         <section className="sidebar-history" aria-labelledby="sidebar-history-heading">
           <h2 id="sidebar-history-heading">{t("nav.history")}</h2>
-          {sessions.length === 0 ? (
+          {conversations.length === 0 ? (
             <p className="sidebar-history-empty">{t("nav.empty_history")}</p>
           ) : null}
-          {sessions.map((item) => {
-            const title = sessionTitle(item);
-            const stateLabel = item.session.status === "completed"
-              ? t("states.completed")
-              : item.resumable
-                ? t("states.working")
-                : t("states.unavailable");
+          {conversations.map((item) => {
+            const title = item.title || t("nav.untitled_session");
             return (
               <Link
                 className="sidebar-history-item"
-                href={`/interview?session=${item.session.id}`}
+                href={item.href}
                 aria-label={title}
-                key={item.session.id}
+                key={`${item.kind}:${item.id}`}
               >
                 <MessageSquareText size={16} aria-hidden="true" />
                 <span className="sidebar-label">{title}</span>
-                <small className="sidebar-label">{stateLabel}</small>
+                <small className="sidebar-label">{item.last_message}</small>
               </Link>
             );
           })}

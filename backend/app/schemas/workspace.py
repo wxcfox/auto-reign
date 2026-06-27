@@ -103,6 +103,7 @@ class LearningNoteRequest(BaseModel):
     language: str = "zh-CN"
     provider: str | None = None
     model: str | None = None
+    conversation_id: str | None = None
 
 
 class RealInterviewRecordRequest(BaseModel):
@@ -126,6 +127,7 @@ class ArtifactSummaryResponse(BaseModel):
 
 
 class LearningNoteResponse(BaseModel):
+    conversation_id: str
     source: UploadedSourceResponse
     artifact: ArtifactSummaryResponse
     summary: LearningNoteSummaryResult

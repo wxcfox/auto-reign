@@ -5,6 +5,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 from app.core.config import get_settings
+from app.db.models import Base
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 APPLICATION_TABLES = {
@@ -12,6 +13,8 @@ APPLICATION_TABLES = {
     "interview_configs",
     "interview_sessions",
     "interview_turns",
+    "learning_messages",
+    "learning_sessions",
     "processing_jobs",
     "reports",
     "workspace_settings",
@@ -78,6 +81,43 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
     finally:
         engine.dispose()
         get_settings.cache_clear()
+
+
+def test_learning_conversation_tables_exist_in_schema() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    inspector = inspect(engine)
+
+    assert "learning_sessions" in inspector.get_table_names()
+    assert "learning_messages" in inspector.get_table_names()
+
+    learning_session_columns = {
+        column["name"] for column in inspector.get_columns("learning_sessions")
+    }
+    assert {
+        "id",
+        "title",
+        "language",
+        "chat_model_provider",
+        "chat_model",
+        "started_at",
+        "updated_at",
+    }.issubset(learning_session_columns)
+
+    learning_message_columns = {
+        column["name"] for column in inspector.get_columns("learning_messages")
+    }
+    assert {
+        "id",
+        "session_id",
+        "role",
+        "message_type",
+        "content",
+        "artifact_id",
+        "artifact_path",
+        "message_metadata",
+        "created_at",
+    }.issubset(learning_message_columns)
 
 
 def test_migration_removes_legacy_absolute_report_paths(tmp_path, monkeypatch) -> None:

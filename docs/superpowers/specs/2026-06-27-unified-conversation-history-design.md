@@ -21,7 +21,7 @@
 ## 非目标
 
 - 本阶段不把 `interview_sessions` 和 `interview_turns` 全量迁移为通用 message 表。
-- 本阶段不删除现有 `/api/interview-sessions/*` 面试 API。
+- 本阶段保留 `/api/interview-sessions/{id}`、答题、追问和收尾等面试状态机 API；旧的面试历史列表由 `/api/conversations` 取代。
 - 本阶段不改变上传资料和真实面试复盘入口。
 - 本阶段不把旧本地历史数据迁入新学习对话；本地 MySQL 历史元数据可按新 schema 重新开始。
 
@@ -116,7 +116,7 @@ ConversationMessage
 
 保留：
 
-- `/api/interview-sessions/*` 继续承担面试状态机。
+- `/api/interview-sessions/{id}`、答题、追问、下一题和收尾接口继续承担面试状态机。
 - `/api/reports/*` 继续承担报告读取。
 
 ## 前端设计
@@ -126,7 +126,7 @@ ConversationMessage
 - `AppShell` 从 `listInterviewSessions` 改为 `listConversations`。
 - 历史项显示标题和最后消息摘要，不再显示 completed/working/unavailable。
 - 历史项直接使用后端 `href`，面试进入 `/interview?session=...`，学习进入 `/learn?session=...`。
-- 事件名从 interview-only 扩展为 conversation changed。可以保留旧事件常量别名以减少改动，但新代码使用 `notifyConversationsChanged`。
+- 事件名从 interview-only 扩展为 conversation changed，新代码使用 `notifyConversationsChanged`。
 
 学习页：
 

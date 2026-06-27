@@ -17,6 +17,36 @@ export interface ModelListResponse {
   providers: ModelProvider[];
 }
 
+export type ConversationKind = "interview" | "learning";
+export type ConversationRole = "assistant" | "system" | "user";
+
+export interface ConversationMessage {
+  id: string;
+  role: ConversationRole;
+  message_type: string;
+  content: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ConversationHistoryItem {
+  id: string;
+  kind: ConversationKind;
+  title: string;
+  href: string;
+  started_at: string;
+  updated_at: string;
+  last_message: string;
+}
+
+export interface ConversationListResponse {
+  conversations: ConversationHistoryItem[];
+}
+
+export interface ConversationDetailResponse extends ConversationHistoryItem {
+  messages: ConversationMessage[];
+}
+
 export interface HealthResponse {
   status: "ok";
   storage: {
@@ -55,9 +85,11 @@ export interface LearningNoteRequest {
   language: "en" | "zh-CN";
   provider?: ProviderName;
   model?: string;
+  conversation_id?: string;
 }
 
 export interface LearningNoteResponse {
+  conversation_id: string;
   source: UploadedSourceRecord;
   artifact: WorkspaceArtifactSummary;
   summary: LearningNoteSummary;
@@ -187,14 +219,6 @@ export interface InterviewSessionDetailResponse {
   session: InterviewSession;
   config: InterviewConfigResponse;
   turns: InterviewTurn[];
-}
-
-export interface InterviewSessionHistoryItem extends InterviewSessionDetailResponse {
-  resumable: boolean;
-}
-
-export interface InterviewSessionListResponse {
-  sessions: InterviewSessionHistoryItem[];
 }
 
 export interface AnswerFeedback {

@@ -83,14 +83,6 @@ class InterviewSessionDetailResponse(BaseModel):
     turns: list[InterviewTurnResponse]
 
 
-class InterviewSessionHistoryItemResponse(InterviewSessionDetailResponse):
-    resumable: bool
-
-
-class InterviewSessionListResponse(BaseModel):
-    sessions: list[InterviewSessionHistoryItemResponse]
-
-
 class InterviewSessionCreatedResponse(BaseModel):
     session: InterviewSessionResponse
     turn: InterviewTurnResponse

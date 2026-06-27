@@ -1,5 +1,7 @@
 import type {
   AnswerFeedback,
+  ConversationDetailResponse,
+  ConversationListResponse,
   FollowUpFeedback,
   HealthResponse,
   InterviewConfig,
@@ -7,7 +9,6 @@ import type {
   InterviewSessionCreatedResponse,
   InterviewSessionDetailResponse,
   InterviewSessionFinishResponse,
-  InterviewSessionListResponse,
   LearningNoteRequest,
   LearningNoteResponse,
   ModelListResponse,
@@ -63,6 +64,14 @@ export function getWorkspaceArtifacts(): Promise<WorkspaceArtifactListResponse> 
 
 export function getPreparationTasks(): Promise<PreparationTasksResponse> {
   return apiJson<PreparationTasksResponse>("/api/workspace/preparation-tasks");
+}
+
+export function listConversations(): Promise<ConversationListResponse> {
+  return apiJson<ConversationListResponse>("/api/conversations");
+}
+
+export function getConversation(conversationId: string): Promise<ConversationDetailResponse> {
+  return apiJson<ConversationDetailResponse>(`/api/conversations/${conversationId}`);
 }
 
 export function recordRealInterview(
@@ -123,10 +132,6 @@ export function saveLastInterviewConfig(
     method: "PUT",
     body: JSON.stringify(config),
   });
-}
-
-export function listInterviewSessions(): Promise<InterviewSessionListResponse> {
-  return apiJson<InterviewSessionListResponse>("/api/interview-sessions");
 }
 
 export function getInterviewSession(sessionId: string): Promise<InterviewSessionDetailResponse> {

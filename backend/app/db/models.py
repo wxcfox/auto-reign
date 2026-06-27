@@ -124,6 +124,41 @@ class Report(Base):
     session: Mapped[InterviewSession] = relationship(back_populates="reports")
 
 
+class LearningSession(Base):
+    __tablename__ = "learning_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    title: Mapped[str] = mapped_column(String(255), default="学习记录")
+    language: Mapped[str] = mapped_column(String(16), default="zh-CN")
+    chat_model_provider: Mapped[str] = mapped_column(String(64), default="")
+    chat_model: Mapped[str] = mapped_column(String(120), default="")
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+
+    messages: Mapped[list["LearningMessage"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+
+class LearningMessage(Base):
+    __tablename__ = "learning_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("learning_sessions.id", ondelete="CASCADE")
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    message_type: Mapped[str] = mapped_column(String(64))
+    content: Mapped[str] = mapped_column(Text)
+    artifact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    artifact_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    message_metadata: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+
+    session: Mapped[LearningSession] = relationship(back_populates="messages")
+
+
 class WorkspaceSettings(Base):
     __tablename__ = "workspace_settings"
 

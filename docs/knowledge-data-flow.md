@@ -19,6 +19,8 @@ flowchart TD
   H --> I
   I --> J["扫描工作区文件和 sidecar 元数据"]
   J --> K["把 artifact 元数据写入 MySQL"]
+  F --> Y["把学习输入和整理结果写入学习对话"]
+  Y --> K
   K --> L["重建向量索引"]
   L --> M["读取可索引 artifact 正文：原文、提取文本、知识、题库、项目、真实面试、高频卡和练习记录"]
   M --> N["LangChain Markdown/递归切块"]
@@ -37,7 +39,7 @@ flowchart TD
 - `DATA_DIR/workspace/sources/documents/` 保存用户上传的原始文件。来源文件会在元数据中保留用户的原始文件名，并在资料库中展示该名称。
 - `DATA_DIR/workspace/sources/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。
 - `DATA_DIR/workspace/knowledge/`、`DATA_DIR/workspace/questions/`、`DATA_DIR/workspace/projects/`、`DATA_DIR/workspace/raw/`、`DATA_DIR/workspace/review/`、`DATA_DIR/workspace/profile/`、`DATA_DIR/workspace/practice/`、`DATA_DIR/workspace/state/` 和 `DATA_DIR/workspace/reports/` 保存系统管理的 Markdown 资产。
-- MySQL 保存工作区 artifact 投影、处理状态、索引状态、修订版本、会话和报告元数据。
+- MySQL 保存工作区 artifact 投影、处理状态、索引状态、修订版本、学习对话、面试会话和报告元数据。
 - Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 可以从文件工作区和 MySQL artifact 投影重新构建。LangChain 负责 Markdown/递归切块、embedding、QdrantVectorStore 写入和 retriever 查询，Auto Reign 负责 workspace 协议、provenance、可索引规则、active collection 发布、检索后处理和上下文预算。
 
 ## 索引规则
@@ -45,7 +47,7 @@ flowchart TD
 - Markdown 和 TXT 上传来源文件直接从原始文件索引。
 - `inbox/` 中的新学习原始记录直接索引。
 - PDF 和 DOCX 来源文件不直接索引；解析成功后索引对应的提取文本 Markdown artifact。
-- 知识、题库、项目、真实面试、高频复盘和练习 Markdown artifact 从正文内容索引。新学习生成的知识文件使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」短卡片格式，并按标题 slug 合并到同一个 `knowledge/<主题>.md`。
+- 知识、题库、项目、真实面试、高频复盘和练习 Markdown artifact 从正文内容索引。新学习生成的知识文件使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」短卡片格式，并按标题 slug 合并到同一个 `knowledge/<主题>.md`。学习对话本身用于侧边栏历史和继续追加，不作为长期知识资产，也不直接进入向量索引。
 - 答差或缺失点会沉淀为 `questions/<题目>.md`，结构包含「考察点 / 标准回答 / 结合项目 / 常见追问 / 易错点 / 复习状态」。
 - 真实面试粘贴记录会保存到 `raw/`，并更新 `review/high-frequency.md` 与 `review/status.md`。
 - 候选人画像、目标画像、复习状态、报告和掌握状态会展示在资料库中，但报告和掌握状态当前不进入向量索引。报告是展示产物，不作为事实来源进入检索。

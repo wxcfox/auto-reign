@@ -180,6 +180,93 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert len(calls) == 1
 
 
+def test_learning_note_stream_creates_learning_conversation(client, monkeypatch) -> None:
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    response = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={
+            "text": "今天学习了 Redis 缓存穿透。",
+            "language": "zh-CN",
+            "provider": "qwen",
+            "model": "qwen3.7-plus",
+        },
+    )
+
+    assert response.status_code == 200
+    body = _sse_result(response.text)
+    assert body["conversation_id"]
+
+    detail = client.get(f"/api/conversations/{body['conversation_id']}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["kind"] == "learning"
+    assert [message["role"] for message in detail_body["messages"]] == ["user", "assistant"]
+    assert "缓存穿透" in detail_body["messages"][0]["content"]
+    assert detail_body["messages"][1]["metadata"]["artifact_path"] == body["artifact"]["relative_path"]
+
+
+def test_learning_note_stream_appends_to_existing_learning_conversation(client, monkeypatch) -> None:
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    first = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={"text": "第一次学习 Redis 缓存穿透。", "language": "zh-CN"},
+    )
+    first_body = _sse_result(first.text)
+
+    second = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={
+            "conversation_id": first_body["conversation_id"],
+            "text": "第二次学习布隆过滤器。",
+            "language": "zh-CN",
+        },
+    )
+
+    assert second.status_code == 200
+    second_body = _sse_result(second.text)
+    assert second_body["conversation_id"] == first_body["conversation_id"]
+
+    detail = client.get(f"/api/conversations/{first_body['conversation_id']}").json()
+    assert [message["role"] for message in detail["messages"]] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert "第二次学习布隆过滤器" in detail["messages"][2]["content"]
+
+
+def test_learning_note_stream_rejects_unknown_conversation_before_persisting(client, monkeypatch) -> None:
+    class FailingModelService:
+        def stream_learning_note_summary(self, *args, **kwargs):
+            raise AssertionError("model should not be called when conversation is unknown")
+
+    monkeypatch.setattr("app.api.workspace.ModelService", FailingModelService)
+
+    response = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={
+            "conversation_id": "missing-session",
+            "text": "这条学习记录不应该落盘。",
+            "language": "zh-CN",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "learning_session_not_found"
+    assert client.get("/api/workspace").json()["artifact_count"] == 0
+
+
 def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) -> None:
     class FixedModelService:
         def stream_learning_note_summary(

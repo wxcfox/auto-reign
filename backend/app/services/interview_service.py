@@ -296,25 +296,6 @@ class InterviewService:
         turns = self.turn_repository.list_for_session(session, session_id)
         return interview_session, config, turns
 
-    def list_session_details(
-        self, session: Session, *, limit: int = 50
-    ) -> list[tuple[InterviewSession, InterviewConfig, list[InterviewTurn], bool]]:
-        details: list[tuple[InterviewSession, InterviewConfig, list[InterviewTurn], bool]] = []
-        for interview_session in self.session_repository.list_recent(session, limit=limit):
-            config = session.get(InterviewConfig, interview_session.config_id)
-            if config is None:
-                continue
-            turns = self.turn_repository.list_for_session(session, interview_session.id)
-            details.append(
-                (
-                    interview_session,
-                    config,
-                    turns,
-                    interview_session.status == "active",
-                )
-            )
-        return details
-
     def submit_answer(
         self, session: Session, session_id: str, answer: str
     ) -> AnswerEvaluationResult:

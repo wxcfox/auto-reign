@@ -18,8 +18,8 @@
     "review": "复盘",
     "more": "更多",
     "history": "历史对话",
-    "empty_history": "暂无面试记录",
-    "untitled_session": "未命名面试",
+    "empty_history": "暂无历史对话",
+    "untitled_session": "未命名对话",
     "recent_sessions": "最近",
     "current_session": "当前面试",
     "latest_review": "最近复盘"
