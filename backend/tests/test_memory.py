@@ -1,11 +1,10 @@
-from pathlib import Path
-
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.services.markdown_utils import markdown_list_items, markdown_sections
 
 
-def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
+def test_finish_generates_workspace_report_and_updates_review_state(client: TestClient) -> None:
     config = {
         "target_company": "OpenAI",
         "target_role": "Backend Engineer",
@@ -27,23 +26,13 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     finished = client.post(f"/api/interview-sessions/{session_id}/finish")
     assert finished.status_code == 200
     body = finished.json()
+    assert body["report"]["report_path"].startswith("reports/")
     assert body["report"]["report_path"].endswith(".md")
 
     settings = get_settings()
-    report_path = Path(body["report"]["report_path"])
-    weakness_path = settings.data_dir / "memory" / "weakness_memory.md"
-    interview_history_path = settings.data_dir / "memory" / "interview_history.md"
-    learning_profile_path = settings.data_dir / "memory" / "learning_profile.md"
-    assert report_path.exists()
-    assert weakness_path.exists()
-    assert interview_history_path.exists()
-    assert learning_profile_path.exists()
-    assert "# 面试复盘报告" in report_path.read_text(encoding="utf-8")
-
-    memory = client.get("/api/memory")
-    assert memory.status_code == 200
-    assert "# 薄弱项记忆" in memory.json()["files"]["weakness"]["content"]
-    assert "## 当前薄弱项总结" in weakness_path.read_text(encoding="utf-8")
+    assert not (settings.data_dir / "reports").exists()
+    assert not (settings.data_dir / "memory").exists()
+    assert client.get("/api/memory").status_code == 404
 
     workspace = settings.data_dir / "workspace"
     practice_files = list((workspace / "practice").glob("**/*.md"))
@@ -54,16 +43,21 @@ def test_finish_generates_report_and_updates_memory(client: TestClient) -> None:
     assert len(report_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")
     assert "# 模拟面试记录" in practice_text
+    assert practice_text.count(f"## 会话 {session_id}") == 1
     assert f"## 会话 {session_id}" in practice_text
     assert "I use tests and clear services." in practice_text
     assert "# 掌握状态" in mastery_path.read_text(encoding="utf-8")
     status_text = status_path.read_text(encoding="utf-8")
     assert "# 复习状态" in status_text
-    assert status_text.count("- ") <= 3
+    current_focus = markdown_list_items(markdown_sections(status_text)["当前重点"])
+    assert len(current_focus) <= 3
     assert "# 面试复盘报告" in report_files[0].read_text(encoding="utf-8")
+    report_detail = client.get(f"/api/reports/{body['report']['id']}")
+    assert report_detail.status_code == 200
+    assert "# 面试复盘报告" in report_detail.json()["content"]
 
 
-def test_finish_does_not_index_legacy_report_or_memory_vectors(
+def test_finish_does_not_write_vectors_inline(
     client: TestClient, monkeypatch
 ) -> None:
     config = {
@@ -87,7 +81,7 @@ def test_finish_does_not_index_legacy_report_or_memory_vectors(
 
     def fail_upsert(*_args, **_kwargs):
         calls.append("upsert")
-        raise AssertionError("finish should not write report or memory vectors")
+        raise AssertionError("finish should not write vectors inline")
 
     monkeypatch.setattr(
         "app.services.workspace_vector_store.WorkspaceVectorStore.upsert_documents",

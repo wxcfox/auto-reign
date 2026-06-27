@@ -63,6 +63,11 @@ class InterviewTurnResponse(BaseModel):
     follow_up_review_suggestions: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     review_suggestions: list[str] = Field(default_factory=list)
+    better_answer: str = ""
+    mastery_change: str = "unchanged"
+    should_write_weakness: bool = False
+    should_write_high_frequency: bool = False
+    tested_points: list[str] = Field(default_factory=list)
     retrieved_context_refs: list[dict[str, str]] = Field(default_factory=list)
     created_at: datetime
 

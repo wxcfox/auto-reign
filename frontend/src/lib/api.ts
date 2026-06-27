@@ -10,7 +10,6 @@ import type {
   InterviewSessionListResponse,
   LearningNoteRequest,
   LearningNoteResponse,
-  MemoryResponse,
   ModelListResponse,
   PreparationTasksResponse,
   RealInterviewRecordRequest,
@@ -294,8 +293,4 @@ export function getReports(): Promise<ReportListResponse> {
 
 export function getReport(reportId: string): Promise<ReportDetailResponse> {
   return apiJson<ReportDetailResponse>(`/api/reports/${reportId}`);
-}
-
-export function getMemory(): Promise<MemoryResponse> {
-  return apiJson<MemoryResponse>("/api/memory");
 }

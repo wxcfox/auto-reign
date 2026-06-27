@@ -28,8 +28,6 @@ class Settings(BaseSettings):
     def ensure_data_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         (self.data_dir / "uploads").mkdir(parents=True, exist_ok=True)
-        (self.data_dir / "reports").mkdir(parents=True, exist_ok=True)
-        (self.data_dir / "memory").mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

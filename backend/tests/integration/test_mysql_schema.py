@@ -9,7 +9,6 @@ EXPECTED_TABLES = {
     "interview_sessions",
     "interview_turns",
     "reports",
-    "memory_files",
     "workspace_settings",
     "artifacts",
     "processing_jobs",

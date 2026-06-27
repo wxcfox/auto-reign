@@ -1,8 +1,8 @@
 Generate one concise mock interview question.
 
 Use the target company, target role, job description, extra user prompt,
-interview mode, directly read workspace context, retrieved personal document
-context, and memory context. The extra user prompt may contain natural-language
+interview mode, directly read workspace context, and retrieved personal document
+context. The extra user prompt may contain natural-language
 company, role, JD, or interview focus details; infer those details when
 explicit structured fields are blank.
 

@@ -1,13 +1,14 @@
 "use client";
 
 import {
-  ChevronDown,
   Loader2,
   Paperclip,
   Send,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import { ChatMessage } from "@/components/ChatMessage";
+import { ModelPicker } from "@/components/ModelPicker";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   createInterviewSessionStream,
@@ -30,6 +31,7 @@ import type {
   InterviewSession,
   InterviewTurn,
   ModelProvider,
+  ProviderName,
 } from "@/lib/types";
 
 const defaultConfig: InterviewConfig = {
@@ -52,23 +54,6 @@ type StreamingDraft = {
   text: string;
   turnId?: string;
 };
-
-type ChatMessageProps = {
-  children: ReactNode;
-  meta?: string;
-  tone?: "assistant" | "user" | "system";
-};
-
-function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
-  return (
-    <article className="chat-message" data-tone={tone}>
-      <div className="chat-bubble">
-        {meta ? <p className="chat-meta">{meta}</p> : null}
-        <div className="chat-copy">{children}</div>
-      </div>
-    </article>
-  );
-}
 
 function updateTurn(
   turns: InterviewTurn[],
@@ -314,8 +299,13 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         Boolean(composerValue.trim()) &&
         (composerMode === "answer" || composerMode === "follow-up")));
 
-  function updateConfig<K extends keyof InterviewConfig>(field: K, value: InterviewConfig[K]) {
-    setConfig((current) => ({ ...current, [field]: value }));
+  function selectModel(provider: ProviderName, model: string) {
+    setConfig((current) => ({
+      ...current,
+      chat_model_provider: provider,
+      chat_model: model,
+    }));
+    setModelMenuOpen(false);
   }
 
   function appendStreamingDelta(text: string) {
@@ -777,52 +767,21 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
               rows={1}
               value={composerValue}
             />
-            <div className="model-picker" data-open={modelMenuOpen}>
-              <button
-                aria-expanded={modelMenuOpen}
-                aria-label={t("select_model")}
-                className="model-picker-button"
-                disabled={session?.status === "active" || providers.length === 0}
-                onClick={() => setModelMenuOpen((current) => !current)}
-                type="button"
-              >
-                <span>{config.chat_model || t("model_unavailable")}</span>
-                <ChevronDown aria-hidden="true" size={14} />
-              </button>
-              {modelMenuOpen ? (
-                <div className="model-picker-menu" role="listbox" aria-label={t("model")}>
-                  {providers.length === 0 ? (
-                    <span className="model-picker-empty">{t("no_providers")}</span>
-                  ) : null}
-                  {providers.map((provider) => (
-                    <div className="model-picker-group" key={provider.provider}>
-                      <p>{provider.provider}</p>
-                      {provider.models.map((model) => {
-                        const active =
-                          provider.provider === config.chat_model_provider &&
-                          model === config.chat_model;
-                        return (
-                          <button
-                            data-active={active}
-                            key={`${provider.provider}-${model}`}
-                            onClick={() => {
-                              updateConfig("chat_model_provider", provider.provider);
-                              updateConfig("chat_model", model);
-                              setModelMenuOpen(false);
-                            }}
-                            role="option"
-                            aria-selected={active}
-                            type="button"
-                          >
-                            {model}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <ModelPicker
+              disabled={session?.status === "active"}
+              labels={{
+                listbox: t("model"),
+                modelUnavailable: t("model_unavailable"),
+                noProviders: t("no_providers"),
+                selectModel: t("select_model"),
+              }}
+              onOpenChange={setModelMenuOpen}
+              onSelect={selectModel}
+              open={modelMenuOpen}
+              providers={providers}
+              selectedModel={config.chat_model}
+              selectedProvider={config.chat_model_provider}
+            />
             <button
               aria-label={
                 composerMode === "start"

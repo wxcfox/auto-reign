@@ -12,6 +12,7 @@ from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.artifact_service import ArtifactService
 from app.services.extraction_service import ExtractionService
+from app.services.markdown_utils import slugify
 from app.services.workspace_service import WorkspaceService
 
 
@@ -201,8 +202,7 @@ class IngestionService:
         return stripped[:1200] if stripped else "（空内容）"
 
     def _slug(self, value: str) -> str:
-        slug = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", "-", value).strip("-").lower()
-        return slug or "knowledge"
+        return slugify(value, fallback="knowledge")
 
     def _truncate(self, text: str) -> str:
         return text[: self.max_parsed_chars]

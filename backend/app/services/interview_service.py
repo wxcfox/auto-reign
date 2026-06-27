@@ -1,8 +1,6 @@
-import hashlib
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -24,7 +22,8 @@ from app.services.model_service import (
 )
 from app.services.artifact_service import ArtifactService
 from app.services.context_assembler import ContextAssembler
-from app.services.memory_service import MemoryService
+from app.services.interview_completion_service import InterviewCompletionService
+from app.services.interview_artifact_service import InterviewArtifactService
 from app.services.retrieval_query_planner import RetrievalPurpose, RetrievalRequest
 from app.services.workspace_service import WorkspaceService
 from app.services.workspace_retrieval_service import WorkspaceRetrievalService
@@ -98,6 +97,8 @@ class InterviewService:
         artifact_repository: ArtifactRepository | None = None,
         artifact_service: ArtifactService | None = None,
         workspace_service: WorkspaceService | None = None,
+        interview_artifact_service: InterviewArtifactService | None = None,
+        interview_completion_service: InterviewCompletionService | None = None,
     ) -> None:
         self.config_repository = config_repository or InterviewConfigRepository()
         self.session_repository = session_repository or InterviewSessionRepository()
@@ -108,6 +109,8 @@ class InterviewService:
         self.artifact_repository = artifact_repository or ArtifactRepository()
         self.artifact_service = artifact_service
         self.workspace_service = workspace_service
+        self.interview_artifact_service = interview_artifact_service
+        self.interview_completion_service = interview_completion_service
 
     def get_last_config(self, session: Session) -> InterviewConfig:
         config = self.config_repository.get_last(session)
@@ -344,14 +347,12 @@ class InterviewService:
         turn.follow_up_question = evaluation.follow_up_question
         turn.weaknesses = evaluation.weaknesses
         turn.review_suggestions = evaluation.review_suggestions
-        self._upsert_question_bank_entry(
-            session,
-            config,
-            turn,
-            question=turn.question,
-            evaluation=evaluation,
-        )
-        self._upsert_high_frequency_question(config, turn.question, evaluation)
+        turn.better_answer = evaluation.better_answer
+        turn.mastery_change = evaluation.mastery_change
+        turn.should_write_weakness = evaluation.should_write_weakness
+        turn.should_write_high_frequency = evaluation.should_write_high_frequency
+        turn.tested_points = evaluation.tested_points
+        self._record_answer_evaluation(session, config, turn, turn.question, evaluation)
         session.flush()
         self._persist_practice_progress(session, interview_session, config)
         return evaluation
@@ -389,14 +390,12 @@ class InterviewService:
             turn.follow_up_question = evaluation.follow_up_question
             turn.weaknesses = evaluation.weaknesses
             turn.review_suggestions = evaluation.review_suggestions
-            self._upsert_question_bank_entry(
-                session,
-                config,
-                turn,
-                question=turn.question,
-                evaluation=evaluation,
-            )
-            self._upsert_high_frequency_question(config, turn.question, evaluation)
+            turn.better_answer = evaluation.better_answer
+            turn.mastery_change = evaluation.mastery_change
+            turn.should_write_weakness = evaluation.should_write_weakness
+            turn.should_write_high_frequency = evaluation.should_write_high_frequency
+            turn.tested_points = evaluation.tested_points
+            self._record_answer_evaluation(session, config, turn, turn.question, evaluation)
             session.flush()
             self._persist_practice_progress(session, interview_session, config)
             yield InterviewStreamEvent(event="result", data=evaluation.model_dump())
@@ -440,14 +439,12 @@ class InterviewService:
         turn.follow_up_missing_points = evaluation.missing_points
         turn.follow_up_weaknesses = evaluation.weaknesses
         turn.follow_up_review_suggestions = evaluation.review_suggestions
-        self._upsert_question_bank_entry(
-            session,
-            config,
-            turn,
-            question=turn.follow_up_question,
-            evaluation=evaluation,
-        )
-        self._upsert_high_frequency_question(config, turn.follow_up_question, evaluation)
+        turn.better_answer = evaluation.better_answer
+        turn.mastery_change = evaluation.mastery_change
+        turn.should_write_weakness = evaluation.should_write_weakness
+        turn.should_write_high_frequency = evaluation.should_write_high_frequency
+        turn.tested_points = evaluation.tested_points
+        self._record_answer_evaluation(session, config, turn, turn.follow_up_question, evaluation)
         session.flush()
         self._persist_practice_progress(session, interview_session, config)
         return evaluation
@@ -490,14 +487,12 @@ class InterviewService:
             turn.follow_up_missing_points = evaluation.missing_points
             turn.follow_up_weaknesses = evaluation.weaknesses
             turn.follow_up_review_suggestions = evaluation.review_suggestions
-            self._upsert_question_bank_entry(
-                session,
-                config,
-                turn,
-                question=turn.follow_up_question,
-                evaluation=evaluation,
-            )
-            self._upsert_high_frequency_question(config, turn.follow_up_question, evaluation)
+            turn.better_answer = evaluation.better_answer
+            turn.mastery_change = evaluation.mastery_change
+            turn.should_write_weakness = evaluation.should_write_weakness
+            turn.should_write_high_frequency = evaluation.should_write_high_frequency
+            turn.tested_points = evaluation.tested_points
+            self._record_answer_evaluation(session, config, turn, turn.follow_up_question, evaluation)
             session.flush()
             self._persist_practice_progress(session, interview_session, config)
             yield InterviewStreamEvent(event="result", data=evaluation.model_dump())
@@ -854,357 +849,36 @@ class InterviewService:
         interview_session: InterviewSession,
         config: InterviewConfig,
     ) -> None:
-        if self.artifact_service is None or self.workspace_service is None:
+        writer = self._artifact_writer()
+        if writer is None:
             return
         turns = self.turn_repository.list_for_session(session, interview_session.id)
-        if not any(turn.answer or turn.follow_up_answer for turn in turns):
-            return
+        writer.record_answer_progress(session, interview_session, config, turns)
 
-        language = config.language or "zh-CN"
-        started = interview_session.started_at.astimezone(UTC)
-        practice_path = f"practice/{started:%Y-%m-%d}.md"
-        session_heading = f"会话 {interview_session.id}"
-        session_body = self._practice_session_body(interview_session, config, turns)
-        evidence_ref = f"interview_session:{interview_session.id}"
-        try:
-            current = self.artifact_service.read_markdown(practice_path)
-        except FileNotFoundError:
-            self.artifact_service.create_markdown(
-                practice_path,
-                kind="practice",
-                body=f"# 模拟面试记录\n\n## {session_heading}\n\n{session_body}\n",
-                language=language,
-                origin="observed",
-                edited_by="system",
-                evidence_refs=[evidence_ref],
-            )
-        else:
-            body = self._replace_or_append_h2(current.body, session_heading, session_body)
-            self.artifact_service.replace_body(
-                practice_path,
-                expected_revision=current.front_matter.revision,
-                body=body,
-                edited_by="system",
-                now=datetime.now(UTC),
-            )
-        self._upsert_review_status(config, turns, evidence_ref)
-        self.workspace_service.rebuild_projection(
-            session,
-            self.artifact_repository,
-            self.artifact_service,
-        )
-
-    def _practice_session_body(
-        self,
-        interview_session: InterviewSession,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
-    ) -> str:
-        body = [
-            f"- 开始时间：{interview_session.started_at.astimezone(UTC).isoformat().replace('+00:00', 'Z')}",
-            f"- 出题要求：{config.extra_prompt.strip() or '默认抽检'}",
-            "",
-        ]
-        for turn in turns:
-            body.extend(
-                [
-                    f"### 第 {turn.round_index} 轮",
-                    "",
-                    f"**问题**：{turn.question}",
-                    "",
-                    f"**回答**：{turn.answer or ''}",
-                    "",
-                    f"**点评**：{turn.feedback or ''}",
-                    "",
-                ]
-            )
-            if turn.missing_points:
-                body.extend(["**缺失点**：", self._bullet_list(turn.missing_points), ""])
-            if turn.weaknesses:
-                body.extend(["**薄弱点**：", self._bullet_list(turn.weaknesses), ""])
-            if turn.review_suggestions:
-                body.extend(["**复习建议**：", self._bullet_list(turn.review_suggestions), ""])
-            if turn.follow_up_question:
-                body.extend(
-                    [
-                        f"**追问**：{turn.follow_up_question}",
-                        "",
-                        f"**追问回答**：{turn.follow_up_answer or ''}",
-                        "",
-                        f"**追问点评**：{turn.follow_up_feedback or ''}",
-                        "",
-                    ]
-                )
-                if turn.follow_up_missing_points:
-                    body.extend(["**追问缺失点**：", self._bullet_list(turn.follow_up_missing_points), ""])
-                if turn.follow_up_weaknesses:
-                    body.extend(["**追问薄弱点**：", self._bullet_list(turn.follow_up_weaknesses), ""])
-                if turn.follow_up_review_suggestions:
-                    body.extend(["**追问复习建议**：", self._bullet_list(turn.follow_up_review_suggestions), ""])
-        return "\n".join(body).strip()
-
-    def _upsert_review_status(
-        self,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
-        evidence_ref: str,
-    ) -> None:
-        if self.artifact_service is None:
-            return
-        status_path = "review/status.md"
-        focus = self._top_items(
-            [
-                item
-                for turn in turns
-                for item in [
-                    *turn.weaknesses,
-                    *turn.follow_up_weaknesses,
-                    *turn.missing_points,
-                    *turn.follow_up_missing_points,
-                    *turn.review_suggestions,
-                    *turn.follow_up_review_suggestions,
-                ]
-            ],
-            6,
-        )
-        latest_question = next((turn.question for turn in reversed(turns) if turn.answer), "")
-        latest_practice = f"练习：{latest_question}" if latest_question else ""
-        try:
-            current = self.artifact_service.read_markdown(status_path)
-            sections = self._markdown_sections(current.body)
-            recent_learning = self._markdown_list_items(sections.get("最近整理") or "")
-            recent_practice = self._markdown_list_items(sections.get("最近练习") or "")
-            evidence_refs = self._top_items([*current.front_matter.evidence_refs, evidence_ref], 20)
-        except FileNotFoundError:
-            current = None
-            recent_learning = []
-            recent_practice = []
-            evidence_refs = [evidence_ref]
-
-        practice_items = self._top_items([latest_practice, *recent_practice], 8)
-        body = (
-            "# 复习状态\n\n"
-            "## 当前重点\n\n"
-            f"{self._plain_bullet_list(focus or ['继续通过模拟面试暴露薄弱点'])}\n\n"
-            "## 最近整理\n\n"
-            f"{self._plain_bullet_list(recent_learning)}\n\n"
-            "## 最近练习\n\n"
-            f"{self._plain_bullet_list(practice_items)}\n"
-        )
-        if current is None:
-            self.artifact_service.create_markdown(
-                status_path,
-                kind="review_status",
-                body=body,
-                language=config.language or "zh-CN",
-                origin="llm",
-                edited_by="system",
-                evidence_refs=evidence_refs,
-            )
-            return
-        self.artifact_service.replace_body(
-            status_path,
-            expected_revision=current.front_matter.revision,
-            body=body,
-            edited_by="system",
-            now=datetime.now(UTC),
-        )
-
-    def _upsert_high_frequency_question(
-        self,
-        config: InterviewConfig,
-        question: str | None,
-        evaluation: AnswerEvaluationResult,
-    ) -> None:
-        if self.artifact_service is None or not evaluation.should_write_high_frequency or not question:
-            return
-        relative_path = "review/high-frequency.md"
-        try:
-            current = self.artifact_service.read_markdown(relative_path)
-            sections = self._markdown_sections(current.body)
-            existing_questions = self._markdown_list_items(sections.get("真实面试高频问题") or "")
-            existing_weak_points = self._markdown_list_items(sections.get("暴露问题") or "")
-        except FileNotFoundError:
-            current = None
-            existing_questions = []
-            existing_weak_points = []
-
-        questions = self._top_items([question, *existing_questions], 20)
-        weak_points = self._top_items(
-            [*evaluation.weaknesses, *evaluation.missing_points, *existing_weak_points],
-            20,
-        )
-        body = (
-            "# 高频与薄弱点\n\n"
-            "## 真实面试高频问题\n\n"
-            f"{self._plain_bullet_list(questions)}\n\n"
-            "## 暴露问题\n\n"
-            f"{self._plain_bullet_list(weak_points)}\n"
-        )
-        if current is None:
-            self.artifact_service.create_markdown(
-                relative_path,
-                kind="high_frequency",
-                body=body,
-                language=config.language or "zh-CN",
-                origin="llm",
-                edited_by="system",
-            )
-            return
-        self.artifact_service.replace_body(
-            relative_path,
-            expected_revision=current.front_matter.revision,
-            body=body,
-            edited_by="system",
-            now=datetime.now(UTC),
-        )
-
-    def _replace_or_append_h2(self, body: str, heading: str, content: str) -> str:
-        replacement = f"## {heading}\n\n{content.strip()}\n"
-        pattern = re.compile(
-            rf"^##[ \t]+{re.escape(heading)}[ \t]*\n.*?(?=^##[ \t]+|\Z)",
-            flags=re.DOTALL | re.MULTILINE,
-        )
-        if pattern.search(body):
-            return pattern.sub(replacement, body, count=1)
-        return f"{body.rstrip()}\n\n{replacement}"
-
-    def _markdown_sections(self, markdown: str) -> dict[str, str]:
-        sections: dict[str, list[str]] = {}
-        current: str | None = None
-        for line in markdown.splitlines():
-            heading = re.match(r"^##\s+(.+)$", line.strip())
-            if heading:
-                current = heading.group(1).strip().lower()
-                sections.setdefault(current, [])
-                continue
-            if current:
-                sections[current].append(line)
-        return {heading: "\n".join(lines).strip() for heading, lines in sections.items()}
-
-    def _markdown_list_items(self, markdown: str) -> list[str]:
-        items: list[str] = []
-        for line in markdown.splitlines():
-            match = re.match(r"^\s*(?:[-*]|\d+[.)])\s+(.+)$", line)
-            if match:
-                items.append(match.group(1).strip())
-        return self._top_items(items, 100)
-
-    def _plain_bullet_list(self, items: list[str]) -> str:
-        compact = self._top_items(items, 100)
-        if not compact:
-            return "- 暂无。"
-        return "\n".join(f"- {item}" for item in compact)
-
-    def _upsert_question_bank_entry(
+    def _record_answer_evaluation(
         self,
         session: Session,
         config: InterviewConfig,
         turn: InterviewTurn,
-        *,
         question: str,
         evaluation: AnswerEvaluationResult,
     ) -> None:
+        writer = self._artifact_writer()
+        if writer is None:
+            return
+        writer.record_answer_evaluation(session, config, turn, question=question, evaluation=evaluation)
+
+    def _artifact_writer(self) -> InterviewArtifactService | None:
+        if self.interview_artifact_service is not None:
+            return self.interview_artifact_service
         if self.artifact_service is None or self.workspace_service is None:
             return
-        if not (
-            evaluation.should_write_weakness
-            or evaluation.missing_points
-            or evaluation.weaknesses
-        ):
-            return
-
-        relative_path = self._question_bank_path(question)
-        body = self._question_bank_body(session, config, question, evaluation)
-        existing = self.artifact_repository.get_by_relative_path(session, relative_path)
-        path_exists = self.workspace_service.resolve_path(relative_path).exists()
-        if existing is not None or path_exists:
-            current = self.artifact_service.read_markdown(relative_path)
-            self.artifact_service.replace_body(
-                relative_path,
-                expected_revision=current.front_matter.revision,
-                body=body,
-                edited_by="system",
-            )
-        else:
-            self.artifact_service.create_markdown(
-                relative_path,
-                kind="question_bank",
-                body=body,
-                language=config.language,
-                evidence_refs=[f"interview_turn:{turn.id}"],
-                origin="llm",
-                edited_by="system",
-            )
-        self.workspace_service.rebuild_projection(
-            session,
-            self.artifact_repository,
-            self.artifact_service,
+        self.interview_artifact_service = InterviewArtifactService(
+            workspace_service=self.workspace_service,
+            artifact_service=self.artifact_service,
+            artifact_repository=self.artifact_repository,
         )
-
-    def _question_bank_path(self, question: str) -> str:
-        digest = hashlib.sha1(question.strip().encode("utf-8")).hexdigest()[:10]
-        words = re.findall(r"[A-Za-z0-9]+", question.lower())
-        slug = "-".join(words)[:60].strip("-") or "question"
-        return f"questions/{slug}-{digest}.md"
-
-    def _question_bank_body(
-        self,
-        session: Session,
-        config: InterviewConfig,
-        question: str,
-        evaluation: AnswerEvaluationResult,
-    ) -> str:
-        tested_points = evaluation.tested_points or [config.target_role, config.job_description]
-        error_points = [
-            *evaluation.missing_points,
-            *evaluation.weaknesses,
-        ]
-        project_lines = [
-            item.split("\n", 1)[1].strip()
-            for item in self._project_context(session)
-            if "\n" in item and item.split("\n", 1)[1].strip()
-        ]
-        project_section = (
-            "\n\n".join(project_lines)
-            if project_lines
-            else "结合已有项目材料补充业务场景、角色职责、技术取舍和结果指标。"
-        )
-        review_status = evaluation.mastery_change or "weak"
-        if evaluation.should_write_weakness:
-            review_status = review_status if "weak" in review_status else f"{review_status}；写入薄弱点"
-        if evaluation.should_write_high_frequency:
-            review_status = f"{review_status}；写入高频题"
-
-        return (
-            f"## 问题：{question.strip()}\n\n"
-            "### 考察点\n\n"
-            f"{self._bullet_list(tested_points)}\n\n"
-            "### 标准回答\n\n"
-            f"{(evaluation.better_answer or evaluation.feedback).strip()}\n\n"
-            "### 结合项目\n\n"
-            f"{project_section}\n\n"
-            "### 常见追问\n\n"
-            f"{evaluation.follow_up_question.strip() or '暂无。'}\n\n"
-            "### 易错点\n\n"
-            f"{self._bullet_list(error_points or evaluation.review_suggestions)}\n\n"
-            "### 复习状态\n\n"
-            f"{review_status}\n"
-        )
-
-    def _top_items(self, values: list[str], limit: int) -> list[str]:
-        seen: list[str] = []
-        for value in values:
-            cleaned = value.strip()
-            if cleaned and cleaned not in seen:
-                seen.append(cleaned)
-        return seen[:limit]
-
-    def _bullet_list(self, items: list[str]) -> str:
-        cleaned = [item.strip() for item in items if item.strip()]
-        if not cleaned:
-            return "- 暂无。"
-        return "\n".join(f"- {item}" for item in cleaned)
+        return self.interview_artifact_service
 
     def _get_active_session(self, session: Session, session_id: str) -> InterviewSession:
         interview_session = self.session_repository.get(session, session_id)
@@ -1222,7 +896,11 @@ class InterviewService:
         raise not_found("turn_not_found", "Current interview turn not found.")
 
     def finish_session(self, session: Session, session_id: str):
-        return MemoryService().finish_session(session, session_id)
+        service = self.interview_completion_service or InterviewCompletionService(
+            model_service=self.model_service,
+            interview_artifact_service=self._artifact_writer(),
+        )
+        return service.finish_session(session, session_id)
 
     def stream_finish_session(
         self, session: Session, session_id: str

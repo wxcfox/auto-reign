@@ -95,6 +95,11 @@ class InterviewTurn(Base):
     follow_up_review_suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
     weaknesses: Mapped[list[str]] = mapped_column(JSON, default=list)
     review_suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    better_answer: Mapped[str] = mapped_column(Text, default="")
+    mastery_change: Mapped[str] = mapped_column(String(64), default="unchanged")
+    should_write_weakness: Mapped[bool] = mapped_column(Boolean, default=False)
+    should_write_high_frequency: Mapped[bool] = mapped_column(Boolean, default=False)
+    tested_points: Mapped[list[str]] = mapped_column(JSON, default=list)
     retrieved_context_refs: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
 
@@ -112,17 +117,6 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
 
     session: Mapped[InterviewSession] = relationship(back_populates="reports")
-
-
-class MemoryFile(Base):
-    __tablename__ = "memory_files"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    kind: Mapped[str] = mapped_column(String(64), unique=True)
-    file_path: Mapped[str] = mapped_column(String(1024))
-    summary_hash: Mapped[str] = mapped_column(String(128), default="")
-    last_indexed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
 
 class WorkspaceSettings(Base):

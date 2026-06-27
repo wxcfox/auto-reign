@@ -234,15 +234,3 @@ export interface ReportDetailResponse {
   report: ReportRecord;
   content: string;
 }
-
-export interface MemoryFileContent {
-  kind: "weakness" | "interview_history" | "learning_profile";
-  content: string;
-  updated_at: string | null;
-}
-
-export type MemoryKind = MemoryFileContent["kind"];
-
-export interface MemoryResponse {
-  files: Record<MemoryKind, MemoryFileContent>;
-}

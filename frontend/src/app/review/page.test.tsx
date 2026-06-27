@@ -3,10 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ReviewPage from "./page";
 import i18next from "@/i18n/setup";
-import { getMemory, getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
+import { getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
-  getMemory: vi.fn(),
   getReport: vi.fn(),
   getReports: vi.fn(),
   recordRealInterviewRecord: vi.fn(),
@@ -42,13 +41,6 @@ describe("ReviewPage", () => {
         created_at: "2026-06-24T12:00:00Z",
       },
       content: "# Report",
-    });
-    vi.mocked(getMemory).mockResolvedValue({
-      files: {
-        weakness: { kind: "weakness", content: "", updated_at: null },
-        interview_history: { kind: "interview_history", content: "", updated_at: null },
-        learning_profile: { kind: "learning_profile", content: "", updated_at: null },
-      },
     });
     vi.mocked(recordRealInterviewRecord).mockResolvedValue({
       raw_artifact: artifact,

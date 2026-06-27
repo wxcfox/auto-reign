@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.sse import http_error_payload, sse_event
 from app.core.errors import not_found
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
@@ -47,24 +48,6 @@ def _ensure_index_current_best_effort(request: Request) -> None:
         logger.info("Workspace index refresh unavailable for interview flow: %s", exc)
 
 
-def _sse_event(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
-
-
-def _http_error_payload(error: HTTPException) -> dict[str, Any]:
-    if isinstance(error.detail, dict):
-        return {
-            "code": error.detail.get("code", "request_failed"),
-            "message": error.detail.get("message", "Request failed."),
-            "status_code": error.status_code,
-        }
-    return {
-        "code": "request_failed",
-        "message": str(error.detail),
-        "status_code": error.status_code,
-    }
-
-
 def _streaming_response(
     events: Iterator,
     serialize_result: Callable[[dict[str, Any]], dict[str, Any]],
@@ -74,13 +57,13 @@ def _streaming_response(
         try:
             for item in events:
                 data = serialize_result(item.data) if item.event == "result" else item.data
-                yield _sse_event(item.event, data)
+                yield sse_event(item.event, data)
         except HTTPException as error:
             session.rollback()
-            yield _sse_event("error", _http_error_payload(error))
+            yield sse_event("error", http_error_payload(error))
         except Exception:
             session.rollback()
-            yield _sse_event(
+            yield sse_event(
                 "error",
                 {
                     "code": "stream_failed",

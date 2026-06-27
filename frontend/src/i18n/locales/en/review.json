@@ -1,5 +1,5 @@
 {
-  "eyebrow": "Reports and memory",
+  "eyebrow": "Reports and review",
   "title": "Review",
   "summary": "{{count}} completed interviews.",
   "history_eyebrow": "History",
@@ -14,14 +14,6 @@
   "real_interview_result_title": "Review materials updated",
   "real_interview_questions": "Extracted questions",
   "real_interview_weak_points": "Weak signals",
-  "memory_eyebrow": "Persistent context",
-  "memory_title": "Memory",
-  "memory_loading": "Loading memory...",
-  "tabs": {
-    "weakness": "Weakness",
-    "interview_history": "Interview history",
-    "learning_profile": "Learning profile"
-  },
   "errors": {
     "review_load": "Failed to load review data.",
     "report_load": "Failed to load report.",

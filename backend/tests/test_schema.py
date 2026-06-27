@@ -14,7 +14,6 @@ APPLICATION_TABLES = {
     "interview_turns",
     "processing_jobs",
     "reports",
-    "memory_files",
     "workspace_settings",
 }
 
@@ -40,6 +39,11 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
             "follow_up_missing_points",
             "follow_up_weaknesses",
             "follow_up_review_suggestions",
+            "better_answer",
+            "mastery_change",
+            "should_write_weakness",
+            "should_write_high_frequency",
+            "tested_points",
         }.issubset(turn_columns)
         config_columns = {column["name"] for column in inspector.get_columns("interview_configs")}
         assert "language" in config_columns

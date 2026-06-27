@@ -38,8 +38,7 @@
     "new_interview": "New interview",
     "new_learning": "New learning",
     "open_report": "Open report",
-    "save_and_reindex": "Save and reindex",
-    "review_memory": "Review memory"
+    "save_and_reindex": "Save and reindex"
   },
   "errors": {
     "generic_load": "The requested data could not be loaded.",

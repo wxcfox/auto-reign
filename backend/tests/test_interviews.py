@@ -570,6 +570,51 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     assert "Redis Backend Engineer" in high_frequency_detail["body"]
 
 
+def test_answer_feedback_persists_structured_fields_in_session_detail(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.services.model_service import AnswerEvaluationResult
+
+    def capture_evaluate_answer(_self, _request):
+        return AnswerEvaluationResult(
+            feedback="Good structure.",
+            missing_points=["retry boundaries"],
+            follow_up_question="",
+            weaknesses=["Needs a clearer failure-mode story."],
+            review_suggestions=["Prepare one retry incident."],
+            better_answer="I would describe the failure mode, retry budget, and rollback path.",
+            mastery_change="basic",
+            should_write_weakness=True,
+            should_write_high_frequency=True,
+            tested_points=["failure handling", "retry budget"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.model_service.ModelService.evaluate_answer",
+        capture_evaluate_answer,
+    )
+
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I add retries and rollbacks."},
+    )
+    assert response.status_code == 200
+
+    detail = client.get(f"/api/interview-sessions/{session_id}").json()
+    turn = detail["turns"][0]
+    assert turn["better_answer"] == (
+        "I would describe the failure mode, retry budget, and rollback path."
+    )
+    assert turn["mastery_change"] == "basic"
+    assert turn["should_write_weakness"] is True
+    assert turn["should_write_high_frequency"] is True
+    assert turn["tested_points"] == ["failure handling", "retry budget"]
+
+
 def test_weak_answer_feedback_creates_question_bank_entry(
     client: TestClient,
     monkeypatch,
