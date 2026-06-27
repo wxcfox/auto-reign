@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.db.models import Report
+from app.db.session import session_scope
 from app.services.markdown_utils import markdown_list_items, markdown_sections
 
 
@@ -55,6 +57,38 @@ def test_finish_generates_workspace_report_and_updates_review_state(client: Test
     report_detail = client.get(f"/api/reports/{body['report']['id']}")
     assert report_detail.status_code == 200
     assert "# 面试复盘报告" in report_detail.json()["content"]
+
+
+def test_report_detail_rejects_legacy_absolute_report_path(client: TestClient) -> None:
+    config = {
+        "target_company": "OpenAI",
+        "target_role": "Backend Engineer",
+        "job_description": "Build AI app infrastructure.",
+        "extra_prompt": "Focus on weakness reinforcement.",
+        "language": "zh-CN",
+        "mode": "weakness_reinforcement",
+        "chat_model_provider": "openai",
+        "chat_model": "gpt-4.1-mini",
+        "target_rounds": 1,
+    }
+    created = client.post("/api/interview-sessions", json=config).json()
+    session_id = created["session"]["id"]
+    client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I use tests and clear services."},
+    )
+    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
+    report_id = finished.json()["report"]["id"]
+
+    with session_scope(client.app.state.session_factory) as session:
+        report = session.get(Report, report_id)
+        assert report is not None
+        report.report_path = str(get_settings().data_dir / "reports" / "legacy.md")
+
+    response = client.get(f"/api/reports/{report_id}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "report_not_found"
 
 
 def test_finish_does_not_write_vectors_inline(

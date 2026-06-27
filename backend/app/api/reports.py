@@ -7,6 +7,8 @@ from app.core.errors import not_found
 from app.db.session import session_scope
 from app.repositories.database import ReportRepository
 from app.schemas.reports import ReportDetailResponse, ReportListResponse, ReportResponse
+from app.services.artifact_service import InvalidFrontMatter
+from app.services.workspace_service import UnsafeWorkspacePath
 
 router = APIRouter(prefix="/api/reports")
 
@@ -33,6 +35,6 @@ def get_report(
         raise not_found("report_not_found", "Report not found.")
     try:
         content = request.app.state.artifact_service.read_markdown(report.report_path).body
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, InvalidFrontMatter, UnsafeWorkspacePath) as exc:
         raise not_found("report_not_found", "Report artifact not found.") from exc
     return ReportDetailResponse(report=ReportResponse.model_validate(report), content=content)
