@@ -464,7 +464,7 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     client: TestClient,
     monkeypatch,
 ) -> None:
-    from app.services.model_service import AnswerEvaluationResult
+    from app.schemas.modeling import AnswerEvaluationResult
 
     captured_contexts: list[list[str]] = []
     captured_queries: list[str] = []
@@ -575,7 +575,7 @@ def test_answer_feedback_persists_structured_fields_in_session_detail(
     client: TestClient,
     monkeypatch,
 ) -> None:
-    from app.services.model_service import AnswerEvaluationResult
+    from app.schemas.modeling import AnswerEvaluationResult
 
     def capture_evaluate_answer(_self, _request):
         return AnswerEvaluationResult(
@@ -620,7 +620,7 @@ def test_follow_up_feedback_keeps_structured_fields_separate(
     client: TestClient,
     monkeypatch,
 ) -> None:
-    from app.services.model_service import AnswerEvaluationResult
+    from app.schemas.modeling import AnswerEvaluationResult
 
     def capture_evaluate_answer(_self, request):
         if request.question == "What fallback would you add?":
@@ -695,7 +695,7 @@ def test_weak_answer_feedback_creates_question_bank_entry(
     client: TestClient,
     monkeypatch,
 ) -> None:
-    from app.services.model_service import AnswerEvaluationResult
+    from app.schemas.modeling import AnswerEvaluationResult
 
     def evaluate_weak_answer(_self, _request):
         return AnswerEvaluationResult(

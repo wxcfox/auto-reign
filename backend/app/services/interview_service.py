@@ -14,12 +14,12 @@ from app.repositories.database import (
     InterviewTurnRepository,
 )
 from app.schemas.interviews import InterviewConfigIn
-from app.services.model_service import (
+from app.schemas.modeling import (
     AnswerEvaluationRequest,
     AnswerEvaluationResult,
-    ModelService,
     QuestionGenerationRequest,
 )
+from app.services.model_service import ModelService
 from app.services.artifact_service import ArtifactService
 from app.services.context_assembler import ContextAssembler
 from app.services.interview_completion_service import InterviewCompletionService

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FileText, PanelLeftClose, PanelLeftOpen, Pencil, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { DocumentUploader } from "@/components/DocumentUploader";
+import { MaterialUploader } from "@/components/MaterialUploader";
 import { StatusPill } from "@/components/StatusPill";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -201,7 +201,7 @@ export default function LibraryPage() {
                   value={keyword}
                 />
               </label>
-              <DocumentUploader onUploaded={() => void loadArtifacts()} />
+              <MaterialUploader onUploaded={() => void loadArtifacts()} />
             </div>
           </div>
 

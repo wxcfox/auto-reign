@@ -65,7 +65,7 @@ export function getPreparationTasks(): Promise<PreparationTasksResponse> {
   return apiJson<PreparationTasksResponse>("/api/workspace/preparation-tasks");
 }
 
-export function recordRealInterviewRecord(
+export function recordRealInterview(
   payload: RealInterviewRecordRequest,
 ): Promise<RealInterviewRecordResponse> {
   return apiJson<RealInterviewRecordResponse>("/api/workspace/real-interview-records", {

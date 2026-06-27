@@ -12,8 +12,9 @@ from app.repositories.database import (
     InterviewTurnRepository,
     ReportRepository,
 )
+from app.schemas.modeling import ReportGenerationRequest
 from app.services.interview_artifact_service import InterviewArtifactService
-from app.services.model_service import ModelService, ReportGenerationRequest
+from app.services.model_service import ModelService
 
 
 class InterviewCompletionService:

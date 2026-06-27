@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import LibraryPage from "./page";
 import { deleteWorkspaceArtifact, getWorkspaceArtifacts } from "@/lib/api";
 
-vi.mock("@/components/DocumentUploader", () => ({
-  DocumentUploader: () => <button type="button">Upload</button>,
+vi.mock("@/components/MaterialUploader", () => ({
+  MaterialUploader: () => <button type="button">Upload</button>,
 }));
 
 vi.mock("@/lib/api", () => ({

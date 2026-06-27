@@ -317,7 +317,7 @@ def test_qdrant_client_failures_map_to_unavailable() -> None:
         store.has_searchable_content("workspace")
 
 
-def test_real_memory_qdrant_upserts_searches_and_deletes_artifact_chunks() -> None:
+def test_in_memory_qdrant_upserts_searches_and_deletes_artifact_chunks() -> None:
     client = QdrantClient(location=":memory:")
     store = WorkspaceVectorStore(client=client, embeddings=DeterministicEmbeddings())
     try:

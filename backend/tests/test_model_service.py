@@ -4,12 +4,12 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.config import Settings
-from app.services.model_service import (
+from app.schemas.modeling import (
     AnswerEvaluationRequest,
-    ModelService,
     QuestionGenerationRequest,
     ReportGenerationRequest,
 )
+from app.services.model_service import ModelService
 
 
 class FakeChatCompletions:

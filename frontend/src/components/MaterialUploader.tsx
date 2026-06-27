@@ -8,11 +8,11 @@ import { uploadMaterials } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type { UploadMaterialsResponse } from "@/lib/types";
 
-type DocumentUploaderProps = {
+type MaterialUploaderProps = {
   onUploaded: (response: UploadMaterialsResponse) => void;
 };
 
-export function DocumentUploader({ onUploaded }: DocumentUploaderProps) {
+export function MaterialUploader({ onUploaded }: MaterialUploaderProps) {
   const { t } = useTranslation("library");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);

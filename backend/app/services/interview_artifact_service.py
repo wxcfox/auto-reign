@@ -18,7 +18,7 @@ from app.services.markdown_utils import (
     slugify,
     unique_items,
 )
-from app.services.model_service import AnswerEvaluationResult
+from app.schemas.modeling import AnswerEvaluationResult
 from app.services.workspace_service import WorkspaceService
 
 

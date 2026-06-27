@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ReviewPage from "./page";
 import i18next from "@/i18n/setup";
-import { getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
+import { getReport, getReports, recordRealInterview } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
   getReport: vi.fn(),
   getReports: vi.fn(),
-  recordRealInterviewRecord: vi.fn(),
+  recordRealInterview: vi.fn(),
 }));
 
 const artifact = {
@@ -42,7 +42,7 @@ describe("ReviewPage", () => {
       },
       content: "# Report",
     });
-    vi.mocked(recordRealInterviewRecord).mockResolvedValue({
+    vi.mocked(recordRealInterview).mockResolvedValue({
       raw_artifact: artifact,
       high_frequency_artifact: {
         ...artifact,
@@ -74,7 +74,7 @@ describe("ReviewPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存真实面试复盘" }));
 
     await waitFor(() =>
-      expect(recordRealInterviewRecord).toHaveBeenCalledWith({
+      expect(recordRealInterview).toHaveBeenCalledWith({
         text: "面试官：Redis 缓存击穿怎么处理？\n我：只说了加锁，没答好降级预案。",
         language: "zh-CN",
       }),

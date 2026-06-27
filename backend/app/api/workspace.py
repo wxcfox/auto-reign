@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.sse import http_error_payload, sse_event
@@ -24,6 +22,22 @@ from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.vector_store import VectorStoreError
 from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
+from app.schemas.workspace import (
+    ArtifactDeleteResponse,
+    ArtifactDetailResponse,
+    ArtifactListResponse,
+    ArtifactSummaryResponse,
+    LearningNoteRequest,
+    LearningNoteResponse,
+    PreparationTaskResponse,
+    PreparationTasksResponse,
+    RealInterviewRecordRequest,
+    RealInterviewRecordResponse,
+    ReplaceBodyRequest,
+    UploadedSourceResponse,
+    UploadMaterialsResponse,
+    WorkspaceStatusResponse,
+)
 from app.services.artifact_service import ArtifactConflict
 from app.services.ingestion_service import IngestionService, UploadItem
 from app.services.index_service import IndexService
@@ -31,7 +45,7 @@ from app.services.markdown_utils import (
     markdown_list_items,
     markdown_sections,
 )
-from app.services.model_service import LearningNoteSummaryResult, ModelService
+from app.services.model_service import ModelService
 from app.services.workspace_content_service import (
     LearningNotePersistenceResult,
     RealInterviewRecordPersistenceResult,
@@ -41,94 +55,6 @@ from app.services.workspace_content_service import (
 
 
 router = APIRouter(prefix="/api/workspace")
-
-
-class WorkspaceStatusResponse(BaseModel):
-    schema_version: int
-    language: str
-    artifact_count: int
-    initialized: bool = True
-
-
-class UploadedSourceResponse(BaseModel):
-    artifact_id: str
-    relative_path: str
-    duplicate: bool
-
-
-class UploadMaterialsResponse(BaseModel):
-    sources: list[UploadedSourceResponse]
-
-
-class LearningNoteRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=20000)
-    language: str = "zh-CN"
-    provider: str | None = None
-    model: str | None = None
-
-
-class LearningNoteResponse(BaseModel):
-    source: UploadedSourceResponse
-    artifact: "ArtifactSummaryResponse"
-    summary: LearningNoteSummaryResult
-    card_markdown: str
-
-
-class RealInterviewRecordRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=50000)
-    language: str = "zh-CN"
-
-
-class RealInterviewRecordResponse(BaseModel):
-    raw_artifact: "ArtifactSummaryResponse"
-    high_frequency_artifact: "ArtifactSummaryResponse"
-    status_artifact: "ArtifactSummaryResponse"
-    questions: list[str]
-    weak_points: list[str]
-
-
-class ArtifactSummaryResponse(BaseModel):
-    id: str
-    kind: str
-    owner: str
-    relative_path: str
-    display_name: str
-    revision: int
-    processing_status: str
-    index_status: str
-    recovery_required: bool
-    allowed_operations: list[str]
-    created_at: datetime
-    updated_at: datetime
-
-
-class ArtifactListResponse(BaseModel):
-    artifacts: list[ArtifactSummaryResponse]
-
-
-class PreparationTaskResponse(BaseModel):
-    title: str
-    reason: str
-    source_artifact_id: str | None = None
-    source_relative_path: str | None = None
-
-
-class PreparationTasksResponse(BaseModel):
-    tasks: list[PreparationTaskResponse]
-
-
-class ArtifactDetailResponse(ArtifactSummaryResponse):
-    body: str | None = None
-
-
-class ArtifactDeleteResponse(BaseModel):
-    id: str
-    status: str
-
-
-class ReplaceBodyRequest(BaseModel):
-    expected_revision: int
-    body: str
 
 
 def get_session(request: Request) -> Iterator[Session]:

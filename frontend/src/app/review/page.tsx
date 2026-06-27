@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { MarkdownView } from "@/components/MarkdownView";
-import { getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
+import { getReport, getReports, recordRealInterview } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type {
   RealInterviewRecordResponse,
@@ -56,7 +56,7 @@ export default function ReviewPage() {
     setError(null);
     try {
       const language = getCurrentLanguage() === "en" ? "en" : "zh-CN";
-      const result = await recordRealInterviewRecord({ text, language });
+      const result = await recordRealInterview({ text, language });
       setRecordResult(result);
       setRecordText("");
     } catch (submitError) {

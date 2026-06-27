@@ -14,8 +14,8 @@ import type { WorkspaceArtifactDetail } from "@/lib/types";
 
 export default function ArtifactDetailPage() {
   const { t } = useTranslation("library");
-  const params = useParams<{ documentId: string }>();
-  const artifactId = params.documentId;
+  const params = useParams<{ artifactId: string }>();
+  const artifactId = params.artifactId;
   const [artifact, setArtifact] = useState<WorkspaceArtifactDetail | null>(null);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
