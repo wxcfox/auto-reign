@@ -157,6 +157,11 @@ export interface InterviewTurn {
   follow_up_missing_points: string[];
   follow_up_weaknesses: string[];
   follow_up_review_suggestions: string[];
+  follow_up_better_answer?: string;
+  follow_up_mastery_change?: string;
+  follow_up_should_write_weakness?: boolean;
+  follow_up_should_write_high_frequency?: boolean;
+  follow_up_tested_points?: string[];
   weaknesses: string[];
   review_suggestions: string[];
   better_answer?: string;

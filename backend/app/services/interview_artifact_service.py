@@ -181,6 +181,28 @@ class InterviewArtifactService:
                     body.extend(["**追问薄弱点**：", plain_bullet_list(turn.follow_up_weaknesses), ""])
                 if turn.follow_up_review_suggestions:
                     body.extend(["**追问复习建议**：", plain_bullet_list(turn.follow_up_review_suggestions), ""])
+                if turn.follow_up_better_answer:
+                    body.extend(["**追问更好的面试说法**：", turn.follow_up_better_answer, ""])
+                if turn.follow_up_tested_points:
+                    body.extend(["**追问考察点**：", plain_bullet_list(turn.follow_up_tested_points), ""])
+                if (
+                    turn.follow_up_mastery_change
+                    and turn.follow_up_mastery_change != "unchanged"
+                ):
+                    body.extend(["**追问掌握状态变化**：", turn.follow_up_mastery_change, ""])
+                follow_up_write_suggestions = []
+                if turn.follow_up_should_write_weakness:
+                    follow_up_write_suggestions.append("写入薄弱点")
+                if turn.follow_up_should_write_high_frequency:
+                    follow_up_write_suggestions.append("写入高频题")
+                if follow_up_write_suggestions:
+                    body.extend(
+                        [
+                            "**追问写入建议**：",
+                            plain_bullet_list(follow_up_write_suggestions),
+                            "",
+                        ]
+                    )
         return "\n".join(body).strip()
 
     def upsert_review_status(

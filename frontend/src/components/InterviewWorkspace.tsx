@@ -70,6 +70,13 @@ function writeSuggestions(turn: InterviewTurn) {
   ].filter((item): item is "weakness" | "high_frequency" => item !== null);
 }
 
+function followUpWriteSuggestions(turn: InterviewTurn) {
+  return [
+    turn.follow_up_should_write_weakness ? "weakness" : null,
+    turn.follow_up_should_write_high_frequency ? "high_frequency" : null,
+  ].filter((item): item is "weakness" | "high_frequency" => item !== null);
+}
+
 function inferRequestedRounds(text: string): number | null {
   const match = text.match(/(\d{1,2})\s*(轮|题|道|round|rounds|questions?)/i);
   if (match) {
@@ -457,11 +464,11 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         follow_up_missing_points: response.missing_points,
         follow_up_weaknesses: response.weaknesses,
         follow_up_review_suggestions: response.review_suggestions,
-        better_answer: response.better_answer,
-        mastery_change: response.mastery_change,
-        should_write_weakness: response.should_write_weakness,
-        should_write_high_frequency: response.should_write_high_frequency,
-        tested_points: response.tested_points,
+        follow_up_better_answer: response.better_answer,
+        follow_up_mastery_change: response.mastery_change,
+        follow_up_should_write_weakness: response.should_write_weakness,
+        follow_up_should_write_high_frequency: response.should_write_high_frequency,
+        follow_up_tested_points: response.tested_points,
       })),
     );
   }
@@ -688,6 +695,43 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                         <ul>
                           {item.follow_up_missing_points.map((point) => (
                             <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.follow_up_better_answer ? (
+                      <>
+                        <h3>{t("better_answer")}</h3>
+                        <p>{item.follow_up_better_answer}</p>
+                      </>
+                    ) : null}
+                    {item.follow_up_tested_points && item.follow_up_tested_points.length > 0 ? (
+                      <>
+                        <h3>{t("tested_points")}</h3>
+                        <ul>
+                          {item.follow_up_tested_points.map((point) => (
+                            <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.follow_up_mastery_change &&
+                    item.follow_up_mastery_change !== "unchanged" ? (
+                      <>
+                        <h3>{t("mastery_change")}</h3>
+                        <p>{item.follow_up_mastery_change}</p>
+                      </>
+                    ) : null}
+                    {followUpWriteSuggestions(item).length > 0 ? (
+                      <>
+                        <h3>{t("write_suggestions")}</h3>
+                        <ul>
+                          {followUpWriteSuggestions(item).map((suggestion) => (
+                            <li key={suggestion}>
+                              {suggestion === "weakness"
+                                ? t("write_weakness")
+                                : t("write_high_frequency")}
+                            </li>
                           ))}
                         </ul>
                       </>

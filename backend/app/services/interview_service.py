@@ -439,11 +439,11 @@ class InterviewService:
         turn.follow_up_missing_points = evaluation.missing_points
         turn.follow_up_weaknesses = evaluation.weaknesses
         turn.follow_up_review_suggestions = evaluation.review_suggestions
-        turn.better_answer = evaluation.better_answer
-        turn.mastery_change = evaluation.mastery_change
-        turn.should_write_weakness = evaluation.should_write_weakness
-        turn.should_write_high_frequency = evaluation.should_write_high_frequency
-        turn.tested_points = evaluation.tested_points
+        turn.follow_up_better_answer = evaluation.better_answer
+        turn.follow_up_mastery_change = evaluation.mastery_change
+        turn.follow_up_should_write_weakness = evaluation.should_write_weakness
+        turn.follow_up_should_write_high_frequency = evaluation.should_write_high_frequency
+        turn.follow_up_tested_points = evaluation.tested_points
         self._record_answer_evaluation(session, config, turn, turn.follow_up_question, evaluation)
         session.flush()
         self._persist_practice_progress(session, interview_session, config)
@@ -487,11 +487,11 @@ class InterviewService:
             turn.follow_up_missing_points = evaluation.missing_points
             turn.follow_up_weaknesses = evaluation.weaknesses
             turn.follow_up_review_suggestions = evaluation.review_suggestions
-            turn.better_answer = evaluation.better_answer
-            turn.mastery_change = evaluation.mastery_change
-            turn.should_write_weakness = evaluation.should_write_weakness
-            turn.should_write_high_frequency = evaluation.should_write_high_frequency
-            turn.tested_points = evaluation.tested_points
+            turn.follow_up_better_answer = evaluation.better_answer
+            turn.follow_up_mastery_change = evaluation.mastery_change
+            turn.follow_up_should_write_weakness = evaluation.should_write_weakness
+            turn.follow_up_should_write_high_frequency = evaluation.should_write_high_frequency
+            turn.follow_up_tested_points = evaluation.tested_points
             self._record_answer_evaluation(session, config, turn, turn.follow_up_question, evaluation)
             session.flush()
             self._persist_practice_progress(session, interview_session, config)

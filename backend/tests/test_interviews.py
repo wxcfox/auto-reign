@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.repositories.vector_store import VectorStoreUnavailable
 from app.services.retrieval_query_planner import RetrievalRequest
 
@@ -613,6 +614,81 @@ def test_answer_feedback_persists_structured_fields_in_session_detail(
     assert turn["should_write_weakness"] is True
     assert turn["should_write_high_frequency"] is True
     assert turn["tested_points"] == ["failure handling", "retry budget"]
+
+
+def test_follow_up_feedback_keeps_structured_fields_separate(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.services.model_service import AnswerEvaluationResult
+
+    def capture_evaluate_answer(_self, request):
+        if request.question == "What fallback would you add?":
+            return AnswerEvaluationResult(
+                feedback="Follow-up feedback.",
+                missing_points=["manual fallback"],
+                follow_up_question="",
+                weaknesses=["Follow-up weakness."],
+                review_suggestions=["Review follow-up operations."],
+                better_answer="Follow-up better answer.",
+                mastery_change="fluent",
+                should_write_weakness=False,
+                should_write_high_frequency=True,
+                tested_points=["follow-up fallback"],
+            )
+        return AnswerEvaluationResult(
+            feedback="Main feedback.",
+            missing_points=["fallback path"],
+            follow_up_question="What fallback would you add?",
+            weaknesses=["Main weakness."],
+            review_suggestions=["Review main operations."],
+            better_answer="Main better answer.",
+            mastery_change="basic",
+            should_write_weakness=True,
+            should_write_high_frequency=False,
+            tested_points=["main cache stampede"],
+        )
+
+    monkeypatch.setattr(
+        "app.services.model_service.ModelService.evaluate_answer",
+        capture_evaluate_answer,
+    )
+
+    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    session_id = created["session"]["id"]
+    answer = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I would add mutex locks."},
+    )
+    follow_up = client.post(
+        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        json={"answer": "I would add a manual fallback."},
+    )
+
+    assert answer.status_code == 200
+    assert follow_up.status_code == 200
+    assert answer.json()["better_answer"] == "Main better answer."
+    assert follow_up.json()["better_answer"] == "Follow-up better answer."
+
+    detail = client.get(f"/api/interview-sessions/{session_id}").json()
+    turn = detail["turns"][0]
+    assert turn["better_answer"] == "Main better answer."
+    assert turn["mastery_change"] == "basic"
+    assert turn["should_write_weakness"] is True
+    assert turn["should_write_high_frequency"] is False
+    assert turn["tested_points"] == ["main cache stampede"]
+    assert turn["follow_up_better_answer"] == "Follow-up better answer."
+    assert turn["follow_up_mastery_change"] == "fluent"
+    assert turn["follow_up_should_write_weakness"] is False
+    assert turn["follow_up_should_write_high_frequency"] is True
+    assert turn["follow_up_tested_points"] == ["follow-up fallback"]
+
+    workspace = get_settings().data_dir / "workspace"
+    practice_files = list((workspace / "practice").glob("**/*.md"))
+    assert len(practice_files) == 1
+    practice_text = practice_files[0].read_text(encoding="utf-8")
+    assert "**更好的面试说法**：\nMain better answer." in practice_text
+    assert "**追问更好的面试说法**：\nFollow-up better answer." in practice_text
 
 
 def test_weak_answer_feedback_creates_question_bank_entry(
