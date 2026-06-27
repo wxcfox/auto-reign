@@ -61,8 +61,18 @@ class InterviewTurnResponse(BaseModel):
     follow_up_missing_points: list[str] = Field(default_factory=list)
     follow_up_weaknesses: list[str] = Field(default_factory=list)
     follow_up_review_suggestions: list[str] = Field(default_factory=list)
+    follow_up_better_answer: str = ""
+    follow_up_mastery_change: str = "unchanged"
+    follow_up_should_write_weakness: bool = False
+    follow_up_should_write_high_frequency: bool = False
+    follow_up_tested_points: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     review_suggestions: list[str] = Field(default_factory=list)
+    better_answer: str = ""
+    mastery_change: str = "unchanged"
+    should_write_weakness: bool = False
+    should_write_high_frequency: bool = False
+    tested_points: list[str] = Field(default_factory=list)
     retrieved_context_refs: list[dict[str, str]] = Field(default_factory=list)
     created_at: datetime
 

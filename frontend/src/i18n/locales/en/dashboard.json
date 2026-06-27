@@ -8,11 +8,6 @@
     "providers": "Available providers",
     "reports": "Interview reports"
   },
-  "memory": {
-    "eyebrow": "Current memory",
-    "title": "Weakness summary",
-    "empty": "No completed interviews yet."
-  },
   "report": {
     "eyebrow": "Latest output",
     "title": "Interview report",

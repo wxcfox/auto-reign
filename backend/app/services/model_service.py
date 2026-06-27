@@ -64,18 +64,6 @@ class ReportGenerationRequest(ProviderRequest):
     turns: list[dict[str, object]] = Field(default_factory=list)
 
 
-class MemoryUpdateRequest(ProviderRequest):
-    report_markdown: str
-    language: str = "en"
-    existing_memory: dict[str, str] = Field(default_factory=dict)
-
-
-class MemoryUpdateResult(BaseModel):
-    weakness_summary: str
-    interview_summary: str
-    learning_profile: str
-
-
 class ModelService:
     def __init__(
         self,
@@ -247,17 +235,6 @@ class ModelService:
             request.provider,
             request.model,
         ).strip()
-
-    def update_memory(self, request: MemoryUpdateRequest) -> MemoryUpdateResult:
-        if self.settings.deterministic_model_fallback:
-            return self._fallback_memory_update(request)
-        return self._structured_chat(
-            "memory_update.md",
-            request.model_dump(exclude={"provider", "model"}),
-            MemoryUpdateResult,
-            request.provider,
-            request.model,
-        )
 
     def stream_chat(
         self,
@@ -489,7 +466,7 @@ class ModelService:
                         f"- {weakness}" for weakness in weaknesses or ["当前未记录明显薄弱项。"]
                     ),
                     "## 复习重点\n- 针对缺失点各准备一个具体案例，并补齐关键取舍说明。",
-                    "## 参考上下文\n- 内容基于本次面试轮次记录与长期记忆生成。",
+                    "## 参考上下文\n- 内容基于本次面试轮次记录与工作区复习状态生成。",
                 ]
             )
         return "\n\n".join(
@@ -508,21 +485,8 @@ class ModelService:
                     for weakness in weaknesses or ["No major weaknesses recorded."]
                 ),
                 "## Review Focus\n- Revisit feedback and prepare one concrete example per gap.",
-                "## Source Context\n- Generated from local interview turns and memory.",
+                "## Source Context\n- Generated from local interview turns and workspace review state.",
             ]
-        )
-
-    def _fallback_memory_update(self, request: MemoryUpdateRequest) -> MemoryUpdateResult:
-        if request.language == "zh-CN":
-            return MemoryUpdateResult(
-                weakness_summary="重点补强系统设计取舍、失败场景处理和可观测性表达。",
-                interview_summary="已完成一场本地中文模拟面试，建议围绕反馈继续复盘。",
-                learning_profile="当前更适合通过结构化问答与RAG相关案例进行强化练习。",
-            )
-        return MemoryUpdateResult(
-            weakness_summary="Focus on concrete system design tradeoffs.",
-            interview_summary="Completed a local mock interview session.",
-            learning_profile="Prefers structured backend and RAG preparation.",
         )
 
     def _title_from_markdown(self, text: str) -> str:

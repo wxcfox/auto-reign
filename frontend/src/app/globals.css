@@ -882,10 +882,6 @@ a:focus-visible {
   font-weight: 700;
 }
 
-.memory-preview {
-  min-height: 320px;
-}
-
 .filter-row {
   justify-content: flex-end;
 }

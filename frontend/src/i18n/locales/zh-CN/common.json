@@ -38,8 +38,7 @@
     "new_interview": "新面试",
     "new_learning": "新学习",
     "open_report": "打开报告",
-    "save_and_reindex": "保存并重建索引",
-    "review_memory": "查看记忆"
+    "save_and_reindex": "保存并重建索引"
   },
   "errors": {
     "generic_load": "加载数据失败。",

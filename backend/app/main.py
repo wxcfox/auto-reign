@@ -7,7 +7,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.health import router as health_router
 from app.api.interviews import router as interviews_router
-from app.api.memory import router as memory_router
 from app.api.models import router as models_router
 from app.api.reports import router as reports_router
 from app.api.workspace import router as workspace_router
@@ -54,7 +53,6 @@ def create_app() -> FastAPI:
     app.state.artifact_service = artifact_service
     app.include_router(health_router)
     app.include_router(interviews_router)
-    app.include_router(memory_router)
     app.include_router(models_router)
     app.include_router(reports_router)
     app.include_router(workspace_router)

@@ -1,9 +1,11 @@
 "use client";
 
-import { ChevronDown, Loader2, Paperclip, Send } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Loader2, Paperclip, Send } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import { ChatMessage } from "@/components/ChatMessage";
 import { MarkdownView } from "@/components/MarkdownView";
+import { ModelPicker } from "@/components/ModelPicker";
 import { useTranslation } from "@/hooks/useTranslation";
 import { getModels, recordLearningNoteStream } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
@@ -17,27 +19,10 @@ type LearningMessage = {
   artifactPath?: string;
 };
 
-type ChatMessageProps = {
-  children: ReactNode;
-  meta?: string;
-  tone?: "assistant" | "user" | "system";
-};
-
 const defaultModel = {
   provider: "qwen" as ProviderName,
   model: "qwen3.7-plus",
 };
-
-function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
-  return (
-    <article className="chat-message" data-tone={tone}>
-      <div className="chat-bubble">
-        {meta ? <p className="chat-meta">{meta}</p> : null}
-        <div className="chat-copy">{children}</div>
-      </div>
-    </article>
-  );
-}
 
 function responseToMarkdown(response: LearningNoteResponse, language: "en" | "zh-CN") {
   const title = response.summary.title.trim()
@@ -238,46 +223,21 @@ export function LearningWorkspace() {
               rows={1}
               value={composerValue}
             />
-            <div className="model-picker" data-open={modelMenuOpen}>
-              <button
-                aria-expanded={modelMenuOpen}
-                aria-label={t("select_model")}
-                className="model-picker-button"
-                disabled={busy || providers.length === 0}
-                onClick={() => setModelMenuOpen((current) => !current)}
-                type="button"
-              >
-                <span>{selectedModel || t("model_unavailable")}</span>
-                <ChevronDown aria-hidden="true" size={14} />
-              </button>
-              {modelMenuOpen ? (
-                <div className="model-picker-menu" role="listbox" aria-label={t("select_model")}>
-                  {providers.length === 0 ? (
-                    <span className="model-picker-empty">{t("no_providers")}</span>
-                  ) : null}
-                  {providers.map((provider) => (
-                    <div className="model-picker-group" key={provider.provider}>
-                      <p>{provider.provider}</p>
-                      {provider.models.map((model) => {
-                        const active = provider.provider === selectedProvider && model === selectedModel;
-                        return (
-                          <button
-                            aria-selected={active}
-                            data-active={active}
-                            key={`${provider.provider}-${model}`}
-                            onClick={() => selectModel(provider.provider, model)}
-                            role="option"
-                            type="button"
-                          >
-                            {model}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <ModelPicker
+              disabled={busy}
+              labels={{
+                listbox: t("select_model"),
+                modelUnavailable: t("model_unavailable"),
+                noProviders: t("no_providers"),
+                selectModel: t("select_model"),
+              }}
+              onOpenChange={setModelMenuOpen}
+              onSelect={selectModel}
+              open={modelMenuOpen}
+              providers={providers}
+              selectedModel={selectedModel}
+              selectedProvider={selectedProvider}
+            />
             <button
               aria-label={t("composer.send")}
               className="send-button"

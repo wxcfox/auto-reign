@@ -8,11 +8,6 @@
     "providers": "可用模型提供方",
     "reports": "面试报告"
   },
-  "memory": {
-    "eyebrow": "当前记忆",
-    "title": "薄弱项摘要",
-    "empty": "还没有已完成的面试。"
-  },
   "report": {
     "eyebrow": "最新产出",
     "title": "面试报告",

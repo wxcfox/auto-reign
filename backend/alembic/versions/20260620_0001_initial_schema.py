@@ -104,21 +104,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["session_id"], ["interview_sessions.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_table(
-        "memory_files",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("kind", sa.String(length=64), nullable=False),
-        sa.Column("file_path", sa.String(length=1024), nullable=False),
-        sa.Column("summary_hash", sa.String(length=128), nullable=False),
-        sa.Column("last_indexed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("kind"),
-    )
-
 
 def downgrade() -> None:
-    op.drop_table("memory_files")
     op.drop_table("reports")
     op.drop_table("interview_turns")
     op.drop_table("interview_sessions")

@@ -5,11 +5,9 @@ import { useEffect, useState } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { MarkdownView } from "@/components/MarkdownView";
-import { getMemory, getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
+import { getReport, getReports, recordRealInterviewRecord } from "@/lib/api";
 import { getErrorMessage } from "@/lib/error-messages";
 import type {
-  MemoryKind,
-  MemoryResponse,
   RealInterviewRecordResponse,
   ReportDetailResponse,
   ReportRecord,
@@ -20,24 +18,16 @@ export default function ReviewPage() {
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [reportDetail, setReportDetail] = useState<ReportDetailResponse | null>(null);
-  const [memory, setMemory] = useState<MemoryResponse | null>(null);
-  const [memoryTab, setMemoryTab] = useState<MemoryKind>("weakness");
   const [recordText, setRecordText] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordResult, setRecordResult] = useState<RealInterviewRecordResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const memoryTabs: Array<{ value: MemoryKind; label: string }> = [
-    { value: "weakness", label: t("tabs.weakness") },
-    { value: "interview_history", label: t("tabs.interview_history") },
-    { value: "learning_profile", label: t("tabs.learning_profile") },
-  ];
 
   useEffect(() => {
     const requestedReport = new URLSearchParams(window.location.search).get("report");
-    Promise.all([getReports(), getMemory()])
-      .then(([reportResponse, memoryResponse]) => {
+    getReports()
+      .then((reportResponse) => {
         setReports(reportResponse.reports);
-        setMemory(memoryResponse);
         setSelectedReportId(requestedReport ?? reportResponse.reports[0]?.id ?? null);
       })
       .catch((loadError) =>
@@ -189,32 +179,6 @@ export default function ReviewPage() {
           ) : (
             <p className="empty-state">{t("select_report")}</p>
           )}
-        </div>
-      </section>
-
-      <section className="page-section" aria-labelledby="memory-heading">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">{t("memory_eyebrow")}</p>
-            <h2 id="memory-heading">{t("memory_title")}</h2>
-          </div>
-          <div className="segmented-control" role="tablist" aria-label="Memory file">
-            {memoryTabs.map((tab) => (
-              <button
-                aria-selected={memoryTab === tab.value}
-                data-active={memoryTab === tab.value}
-                key={tab.value}
-                onClick={() => setMemoryTab(tab.value)}
-                role="tab"
-                type="button"
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="content-surface memory-preview" role="tabpanel">
-          <MarkdownView content={memory?.files[memoryTab].content ?? t("memory_loading")} />
         </div>
       </section>
     </div>

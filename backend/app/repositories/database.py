@@ -69,16 +69,3 @@ class ReportRepository:
 
     def list(self, session: Session) -> list[models.Report]:
         return list(session.scalars(select(models.Report).order_by(models.Report.created_at.desc())))
-
-
-class MemoryFileRepository:
-    def get_by_kind(self, session: Session, kind: str) -> models.MemoryFile | None:
-        return session.scalar(select(models.MemoryFile).where(models.MemoryFile.kind == kind))
-
-    def add(self, session: Session, memory_file: models.MemoryFile) -> models.MemoryFile:
-        session.add(memory_file)
-        session.flush()
-        return memory_file
-
-    def list(self, session: Session) -> list[models.MemoryFile]:
-        return list(session.scalars(select(models.MemoryFile).order_by(models.MemoryFile.kind)))

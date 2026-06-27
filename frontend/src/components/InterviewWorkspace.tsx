@@ -1,13 +1,14 @@
 "use client";
 
 import {
-  ChevronDown,
   Loader2,
   Paperclip,
   Send,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import { ChatMessage } from "@/components/ChatMessage";
+import { ModelPicker } from "@/components/ModelPicker";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   createInterviewSessionStream,
@@ -30,6 +31,7 @@ import type {
   InterviewSession,
   InterviewTurn,
   ModelProvider,
+  ProviderName,
 } from "@/lib/types";
 
 const defaultConfig: InterviewConfig = {
@@ -53,23 +55,6 @@ type StreamingDraft = {
   turnId?: string;
 };
 
-type ChatMessageProps = {
-  children: ReactNode;
-  meta?: string;
-  tone?: "assistant" | "user" | "system";
-};
-
-function ChatMessage({ children, meta, tone = "assistant" }: ChatMessageProps) {
-  return (
-    <article className="chat-message" data-tone={tone}>
-      <div className="chat-bubble">
-        {meta ? <p className="chat-meta">{meta}</p> : null}
-        <div className="chat-copy">{children}</div>
-      </div>
-    </article>
-  );
-}
-
 function updateTurn(
   turns: InterviewTurn[],
   turnId: string,
@@ -82,6 +67,13 @@ function writeSuggestions(turn: InterviewTurn) {
   return [
     turn.should_write_weakness ? "weakness" : null,
     turn.should_write_high_frequency ? "high_frequency" : null,
+  ].filter((item): item is "weakness" | "high_frequency" => item !== null);
+}
+
+function followUpWriteSuggestions(turn: InterviewTurn) {
+  return [
+    turn.follow_up_should_write_weakness ? "weakness" : null,
+    turn.follow_up_should_write_high_frequency ? "high_frequency" : null,
   ].filter((item): item is "weakness" | "high_frequency" => item !== null);
 }
 
@@ -314,8 +306,13 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         Boolean(composerValue.trim()) &&
         (composerMode === "answer" || composerMode === "follow-up")));
 
-  function updateConfig<K extends keyof InterviewConfig>(field: K, value: InterviewConfig[K]) {
-    setConfig((current) => ({ ...current, [field]: value }));
+  function selectModel(provider: ProviderName, model: string) {
+    setConfig((current) => ({
+      ...current,
+      chat_model_provider: provider,
+      chat_model: model,
+    }));
+    setModelMenuOpen(false);
   }
 
   function appendStreamingDelta(text: string) {
@@ -467,11 +464,11 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
         follow_up_missing_points: response.missing_points,
         follow_up_weaknesses: response.weaknesses,
         follow_up_review_suggestions: response.review_suggestions,
-        better_answer: response.better_answer,
-        mastery_change: response.mastery_change,
-        should_write_weakness: response.should_write_weakness,
-        should_write_high_frequency: response.should_write_high_frequency,
-        tested_points: response.tested_points,
+        follow_up_better_answer: response.better_answer,
+        follow_up_mastery_change: response.mastery_change,
+        follow_up_should_write_weakness: response.should_write_weakness,
+        follow_up_should_write_high_frequency: response.should_write_high_frequency,
+        follow_up_tested_points: response.tested_points,
       })),
     );
   }
@@ -702,6 +699,43 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                         </ul>
                       </>
                     ) : null}
+                    {item.follow_up_better_answer ? (
+                      <>
+                        <h3>{t("better_answer")}</h3>
+                        <p>{item.follow_up_better_answer}</p>
+                      </>
+                    ) : null}
+                    {item.follow_up_tested_points && item.follow_up_tested_points.length > 0 ? (
+                      <>
+                        <h3>{t("tested_points")}</h3>
+                        <ul>
+                          {item.follow_up_tested_points.map((point) => (
+                            <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {item.follow_up_mastery_change &&
+                    item.follow_up_mastery_change !== "unchanged" ? (
+                      <>
+                        <h3>{t("mastery_change")}</h3>
+                        <p>{item.follow_up_mastery_change}</p>
+                      </>
+                    ) : null}
+                    {followUpWriteSuggestions(item).length > 0 ? (
+                      <>
+                        <h3>{t("write_suggestions")}</h3>
+                        <ul>
+                          {followUpWriteSuggestions(item).map((suggestion) => (
+                            <li key={suggestion}>
+                              {suggestion === "weakness"
+                                ? t("write_weakness")
+                                : t("write_high_frequency")}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
                   </ChatMessage>
                 ) : null}
               </div>
@@ -777,52 +811,21 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
               rows={1}
               value={composerValue}
             />
-            <div className="model-picker" data-open={modelMenuOpen}>
-              <button
-                aria-expanded={modelMenuOpen}
-                aria-label={t("select_model")}
-                className="model-picker-button"
-                disabled={session?.status === "active" || providers.length === 0}
-                onClick={() => setModelMenuOpen((current) => !current)}
-                type="button"
-              >
-                <span>{config.chat_model || t("model_unavailable")}</span>
-                <ChevronDown aria-hidden="true" size={14} />
-              </button>
-              {modelMenuOpen ? (
-                <div className="model-picker-menu" role="listbox" aria-label={t("model")}>
-                  {providers.length === 0 ? (
-                    <span className="model-picker-empty">{t("no_providers")}</span>
-                  ) : null}
-                  {providers.map((provider) => (
-                    <div className="model-picker-group" key={provider.provider}>
-                      <p>{provider.provider}</p>
-                      {provider.models.map((model) => {
-                        const active =
-                          provider.provider === config.chat_model_provider &&
-                          model === config.chat_model;
-                        return (
-                          <button
-                            data-active={active}
-                            key={`${provider.provider}-${model}`}
-                            onClick={() => {
-                              updateConfig("chat_model_provider", provider.provider);
-                              updateConfig("chat_model", model);
-                              setModelMenuOpen(false);
-                            }}
-                            role="option"
-                            aria-selected={active}
-                            type="button"
-                          >
-                            {model}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <ModelPicker
+              disabled={session?.status === "active"}
+              labels={{
+                listbox: t("model"),
+                modelUnavailable: t("model_unavailable"),
+                noProviders: t("no_providers"),
+                selectModel: t("select_model"),
+              }}
+              onOpenChange={setModelMenuOpen}
+              onSelect={selectModel}
+              open={modelMenuOpen}
+              providers={providers}
+              selectedModel={config.chat_model}
+              selectedProvider={config.chat_model_provider}
+            />
             <button
               aria-label={
                 composerMode === "start"

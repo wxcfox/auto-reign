@@ -6,7 +6,6 @@ from fastapi import HTTPException
 from app.core.config import Settings
 from app.services.model_service import (
     AnswerEvaluationRequest,
-    MemoryUpdateRequest,
     ModelService,
     QuestionGenerationRequest,
     ReportGenerationRequest,
@@ -255,18 +254,7 @@ def test_model_service_uses_chinese_fallback_outputs_when_requested(tmp_path) ->
             model="gpt-4.1-mini",
         )
     )
-    memory = service.update_memory(
-        MemoryUpdateRequest(
-            report_markdown="# 面试复盘报告",
-            existing_memory={},
-            language="zh-CN",
-            provider="openai",
-            model="gpt-4.1-mini",
-        )
-    )
-
     assert "# 面试复盘报告" in report
-    assert memory.weakness_summary.startswith("重点")
 
 
 def test_model_service_hides_provider_failure_details(tmp_path) -> None:

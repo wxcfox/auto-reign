@@ -1,5 +1,5 @@
 {
-  "eyebrow": "报告与记忆",
+  "eyebrow": "报告与复盘",
   "title": "复盘",
   "summary": "共有 {{count}} 场已完成面试。",
   "history_eyebrow": "历史记录",
@@ -14,14 +14,6 @@
   "real_interview_result_title": "已更新复盘材料",
   "real_interview_questions": "抽取问题",
   "real_interview_weak_points": "薄弱线索",
-  "memory_eyebrow": "持久化上下文",
-  "memory_title": "记忆",
-  "memory_loading": "记忆加载中...",
-  "tabs": {
-    "weakness": "薄弱项",
-    "interview_history": "面试历史",
-    "learning_profile": "学习画像"
-  },
   "errors": {
     "review_load": "加载复盘数据失败。",
     "report_load": "加载报告失败。",
