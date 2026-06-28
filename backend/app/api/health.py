@@ -20,6 +20,6 @@ def health() -> dict[str, object]:
             "qwen": bool(settings.qwen_api_key),
         },
         "workspace": {
-            "initialized": (settings.data_dir / "workspace" / "workspace.md").exists(),
+            "initialized": (settings.workspace_dir / "workspace.md").exists(),
         },
     }

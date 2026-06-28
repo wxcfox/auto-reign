@@ -14,9 +14,13 @@ def test_initialize_creates_fixed_workspace_tree_and_manifest(tmp_path: Path) ->
     expected_directories = {
         "sources/documents",
         "sources/extracted",
+        "sources/interviews",
+        "sources/notes",
         "profile",
         "knowledge",
+        "questions",
         "practice",
+        "review",
         "state",
         "reports",
         "archive",
@@ -25,6 +29,8 @@ def test_initialize_creates_fixed_workspace_tree_and_manifest(tmp_path: Path) ->
     assert expected_directories <= {
         path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_dir()
     }
+    assert not (root / "inbox").exists()
+    assert not (root / "raw").exists()
     manifest = (root / "workspace.md").read_text(encoding="utf-8")
     assert "schema_version: 1" in manifest
     assert "language: zh-CN" in manifest

@@ -27,14 +27,21 @@ from app.services.interview_artifact_service import InterviewArtifactService
 from app.services.retrieval_query_planner import RetrievalPurpose, RetrievalRequest
 from app.services.workspace_service import WorkspaceService
 from app.services.workspace_retrieval_service import WorkspaceRetrievalService
+from app.services.workspace_paths import (
+    CANDIDATE_PROFILE_PATH,
+    HIGH_FREQUENCY_PATH,
+    MASTERY_PATH,
+    REVIEW_STATUS_PATH,
+    TARGET_PROFILE_PATH,
+)
 
 
 DIRECT_WORKSPACE_CONTEXT_FILES = (
-    ("profile/candidate.md", "候选人画像"),
-    ("profile/target.md", "目标画像"),
-    ("state/mastery.md", "掌握状态"),
-    ("review/status.md", "复习状态"),
-    ("review/high-frequency.md", "高频与薄弱点"),
+    (CANDIDATE_PROFILE_PATH, "候选人画像"),
+    (TARGET_PROFILE_PATH, "目标画像"),
+    (MASTERY_PATH, "掌握状态"),
+    (REVIEW_STATUS_PATH, "复习状态"),
+    (HIGH_FREQUENCY_PATH, "高频与薄弱点"),
 )
 PROJECT_CONTEXT_LIMIT = 3
 

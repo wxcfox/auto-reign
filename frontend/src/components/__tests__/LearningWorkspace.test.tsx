@@ -15,7 +15,7 @@ const learningResponse = {
   conversation_id: "learning-session",
   source: {
     artifact_id: "source-1",
-    relative_path: "inbox/learning-note.md",
+    relative_path: "sources/notes/learning-note.md",
     duplicate: false,
   },
   artifact: {

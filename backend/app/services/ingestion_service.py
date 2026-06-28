@@ -14,6 +14,7 @@ from app.services.artifact_service import ArtifactService
 from app.services.extraction_service import ExtractionService
 from app.services.markdown_utils import slugify
 from app.services.workspace_service import WorkspaceService
+from app.services.workspace_paths import EXTRACTED_SOURCE_DIR
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,7 @@ class IngestionService:
             source_ref = f"source:{source.artifact_id}"
             if extracted is not None and extracted.should_write_extracted_artifact:
                 artifact_service.create_markdown(
-                    f"sources/extracted/{source.artifact_id}.md",
+                    f"{EXTRACTED_SOURCE_DIR}/{source.artifact_id}.md",
                     kind="extracted",
                     body=self._truncate(extracted.text),
                     source_refs=[source_ref],

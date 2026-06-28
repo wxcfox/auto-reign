@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.core.config import get_settings
 from app.repositories.vector_store import VectorStoreUnavailable
 
 
@@ -28,6 +29,9 @@ def test_workspace_status_is_initialized_on_startup(client) -> None:
     assert body["language"] == "zh-CN"
     assert body["schema_version"] == 1
     assert body["artifact_count"] == 0
+    settings = get_settings()
+    assert (settings.workspace_dir / "workspace.md").exists()
+    assert not (settings.data_dir / "uploads").exists()
 
 
 def test_workspace_rebuild_projection_endpoint(client) -> None:
@@ -154,7 +158,10 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert response.status_code == 200
     body = _sse_result(response.text)
     assert body["source"]["duplicate"] is False
-    assert re.match(r"inbox/\d{4}-\d{2}-\d{2}\.md", body["source"]["relative_path"])
+    assert re.match(
+        r"sources/notes/\d{4}-\d{2}-\d{2}\.md",
+        body["source"]["relative_path"],
+    )
     assert body["artifact"]["kind"] == "knowledge"
     assert body["summary"]["title"]
     assert "Redis" in body["summary"]["summary"]
@@ -317,7 +324,7 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
     assert first["artifact"]["relative_path"] == "knowledge/redis-缓存穿透.md"
     assert len(knowledge_artifacts) == 1
     assert len(source_artifacts) == 1
-    assert source_artifacts[0]["relative_path"].startswith("inbox/")
+    assert source_artifacts[0]["relative_path"].startswith("sources/notes/")
 
     detail = client.get(f"/api/workspace/artifacts/{second['artifact']['id']}").json()
     assert detail["revision"] == 2
@@ -388,7 +395,7 @@ def test_record_real_interview_archives_extracts_and_updates_status(
     assert response.status_code == 200
     body = response.json()
     assert body["raw_artifact"]["kind"] == "interview_record"
-    assert body["raw_artifact"]["relative_path"].startswith("raw/")
+    assert body["raw_artifact"]["relative_path"].startswith("sources/interviews/")
     assert body["questions"] == [
         "Redis 缓存击穿怎么处理？",
         "MySQL redo log 和 binlog 为什么要两阶段提交？",

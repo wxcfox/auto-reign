@@ -8,6 +8,17 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.schemas.workspace import ArtifactFrontMatter, SourceMeta
+from app.services.workspace_paths import (
+    CANDIDATE_PROFILE_PATH,
+    EXTRACTED_SOURCE_DIR,
+    HIGH_FREQUENCY_PATH,
+    INTERVIEW_SOURCE_DIR,
+    MASTERY_PATH,
+    REVIEW_STATUS_PATH,
+    SOURCE_SIDE_CAR_DIRECTORIES,
+    TARGET_PROFILE_PATH,
+    WORKSPACE_DIRECTORIES,
+)
 
 
 class UnsafeWorkspacePath(ValueError):
@@ -20,22 +31,7 @@ class WorkspaceService:
 
     def initialize(self, *, language: str = "zh-CN") -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
-        for relative in (
-            "inbox",
-            "sources/documents",
-            "sources/extracted",
-            "profile",
-            "knowledge",
-            "questions",
-            "projects",
-            "raw",
-            "practice",
-            "review",
-            "state",
-            "reports",
-            "archive",
-            ".revisions",
-        ):
+        for relative in WORKSPACE_DIRECTORIES:
             self.resolve_path(relative).mkdir(parents=True, exist_ok=True)
         manifest = self.resolve_path("workspace.md")
         if not manifest.exists():
@@ -73,7 +69,7 @@ class WorkspaceService:
         existing_by_path = {artifact.relative_path: artifact for artifact in repository.list(session)}
         scanned_paths: set[str] = set()
 
-        for source_dir in (self.root / "inbox", self.root / "sources" / "documents"):
+        for source_dir in (self.root / relative for relative in SOURCE_SIDE_CAR_DIRECTORIES):
             for sidecar_path in sorted(source_dir.glob("*.meta.json")):
                 source = SourceMeta.model_validate_json(sidecar_path.read_text(encoding="utf-8"))
                 source_path = self.resolve_path(source.relative_path)
@@ -157,11 +153,11 @@ class WorkspaceService:
         parts = Path(relative_path).parts
         if relative_path == "workspace.md" or not parts or parts[0] == ".revisions":
             return None
-        if relative_path == "profile/candidate.md":
+        if relative_path == CANDIDATE_PROFILE_PATH:
             return "candidate_profile"
-        if relative_path == "profile/target.md":
+        if relative_path == TARGET_PROFILE_PATH:
             return "target_profile"
-        if relative_path == "state/mastery.md":
+        if relative_path == MASTERY_PATH:
             return "mastery"
         if relative_path == "state/plan.md":
             return "plan"
@@ -171,17 +167,17 @@ class WorkspaceService:
             return "question_bank"
         if parts[0] == "projects":
             return "project"
-        if parts[0] == "raw":
+        if parts[:2] == tuple(INTERVIEW_SOURCE_DIR.split("/")):
             return "interview_record"
-        if relative_path == "review/high-frequency.md":
+        if relative_path == HIGH_FREQUENCY_PATH:
             return "high_frequency"
-        if relative_path == "review/status.md":
+        if relative_path == REVIEW_STATUS_PATH:
             return "review_status"
         if parts[0] == "practice":
             return "practice"
         if parts[0] == "reports":
             return "report"
-        if parts[:2] == ("sources", "extracted"):
+        if parts[:2] == tuple(EXTRACTED_SOURCE_DIR.split("/")):
             return "extracted"
         return None
 
