@@ -25,6 +25,26 @@
     "edit": "编辑",
     "delete": "删除"
   },
+  "detail": {
+    "back": "返回资料库",
+    "editable": "可编辑",
+    "loading": "加载中...",
+    "markdown_body": "Markdown 正文",
+    "needs_review": "需要确认",
+    "read_only": "只读",
+    "read_only_body": "此文件只读。",
+    "save": "保存",
+    "save_success": "已保存。",
+    "saving": "保存中..."
+  },
+  "states": {
+    "completed": "已完成",
+    "failed": "失败",
+    "needs_recovery": "需要恢复",
+    "pending": "待处理",
+    "processing": "处理中",
+    "stale": "待索引"
+  },
   "categories": {
     "title": "文档分类",
     "all": "全部文件",

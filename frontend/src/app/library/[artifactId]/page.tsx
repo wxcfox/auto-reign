@@ -48,7 +48,7 @@ export default function ArtifactDetailPage() {
       const refreshed = await getWorkspaceArtifact(saved.id);
       setArtifact(refreshed);
       setBody(refreshed.body ?? "");
-      setMessage("已保存");
+      setMessage(t("detail.save_success"));
     } catch (saveError) {
       setError(getErrorMessage(saveError, t, "common:errors.generic_save"));
     } finally {
@@ -57,14 +57,14 @@ export default function ArtifactDetailPage() {
   }
 
   if (!artifact && !error) {
-    return <p className="empty-state">加载中...</p>;
+    return <p className="empty-state">{t("detail.loading")}</p>;
   }
 
   return (
     <div className="page-stack">
       <Link className="back-link" href="/library">
         <ArrowLeft aria-hidden="true" size={17} />
-        返回资料库
+        {t("detail.back")}
       </Link>
 
       {error && !artifact ? (
@@ -82,11 +82,19 @@ export default function ArtifactDetailPage() {
             </div>
             <div className="status-row">
               <StatusPill
-                label={artifact.recovery_required ? "需要确认" : artifact.processing_status}
+                label={
+                  artifact.recovery_required
+                    ? t("detail.needs_review")
+                    : t(`states.${artifact.processing_status}`, artifact.processing_status)
+                }
                 tone={artifact.recovery_required ? "warning" : "success"}
               />
               <StatusPill
-                label={artifact.allowed_operations.length > 0 ? "可编辑" : "只读"}
+                label={
+                  artifact.allowed_operations.length > 0
+                    ? t("detail.editable")
+                    : t("detail.read_only")
+                }
                 tone={artifact.allowed_operations.length > 0 ? "success" : "neutral"}
               />
             </div>
@@ -95,7 +103,7 @@ export default function ArtifactDetailPage() {
           {canReplaceBody ? (
             <form className="editor-form" onSubmit={handleSubmit}>
               <label>
-                <span className="field-label">Markdown 正文</span>
+                <span className="field-label">{t("detail.markdown_body")}</span>
                 <textarea onChange={(event) => setBody(event.target.value)} rows={18} value={body} />
               </label>
               {error ? (
@@ -111,13 +119,13 @@ export default function ArtifactDetailPage() {
               <div className="button-row">
                 <button className="button button-primary" disabled={saving} type="submit">
                   <Save aria-hidden="true" size={17} />
-                  {saving ? "保存中..." : "保存"}
+                  {saving ? t("detail.saving") : t("detail.save")}
                 </button>
               </div>
             </form>
           ) : (
             <section className="content-surface">
-              {artifact.body ? <MarkdownView content={artifact.body} /> : <p>此文件只读。</p>}
+              {artifact.body ? <MarkdownView content={artifact.body} /> : <p>{t("detail.read_only_body")}</p>}
             </section>
           )}
         </>

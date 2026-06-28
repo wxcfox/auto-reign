@@ -77,6 +77,112 @@ function followUpWriteSuggestions(turn: InterviewTurn) {
   ].filter((item): item is "weakness" | "high_frequency" => item !== null);
 }
 
+type FeedbackLabels = {
+  betterAnswer: string;
+  masteryChange: string;
+  missingPoints: string;
+  reviewSuggestions: string;
+  testedPoints: string;
+  weaknesses: string;
+  writeHighFrequency: string;
+  writeSuggestions: string;
+  writeWeakness: string;
+};
+
+type FeedbackSectionsProps = {
+  betterAnswer?: string;
+  feedback: string;
+  labels: FeedbackLabels;
+  masteryChange?: string;
+  missingPoints: string[];
+  reviewSuggestions: string[];
+  testedPoints?: string[];
+  weaknesses: string[];
+  writeSuggestions: Array<"weakness" | "high_frequency">;
+};
+
+function FeedbackSections({
+  betterAnswer,
+  feedback,
+  labels,
+  masteryChange,
+  missingPoints,
+  reviewSuggestions,
+  testedPoints,
+  weaknesses,
+  writeSuggestions: persistenceSuggestions,
+}: FeedbackSectionsProps) {
+  return (
+    <>
+      <p>{feedback}</p>
+      {missingPoints.length > 0 ? (
+        <>
+          <h3>{labels.missingPoints}</h3>
+          <ul>
+            {missingPoints.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {weaknesses.length > 0 ? (
+        <>
+          <h3>{labels.weaknesses}</h3>
+          <ul>
+            {weaknesses.map((weakness) => (
+              <li key={weakness}>{weakness}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {reviewSuggestions.length > 0 ? (
+        <>
+          <h3>{labels.reviewSuggestions}</h3>
+          <ul>
+            {reviewSuggestions.map((suggestion) => (
+              <li key={suggestion}>{suggestion}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {betterAnswer ? (
+        <>
+          <h3>{labels.betterAnswer}</h3>
+          <p>{betterAnswer}</p>
+        </>
+      ) : null}
+      {testedPoints && testedPoints.length > 0 ? (
+        <>
+          <h3>{labels.testedPoints}</h3>
+          <ul>
+            {testedPoints.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {masteryChange && masteryChange !== "unchanged" ? (
+        <>
+          <h3>{labels.masteryChange}</h3>
+          <p>{masteryChange}</p>
+        </>
+      ) : null}
+      {persistenceSuggestions.length > 0 ? (
+        <>
+          <h3>{labels.writeSuggestions}</h3>
+          <ul>
+            {persistenceSuggestions.map((suggestion) => (
+              <li key={suggestion}>
+                {suggestion === "weakness" ? labels.writeWeakness : labels.writeHighFrequency}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function inferRequestedRounds(text: string): number | null {
   const match = text.match(/(\d{1,2})\s*(轮|题|道|round|rounds|questions?)/i);
   if (match) {
@@ -305,6 +411,17 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
       (session?.status === "active" &&
         Boolean(composerValue.trim()) &&
         (composerMode === "answer" || composerMode === "follow-up")));
+  const feedbackLabels: FeedbackLabels = {
+    betterAnswer: t("better_answer"),
+    masteryChange: t("mastery_change"),
+    missingPoints: t("missing_points"),
+    reviewSuggestions: t("review_suggestions"),
+    testedPoints: t("tested_points"),
+    weaknesses: t("weaknesses"),
+    writeHighFrequency: t("write_high_frequency"),
+    writeSuggestions: t("write_suggestions"),
+    writeWeakness: t("write_weakness"),
+  };
 
   function selectModel(provider: ProviderName, model: string) {
     setConfig((current) => ({
@@ -599,73 +716,17 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                 ) : null}
                 {item.feedback ? (
                   <ChatMessage meta={t("feedback")}>
-                    <p>{item.feedback}</p>
-                    {item.missing_points.length > 0 ? (
-                      <>
-                        <h3>{t("missing_points")}</h3>
-                        <ul>
-                          {item.missing_points.map((point) => (
-                            <li key={point}>{point}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                    {item.weaknesses.length > 0 ? (
-                      <>
-                        <h3>{t("weaknesses")}</h3>
-                        <ul>
-                          {item.weaknesses.map((weakness) => (
-                            <li key={weakness}>{weakness}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                    {item.review_suggestions.length > 0 ? (
-                      <>
-                        <h3>{t("review_suggestions")}</h3>
-                        <ul>
-                          {item.review_suggestions.map((suggestion) => (
-                            <li key={suggestion}>{suggestion}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                    {item.better_answer ? (
-                      <>
-                        <h3>{t("better_answer")}</h3>
-                        <p>{item.better_answer}</p>
-                      </>
-                    ) : null}
-                    {item.tested_points && item.tested_points.length > 0 ? (
-                      <>
-                        <h3>{t("tested_points")}</h3>
-                        <ul>
-                          {item.tested_points.map((point) => (
-                            <li key={point}>{point}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                    {item.mastery_change && item.mastery_change !== "unchanged" ? (
-                      <>
-                        <h3>{t("mastery_change")}</h3>
-                        <p>{item.mastery_change}</p>
-                      </>
-                    ) : null}
-                    {writeSuggestions(item).length > 0 ? (
-                      <>
-                        <h3>{t("write_suggestions")}</h3>
-                        <ul>
-                          {writeSuggestions(item).map((suggestion) => (
-                            <li key={suggestion}>
-                              {suggestion === "weakness"
-                                ? t("write_weakness")
-                                : t("write_high_frequency")}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
+                    <FeedbackSections
+                      betterAnswer={item.better_answer}
+                      feedback={item.feedback}
+                      labels={feedbackLabels}
+                      masteryChange={item.mastery_change}
+                      missingPoints={item.missing_points}
+                      reviewSuggestions={item.review_suggestions}
+                      testedPoints={item.tested_points}
+                      weaknesses={item.weaknesses}
+                      writeSuggestions={writeSuggestions(item)}
+                    />
                   </ChatMessage>
                 ) : null}
                 {item.follow_up_question ? (
@@ -688,54 +749,17 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                 ) : null}
                 {item.follow_up_feedback ? (
                   <ChatMessage meta={t("follow_up_feedback")}>
-                    <p>{item.follow_up_feedback}</p>
-                    {item.follow_up_missing_points.length > 0 ? (
-                      <>
-                        <h3>{t("missing_points")}</h3>
-                        <ul>
-                          {item.follow_up_missing_points.map((point) => (
-                            <li key={point}>{point}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                    {item.follow_up_better_answer ? (
-                      <>
-                        <h3>{t("better_answer")}</h3>
-                        <p>{item.follow_up_better_answer}</p>
-                      </>
-                    ) : null}
-                    {item.follow_up_tested_points && item.follow_up_tested_points.length > 0 ? (
-                      <>
-                        <h3>{t("tested_points")}</h3>
-                        <ul>
-                          {item.follow_up_tested_points.map((point) => (
-                            <li key={point}>{point}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                    {item.follow_up_mastery_change &&
-                    item.follow_up_mastery_change !== "unchanged" ? (
-                      <>
-                        <h3>{t("mastery_change")}</h3>
-                        <p>{item.follow_up_mastery_change}</p>
-                      </>
-                    ) : null}
-                    {followUpWriteSuggestions(item).length > 0 ? (
-                      <>
-                        <h3>{t("write_suggestions")}</h3>
-                        <ul>
-                          {followUpWriteSuggestions(item).map((suggestion) => (
-                            <li key={suggestion}>
-                              {suggestion === "weakness"
-                                ? t("write_weakness")
-                                : t("write_high_frequency")}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
+                    <FeedbackSections
+                      betterAnswer={item.follow_up_better_answer}
+                      feedback={item.follow_up_feedback}
+                      labels={feedbackLabels}
+                      masteryChange={item.follow_up_mastery_change}
+                      missingPoints={item.follow_up_missing_points}
+                      reviewSuggestions={item.follow_up_review_suggestions}
+                      testedPoints={item.follow_up_tested_points}
+                      weaknesses={item.follow_up_weaknesses}
+                      writeSuggestions={followUpWriteSuggestions(item)}
+                    />
                   </ChatMessage>
                 ) : null}
               </div>

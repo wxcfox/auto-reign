@@ -25,6 +25,26 @@
     "edit": "Edit",
     "delete": "Delete"
   },
+  "detail": {
+    "back": "Back to library",
+    "editable": "Editable",
+    "loading": "Loading...",
+    "markdown_body": "Markdown body",
+    "needs_review": "Needs review",
+    "read_only": "Read only",
+    "read_only_body": "This file is read only.",
+    "save": "Save",
+    "save_success": "Saved.",
+    "saving": "Saving..."
+  },
+  "states": {
+    "completed": "Completed",
+    "failed": "Failed",
+    "needs_recovery": "Needs recovery",
+    "pending": "Pending",
+    "processing": "Processing",
+    "stale": "Pending index"
+  },
   "categories": {
     "title": "Document categories",
     "all": "All files",

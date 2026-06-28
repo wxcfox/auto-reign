@@ -12,7 +12,7 @@ from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.artifact_service import ArtifactService
 from app.services.extraction_service import ExtractionService
-from app.services.markdown_utils import slugify
+from app.services.markdown_utils import slugify, unique_items
 from app.services.workspace_service import WorkspaceService
 from app.services.workspace_paths import EXTRACTED_SOURCE_DIR
 
@@ -153,12 +153,26 @@ class IngestionService:
             return
         slug = self._slug(Path(filename).stem)
         title = Path(filename).stem.replace("-", " ").strip() or "知识点"
-        artifact_service.create_markdown(
-            f"knowledge/{slug}.md",
-            kind="knowledge",
-            body=f"# {title}\n\n## 用户原始理解\n\n{self._summary(text)}\n",
-            source_refs=[source_ref],
-            origin="human",
+        relative_path = f"knowledge/{slug}.md"
+        body = f"# {title}\n\n## 用户原始理解\n\n{self._summary(text)}\n"
+        path = workspace.resolve_path(relative_path)
+        if not path.exists():
+            artifact_service.create_markdown(
+                relative_path,
+                kind="knowledge",
+                body=body,
+                source_refs=[source_ref],
+                origin="human",
+            )
+            return
+        current = artifact_service.read_markdown(relative_path)
+        merged_body = f"{current.body.rstrip()}\n\n---\n\n## 用户原始理解\n\n{self._summary(text)}\n"
+        artifact_service.replace_body(
+            relative_path,
+            expected_revision=current.front_matter.revision,
+            body=merged_body,
+            edited_by="system",
+            source_refs=unique_items([*current.front_matter.source_refs, source_ref]),
         )
 
     def _create_or_update(

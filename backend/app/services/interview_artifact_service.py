@@ -244,8 +244,8 @@ class InterviewArtifactService:
             evidence_refs = [evidence_ref]
 
         practice_items = unique_items([latest_practice, *recent_practice], limit=8)
-        recent_learning_text = "\n".join(recent_learning) if recent_learning else "暂无。"
-        recent_practice_text = "\n".join(practice_items) if practice_items else "暂无。"
+        recent_learning_text = plain_bullet_list(recent_learning) if recent_learning else "暂无。"
+        recent_practice_text = plain_bullet_list(practice_items) if practice_items else "暂无。"
         body = (
             "# 复习状态\n\n"
             "## 当前重点\n\n"

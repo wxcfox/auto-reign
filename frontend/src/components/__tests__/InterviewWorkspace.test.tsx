@@ -235,8 +235,8 @@ describe("InterviewWorkspace", () => {
       return {
         feedback: "Follow-up feedback.",
         missing_points: [],
-        weaknesses: [],
-        review_suggestions: [],
+        weaknesses: ["Follow-up needs fallback detail"],
+        review_suggestions: ["Review stale cache handling"],
         better_answer: "",
         mastery_change: "unchanged",
         should_write_weakness: false,
@@ -286,6 +286,8 @@ describe("InterviewWorkspace", () => {
     expect(screen.getByText(/Use concrete cache invalidation examples/i)).toBeInTheDocument();
     expect(screen.getByText(/I would monitor stale reads/i)).toBeInTheDocument();
     expect(screen.getByText("Follow-up feedback.")).toBeInTheDocument();
+    expect(screen.getByText("Follow-up needs fallback detail")).toBeInTheDocument();
+    expect(screen.getByText("Review stale cache handling")).toBeInTheDocument();
     expect(nextQuestionStream).toHaveBeenCalledWith("session-1", expect.any(Object), "");
   });
 
