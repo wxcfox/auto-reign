@@ -51,7 +51,7 @@ export default function DashboardPage() {
           setError(
             firstRejected?.status === "rejected"
               ? getErrorMessage(firstRejected.reason, t, "common:errors.generic_load")
-              : "加载失败",
+              : t("common:errors.generic_load"),
           );
         }
       })
@@ -74,10 +74,16 @@ export default function DashboardPage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">Auto Reign</p>
-          <h1>面试学习工作台</h1>
+          <h1>{t("workbench_title")}</h1>
         </div>
         <StatusPill
-          label={health?.status === "ok" && workspace?.initialized ? "Ready" : loading ? "Checking" : "Unavailable"}
+          label={
+            health?.status === "ok" && workspace?.initialized
+              ? t("status.ready")
+              : loading
+                ? t("status.checking")
+                : t("status.unavailable")
+          }
           tone={health?.status === "ok" && workspace?.initialized ? "success" : "warning"}
         />
       </header>
@@ -124,40 +130,40 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <section className="metric-grid" aria-label="Workspace summary">
+      <section className="metric-grid" aria-label={t("metrics.summary_label")}>
         <div className="metric">
           <Database aria-hidden="true" size={20} />
           <div>
             <strong>{counts.total}</strong>
-            <span>资料总数</span>
+            <span>{t("metrics.total")}</span>
           </div>
         </div>
         <div className="metric">
           <Upload aria-hidden="true" size={20} />
           <div>
             <strong>{counts.source}</strong>
-            <span>原始资料</span>
+            <span>{t("metrics.source")}</span>
           </div>
         </div>
         <div className="metric">
           <BookOpen aria-hidden="true" size={20} />
           <div>
             <strong>{counts.knowledge}</strong>
-            <span>知识卡片</span>
+            <span>{t("metrics.knowledge")}</span>
           </div>
         </div>
         <div className="metric">
           <FileText aria-hidden="true" size={20} />
           <div>
             <strong>{counts.practice}</strong>
-            <span>练习记录</span>
+            <span>{t("metrics.practice")}</span>
           </div>
         </div>
         <div className="metric">
           <Database aria-hidden="true" size={20} />
           <div>
             <strong>{counts.stale}</strong>
-            <span>待索引</span>
+            <span>{t("metrics.stale")}</span>
           </div>
         </div>
       </section>

@@ -89,6 +89,53 @@ def test_ingest_duplicate_content_reuses_existing_source(client, tmp_path: Path)
     assert len(list((workspace.root / "sources" / "documents").glob("*same.txt"))) == 1
 
 
+def test_ingest_same_knowledge_slug_merges_without_overwriting(
+    client,
+    tmp_path: Path,
+) -> None:
+    workspace, artifacts, repository = _stack(tmp_path)
+    service = IngestionService()
+
+    with _session(client) as session:
+        first = service.ingest_uploads(
+            session,
+            workspace,
+            artifacts,
+            repository,
+            [
+                UploadItem(
+                    filename="redis-note.md",
+                    media_type="text/markdown",
+                    content="# Redis\n\n第一次记录缓存击穿。".encode(),
+                )
+            ],
+        )
+        second = service.ingest_uploads(
+            session,
+            workspace,
+            artifacts,
+            repository,
+            [
+                UploadItem(
+                    filename="redis-note.md",
+                    media_type="text/markdown",
+                    content="# Redis\n\n第二次记录布隆过滤器。".encode(),
+                )
+            ],
+        )
+        session.commit()
+
+    knowledge_files = list((workspace.root / "knowledge").glob("redis-note.md"))
+    assert len(knowledge_files) == 1
+    knowledge = artifacts.read_markdown("knowledge/redis-note.md")
+    assert "第一次记录缓存击穿" in knowledge.body
+    assert "第二次记录布隆过滤器" in knowledge.body
+    assert knowledge.front_matter.source_refs == [
+        f"source:{first.sources[0].artifact_id}",
+        f"source:{second.sources[0].artifact_id}",
+    ]
+
+
 def test_ingest_docx_writes_extracted_artifact(client, tmp_path: Path) -> None:
     workspace, artifacts, repository = _stack(tmp_path)
     service = IngestionService()

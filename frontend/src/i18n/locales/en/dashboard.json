@@ -1,12 +1,24 @@
 {
   "eyebrow": "Local interview workbench",
   "title": "Dashboard",
+  "workbench_title": "Interview learning workbench",
   "status_ready": "Backend ready",
   "status_error": "Some dashboard data could not be loaded.",
+  "status": {
+    "ready": "Ready",
+    "checking": "Checking",
+    "unavailable": "Unavailable"
+  },
   "metrics": {
     "documents": "Indexed documents",
     "providers": "Available providers",
-    "reports": "Interview reports"
+    "reports": "Interview reports",
+    "summary_label": "Workspace summary",
+    "total": "Total materials",
+    "source": "Source materials",
+    "knowledge": "Knowledge cards",
+    "practice": "Practice records",
+    "stale": "Pending index"
   },
   "report": {
     "eyebrow": "Latest output",

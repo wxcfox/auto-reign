@@ -322,17 +322,7 @@ class InterviewService:
                 model=config.chat_model,
             )
         )
-        turn.answer = answer
-        turn.feedback = evaluation.feedback
-        turn.missing_points = evaluation.missing_points
-        turn.follow_up_question = evaluation.follow_up_question
-        turn.weaknesses = evaluation.weaknesses
-        turn.review_suggestions = evaluation.review_suggestions
-        turn.better_answer = evaluation.better_answer
-        turn.mastery_change = evaluation.mastery_change
-        turn.should_write_weakness = evaluation.should_write_weakness
-        turn.should_write_high_frequency = evaluation.should_write_high_frequency
-        turn.tested_points = evaluation.tested_points
+        self._apply_main_evaluation(turn, answer, evaluation)
         self._record_answer_evaluation(session, config, turn, turn.question, evaluation)
         session.flush()
         self._persist_practice_progress(session, interview_session, config)
@@ -365,17 +355,7 @@ class InterviewService:
 
         def events() -> Iterator[InterviewStreamEvent]:
             evaluation = yield from self._stream_answer_evaluation_events(request)
-            turn.answer = answer
-            turn.feedback = evaluation.feedback
-            turn.missing_points = evaluation.missing_points
-            turn.follow_up_question = evaluation.follow_up_question
-            turn.weaknesses = evaluation.weaknesses
-            turn.review_suggestions = evaluation.review_suggestions
-            turn.better_answer = evaluation.better_answer
-            turn.mastery_change = evaluation.mastery_change
-            turn.should_write_weakness = evaluation.should_write_weakness
-            turn.should_write_high_frequency = evaluation.should_write_high_frequency
-            turn.tested_points = evaluation.tested_points
+            self._apply_main_evaluation(turn, answer, evaluation)
             self._record_answer_evaluation(session, config, turn, turn.question, evaluation)
             session.flush()
             self._persist_practice_progress(session, interview_session, config)
@@ -415,16 +395,7 @@ class InterviewService:
                 model=config.chat_model,
             )
         )
-        turn.follow_up_answer = answer
-        turn.follow_up_feedback = evaluation.feedback
-        turn.follow_up_missing_points = evaluation.missing_points
-        turn.follow_up_weaknesses = evaluation.weaknesses
-        turn.follow_up_review_suggestions = evaluation.review_suggestions
-        turn.follow_up_better_answer = evaluation.better_answer
-        turn.follow_up_mastery_change = evaluation.mastery_change
-        turn.follow_up_should_write_weakness = evaluation.should_write_weakness
-        turn.follow_up_should_write_high_frequency = evaluation.should_write_high_frequency
-        turn.follow_up_tested_points = evaluation.tested_points
+        self._apply_follow_up_evaluation(turn, answer, evaluation)
         self._record_answer_evaluation(session, config, turn, turn.follow_up_question, evaluation)
         session.flush()
         self._persist_practice_progress(session, interview_session, config)
@@ -463,16 +434,7 @@ class InterviewService:
 
         def events() -> Iterator[InterviewStreamEvent]:
             evaluation = yield from self._stream_answer_evaluation_events(request)
-            turn.follow_up_answer = answer
-            turn.follow_up_feedback = evaluation.feedback
-            turn.follow_up_missing_points = evaluation.missing_points
-            turn.follow_up_weaknesses = evaluation.weaknesses
-            turn.follow_up_review_suggestions = evaluation.review_suggestions
-            turn.follow_up_better_answer = evaluation.better_answer
-            turn.follow_up_mastery_change = evaluation.mastery_change
-            turn.follow_up_should_write_weakness = evaluation.should_write_weakness
-            turn.follow_up_should_write_high_frequency = evaluation.should_write_high_frequency
-            turn.follow_up_tested_points = evaluation.tested_points
+            self._apply_follow_up_evaluation(turn, answer, evaluation)
             self._record_answer_evaluation(session, config, turn, turn.follow_up_question, evaluation)
             session.flush()
             self._persist_practice_progress(session, interview_session, config)
@@ -627,6 +589,41 @@ class InterviewService:
         if delta:
             yield InterviewStreamEvent(event="delta", data={"text": delta})
         return evaluation
+
+    def _apply_main_evaluation(
+        self,
+        turn: InterviewTurn,
+        answer: str,
+        evaluation: AnswerEvaluationResult,
+    ) -> None:
+        turn.answer = answer
+        turn.feedback = evaluation.feedback
+        turn.missing_points = evaluation.missing_points
+        turn.follow_up_question = evaluation.follow_up_question
+        turn.weaknesses = evaluation.weaknesses
+        turn.review_suggestions = evaluation.review_suggestions
+        turn.better_answer = evaluation.better_answer
+        turn.mastery_change = evaluation.mastery_change
+        turn.should_write_weakness = evaluation.should_write_weakness
+        turn.should_write_high_frequency = evaluation.should_write_high_frequency
+        turn.tested_points = evaluation.tested_points
+
+    def _apply_follow_up_evaluation(
+        self,
+        turn: InterviewTurn,
+        answer: str,
+        evaluation: AnswerEvaluationResult,
+    ) -> None:
+        turn.follow_up_answer = answer
+        turn.follow_up_feedback = evaluation.feedback
+        turn.follow_up_missing_points = evaluation.missing_points
+        turn.follow_up_weaknesses = evaluation.weaknesses
+        turn.follow_up_review_suggestions = evaluation.review_suggestions
+        turn.follow_up_better_answer = evaluation.better_answer
+        turn.follow_up_mastery_change = evaluation.mastery_change
+        turn.follow_up_should_write_weakness = evaluation.should_write_weakness
+        turn.follow_up_should_write_high_frequency = evaluation.should_write_high_frequency
+        turn.follow_up_tested_points = evaluation.tested_points
 
     def _preview_answer_json(self, content: str) -> str:
         cleaned = re.sub(r"^```(?:json)?\s*", "", content.strip())

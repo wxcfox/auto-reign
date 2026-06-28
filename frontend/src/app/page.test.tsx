@@ -85,14 +85,14 @@ describe("DashboardPage", () => {
   it("renders current preparation tasks on the workbench", async () => {
     render(<DashboardPage />);
 
-    expect(await screen.findByText("面试学习工作台")).toBeInTheDocument();
+    expect(await screen.findByText("Interview learning workbench")).toBeInTheDocument();
     expect(await screen.findByText("MySQL：用 30 秒说清 redo/binlog 两阶段提交")).toBeInTheDocument();
     expect(screen.getByText("Spring：复述 Bean 生命周期")).toBeInTheDocument();
     expect(screen.getAllByText("Start drill")[0]).toHaveAttribute("href", "/interview");
     expect(screen.getAllByText("View status")[0]).toHaveAttribute("href", "/library/status-1");
-    expect(screen.getByText("原始资料")).toBeInTheDocument();
-    expect(screen.getByText("知识卡片")).toBeInTheDocument();
-    expect(screen.getByText("练习记录")).toBeInTheDocument();
+    expect(screen.getByText("Source materials")).toBeInTheDocument();
+    expect(screen.getByText("Knowledge cards")).toBeInTheDocument();
+    expect(screen.getByText("Practice records")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument());
     expect(screen.queryByText(/上传 -> 面试 -> 复盘/)).not.toBeInTheDocument();
   });

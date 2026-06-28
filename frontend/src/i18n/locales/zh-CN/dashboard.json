@@ -1,12 +1,24 @@
 {
   "eyebrow": "本地面试工作台",
   "title": "总览",
+  "workbench_title": "面试学习工作台",
   "status_ready": "后端已就绪",
   "status_error": "部分总览数据加载失败。",
+  "status": {
+    "ready": "就绪",
+    "checking": "检查中",
+    "unavailable": "不可用"
+  },
   "metrics": {
     "documents": "已索引文档",
     "providers": "可用模型提供方",
-    "reports": "面试报告"
+    "reports": "面试报告",
+    "summary_label": "工作区概览",
+    "total": "资料总数",
+    "source": "原始资料",
+    "knowledge": "知识卡片",
+    "practice": "练习记录",
+    "stale": "待索引"
   },
   "report": {
     "eyebrow": "最新产出",

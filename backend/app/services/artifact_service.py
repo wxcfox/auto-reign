@@ -55,6 +55,9 @@ class ArtifactService:
         recovery_required: bool = False,
         recovery_reason: str | None = None,
     ) -> ManagedMarkdown:
+        path = self.workspace.resolve_path(relative_path)
+        if path.exists():
+            raise FileExistsError(relative_path)
         timestamp = self._coerce_utc(now or datetime.now(UTC))
         front_matter = ArtifactFrontMatter(
             id=artifact_id or str(uuid4()),
@@ -71,7 +74,7 @@ class ArtifactService:
             recovery_reason=recovery_reason,
         )
         raw = self.serialize_markdown(front_matter, body)
-        self.atomic_write_bytes(self.workspace.resolve_path(relative_path), raw.encode("utf-8"))
+        self.atomic_write_bytes(path, raw.encode("utf-8"))
         return ManagedMarkdown(front_matter=front_matter, body=body, raw=raw)
 
     def read_markdown(self, relative_path: str) -> ManagedMarkdown:

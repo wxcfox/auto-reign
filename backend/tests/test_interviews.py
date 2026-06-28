@@ -569,6 +569,7 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     status_detail = client.get(f"/api/workspace/artifacts/{status['id']}").json()
     assert "## 当前重点" in status_detail["body"]
     assert "## 最近练习" in status_detail["body"]
+    assert "- 练习：" in status_detail["body"]
     high_frequency = next(artifact for artifact in artifacts if artifact["kind"] == "high_frequency")
     high_frequency_detail = client.get(f"/api/workspace/artifacts/{high_frequency['id']}").json()
     assert "Redis Backend Engineer" in high_frequency_detail["body"]

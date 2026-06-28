@@ -247,7 +247,7 @@ export default function LibraryPage() {
                       label={
                         artifact.recovery_required
                           ? t("common:states.checking")
-                          : artifact.index_status
+                          : t(`states.${artifact.index_status}`, artifact.index_status)
                       }
                       tone={artifact.recovery_required ? "warning" : "success"}
                     />

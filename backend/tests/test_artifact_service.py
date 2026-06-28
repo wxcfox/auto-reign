@@ -39,6 +39,27 @@ def test_create_and_parse_managed_markdown(
     assert workspace.resolve_path("knowledge/python.md").read_text().startswith("---\n")
 
 
+def test_create_markdown_rejects_existing_path_without_overwriting(
+    services: tuple[WorkspaceService, ArtifactService],
+) -> None:
+    workspace, artifacts = services
+    artifacts.create_markdown(
+        "knowledge/python.md",
+        kind="knowledge",
+        body="# Python\n\n第一版。\n",
+    )
+    before = workspace.resolve_path("knowledge/python.md").read_text(encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        artifacts.create_markdown(
+            "knowledge/python.md",
+            kind="knowledge",
+            body="# Python\n\n第二版。\n",
+        )
+
+    assert workspace.resolve_path("knowledge/python.md").read_text(encoding="utf-8") == before
+
+
 def test_update_sections_preserves_unknown_sections_and_creates_revision(
     services: tuple[WorkspaceService, ArtifactService],
 ) -> None:

@@ -23,7 +23,7 @@ import type {
   WorkspaceArtifactSummary,
   WorkspaceStatusResponse,
 } from "./types";
-import { throwApiError } from "./api-error";
+import { ApiError, throwApiError } from "./api-error";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -145,6 +145,7 @@ export type StreamCallbacks = {
 type StreamErrorPayload = {
   code?: string;
   message?: string;
+  status_code?: number;
 };
 
 async function apiStream<T>(
@@ -201,7 +202,10 @@ async function apiStream<T>(
     }
     if (event === "error") {
       const error = data as StreamErrorPayload;
-      throw new Error(error.message || error.code || "Streaming request failed.");
+      throw new ApiError(error.message || error.code || "Streaming request failed.", {
+        code: error.code,
+        status: error.status_code ?? 502,
+      });
     }
   };
 
