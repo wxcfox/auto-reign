@@ -36,7 +36,7 @@ def test_finish_generates_workspace_report_and_updates_review_state(client: Test
     assert not (settings.data_dir / "memory").exists()
     assert client.get("/api/memory").status_code == 404
 
-    workspace = settings.data_dir / "workspace"
+    workspace = settings.workspace_dir
     practice_files = list((workspace / "practice").glob("**/*.md"))
     report_files = list((workspace / "reports").glob("*.md"))
     mastery_path = workspace / "state" / "mastery.md"
@@ -153,7 +153,7 @@ def test_finish_uses_extra_prompt_as_target_context_when_structured_fields_are_b
 
     assert finished.status_code == 200
     assert "字节后端岗位" in finished.json()["report"]["summary"]
-    workspace = get_settings().data_dir / "workspace"
+    workspace = get_settings().workspace_dir
     practice_files = list((workspace / "practice").glob("**/*.md"))
     assert len(practice_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")

@@ -115,7 +115,7 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         body="# Order cache\n\nhot key mitigation project",
     )
     interview_record = artifacts.create_markdown(
-        "raw/20260625.md",
+        "sources/interviews/20260625.md",
         kind="interview_record",
         body="# Interview\n\nRedis cache breakdown question",
     )

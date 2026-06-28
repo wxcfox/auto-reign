@@ -20,6 +20,7 @@ from app.services.markdown_utils import (
 )
 from app.schemas.modeling import AnswerEvaluationResult
 from app.services.workspace_service import WorkspaceService
+from app.services.workspace_paths import HIGH_FREQUENCY_PATH, MASTERY_PATH, REVIEW_STATUS_PATH
 
 
 PROJECT_CONTEXT_LIMIT = 3
@@ -41,7 +42,7 @@ class InterviewArtifactService:
         artifact_repository: ArtifactRepository | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.workspace = workspace_service or WorkspaceService(self.settings.data_dir / "workspace")
+        self.workspace = workspace_service or WorkspaceService(self.settings.workspace_dir)
         self.workspace.initialize()
         self.artifacts = artifact_service or ArtifactService(self.workspace)
         self.repository = artifact_repository or ArtifactRepository()
@@ -212,7 +213,7 @@ class InterviewArtifactService:
         *,
         evidence_ref: str,
     ) -> None:
-        status_path = "review/status.md"
+        status_path = REVIEW_STATUS_PATH
         focus = unique_items(
             [
                 item
@@ -281,7 +282,7 @@ class InterviewArtifactService:
     ) -> None:
         if not evaluation.should_write_high_frequency or not question:
             return
-        relative_path = "review/high-frequency.md"
+        relative_path = HIGH_FREQUENCY_PATH
         try:
             current = self.artifacts.read_markdown(relative_path)
             sections = markdown_sections(current.body)
@@ -425,7 +426,7 @@ class InterviewArtifactService:
             body = "# Mastery State\n\n## Needs Work\n\n" + plain_bullet_list(
                 weaknesses or ["Keep collecting practice evidence"]
             )
-        self.upsert_markdown("state/mastery.md", "mastery", body, language, [evidence_ref])
+        self.upsert_markdown(MASTERY_PATH, "mastery", body, language, [evidence_ref])
 
     def write_report(
         self,

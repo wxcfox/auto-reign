@@ -124,6 +124,32 @@ def test_source_bytes_are_immutable_and_have_a_json_sidecar(
     assert source_path.read_bytes() == content
 
 
+def test_append_source_writes_learning_notes_under_sources_notes(
+    services: tuple[WorkspaceService, ArtifactService],
+) -> None:
+    workspace, artifacts = services
+
+    meta = artifacts.append_source(
+        "sources/notes/2026-06-28.md",
+        source_filename="2026-06-28.md",
+        media_type="text/markdown",
+        content=b"## 12:00:00 learning\n\nRedis note\n",
+    )
+
+    assert meta.relative_path == "sources/notes/2026-06-28.md"
+    assert workspace.resolve_path(meta.relative_path).read_text(encoding="utf-8").endswith(
+        "Redis note\n"
+    )
+
+    with pytest.raises(ValueError, match="sources/notes"):
+        artifacts.append_source(
+            "inbox/2026-06-28.md",
+            source_filename="2026-06-28.md",
+            media_type="text/markdown",
+            content=b"old path",
+        )
+
+
 def test_revision_retention_uses_time_not_lexical_revision_order(
     services: tuple[WorkspaceService, ArtifactService],
 ) -> None:

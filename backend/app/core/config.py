@@ -25,9 +25,12 @@ class Settings(BaseSettings):
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     deterministic_model_fallback: bool = False
 
+    @property
+    def workspace_dir(self) -> Path:
+        return self.data_dir / "workspace"
+
     def ensure_data_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        (self.data_dir / "uploads").mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

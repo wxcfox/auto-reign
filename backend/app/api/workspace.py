@@ -53,6 +53,7 @@ from app.services.workspace_content_service import (
     WorkspaceContentProjectionError,
     WorkspaceContentService,
 )
+from app.services.workspace_paths import REVIEW_STATUS_PATH
 
 
 router = APIRouter(prefix="/api/workspace")
@@ -86,7 +87,7 @@ def preparation_tasks(
     session: Session = Depends(get_session),
 ) -> PreparationTasksResponse:
     repository = ArtifactRepository()
-    status = repository.get_by_relative_path(session, "review/status.md")
+    status = repository.get_by_relative_path(session, REVIEW_STATUS_PATH)
     if status is None:
         return PreparationTasksResponse(tasks=[])
     try:

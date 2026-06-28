@@ -21,6 +21,12 @@ from app.services.markdown_utils import (
 )
 from app.schemas.modeling import LearningNoteSummaryResult
 from app.services.workspace_service import WorkspaceService
+from app.services.workspace_paths import (
+    HIGH_FREQUENCY_PATH,
+    INTERVIEW_SOURCE_DIR,
+    NOTE_SOURCE_DIR,
+    REVIEW_STATUS_PATH,
+)
 
 
 @dataclass(frozen=True)
@@ -76,7 +82,7 @@ class WorkspaceContentService:
     ) -> LearningNotePersistenceResult:
         timestamp = datetime.now(UTC)
         source = self.artifact_service.append_source(
-            f"inbox/{timestamp.strftime('%Y-%m-%d')}.md",
+            f"{NOTE_SOURCE_DIR}/{timestamp.strftime('%Y-%m-%d')}.md",
             source_filename=f"{timestamp.strftime('%Y-%m-%d')}.md",
             media_type="text/markdown",
             content=self.learning_note_inbox_entry(note, timestamp).encode("utf-8"),
@@ -97,7 +103,7 @@ class WorkspaceContentService:
             timestamp=timestamp,
         )
         self.create_or_merge_review_status_from_learning(
-            "review/status.md",
+            REVIEW_STATUS_PATH,
             title=summary.title,
             source_ref=source_ref,
             language=language,
@@ -136,7 +142,7 @@ class WorkspaceContentService:
         timestamp = datetime.now(UTC)
         questions = self.extract_real_interview_questions(record)
         weak_points = self.extract_real_interview_weak_points(record)
-        raw_path = f"raw/{timestamp.strftime('%Y%m%d-%H%M%S-%f')}.md"
+        raw_path = f"{INTERVIEW_SOURCE_DIR}/{timestamp.strftime('%Y%m%d-%H%M%S-%f')}.md"
         raw_document = self.artifact_service.create_markdown(
             raw_path,
             kind="interview_record",
@@ -147,8 +153,8 @@ class WorkspaceContentService:
             now=timestamp,
         )
         raw_ref = f"artifact:{raw_document.front_matter.id}"
-        high_frequency_path = "review/high-frequency.md"
-        status_path = "review/status.md"
+        high_frequency_path = HIGH_FREQUENCY_PATH
+        status_path = REVIEW_STATUS_PATH
         self.create_or_merge_high_frequency_card(
             high_frequency_path,
             questions=questions,

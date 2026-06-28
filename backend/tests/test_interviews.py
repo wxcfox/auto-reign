@@ -686,7 +686,7 @@ def test_follow_up_feedback_keeps_structured_fields_separate(
     assert turn["follow_up_should_write_high_frequency"] is True
     assert turn["follow_up_tested_points"] == ["follow-up fallback"]
 
-    workspace = get_settings().data_dir / "workspace"
+    workspace = get_settings().workspace_dir
     practice_files = list((workspace / "practice").glob("**/*.md"))
     assert len(practice_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")

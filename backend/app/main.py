@@ -23,7 +23,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     engine = create_engine_for_settings(settings)
     session_factory = make_session_factory(engine)
-    workspace_service = WorkspaceService(settings.data_dir / "workspace")
+    workspace_service = WorkspaceService(settings.workspace_dir)
     artifact_service = ArtifactService(workspace_service)
 
     @asynccontextmanager
