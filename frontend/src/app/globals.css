@@ -235,6 +235,7 @@ a:focus-visible {
 .sidebar-more-list a,
 .sidebar-history a,
 .sidebar-history-item,
+.sidebar-history-action,
 .sidebar-user {
   display: flex;
   align-items: center;
@@ -293,6 +294,8 @@ a:focus-visible {
 .sidebar-more-list a:hover,
 .sidebar-history a:hover,
 .sidebar-history-item:hover,
+.sidebar-history-row:hover .sidebar-history-action,
+.sidebar-history-action:hover,
 .sidebar-user:hover,
 .app-nav a[data-active="true"],
 .sidebar-more-list a[data-active="true"] {
@@ -327,10 +330,71 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.sidebar-history-item {
+.sidebar-history-row {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sidebar-history-item {
   min-width: 0;
   font: inherit;
+}
+
+.sidebar-history-action {
+  justify-content: center;
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.sidebar-history-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sidebar-history-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 40;
+  display: grid;
+  min-width: 148px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 5px;
+  box-shadow: var(--shadow-soft);
+}
+
+.sidebar-history-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  padding: 0 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sidebar-history-menu button:hover {
+  background: var(--surface-muted);
+}
+
+.sidebar-history-menu .sidebar-history-menu-danger {
+  color: var(--danger);
 }
 
 .sidebar-history-item span {
@@ -361,6 +425,13 @@ a:focus-visible {
   margin: 0 8px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.sidebar-history-error {
+  margin: 0 8px 4px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .sidebar-more {
@@ -558,6 +629,77 @@ a:focus-visible {
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 18px;
+}
+
+.dialog-panel {
+  display: grid;
+  gap: 14px;
+  width: min(420px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+  box-shadow: var(--shadow-soft);
+}
+
+.dialog-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.dialog-heading h2,
+.dialog-heading p {
+  margin: 0;
+}
+
+.dialog-heading h2 {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.dialog-heading p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.dialog-panel label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dialog-panel input {
+  min-height: 36px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.dialog-panel input:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .form-error,

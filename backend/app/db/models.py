@@ -64,10 +64,12 @@ class InterviewSession(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     config_id: Mapped[str] = mapped_column(ForeignKey("interview_configs.id"))
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active")
     current_round: Mapped[int] = mapped_column(Integer, default=1)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     config: Mapped[InterviewConfig] = relationship(back_populates="sessions")
@@ -134,6 +136,7 @@ class LearningSession(Base):
     chat_model: Mapped[str] = mapped_column(String(120), default="")
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     messages: Mapped[list["LearningMessage"]] = relationship(
         back_populates="session",

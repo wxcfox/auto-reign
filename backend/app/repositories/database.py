@@ -30,12 +30,18 @@ class InterviewSessionRepository:
         return interview_session
 
     def get(self, session: Session, session_id: str) -> models.InterviewSession | None:
-        return session.get(models.InterviewSession, session_id)
+        return session.scalar(
+            select(models.InterviewSession).where(
+                models.InterviewSession.id == session_id,
+                models.InterviewSession.deleted_at.is_(None),
+            )
+        )
 
     def list_recent(self, session: Session, limit: int = 50) -> list[models.InterviewSession]:
         return list(
             session.scalars(
                 select(models.InterviewSession)
+                .where(models.InterviewSession.deleted_at.is_(None))
                 .order_by(models.InterviewSession.started_at.desc())
                 .limit(limit)
             )
@@ -82,12 +88,18 @@ class LearningSessionRepository:
         return learning_session
 
     def get(self, session: Session, session_id: str) -> models.LearningSession | None:
-        return session.get(models.LearningSession, session_id)
+        return session.scalar(
+            select(models.LearningSession).where(
+                models.LearningSession.id == session_id,
+                models.LearningSession.deleted_at.is_(None),
+            )
+        )
 
     def list_recent(self, session: Session, limit: int = 50) -> list[models.LearningSession]:
         return list(
             session.scalars(
                 select(models.LearningSession)
+                .where(models.LearningSession.deleted_at.is_(None))
                 .order_by(models.LearningSession.updated_at.desc())
                 .limit(limit)
             )

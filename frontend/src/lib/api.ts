@@ -1,6 +1,8 @@
 import type {
   AnswerFeedback,
+  ConversationDeleteResponse,
   ConversationDetailResponse,
+  ConversationHistoryItem,
   ConversationListResponse,
   FollowUpFeedback,
   HealthResponse,
@@ -72,6 +74,22 @@ export function listConversations(): Promise<ConversationListResponse> {
 
 export function getConversation(conversationId: string): Promise<ConversationDetailResponse> {
   return apiJson<ConversationDetailResponse>(`/api/conversations/${conversationId}`);
+}
+
+export function renameConversation(
+  conversationId: string,
+  title: string,
+): Promise<ConversationHistoryItem> {
+  return apiJson<ConversationHistoryItem>(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function deleteConversation(conversationId: string): Promise<ConversationDeleteResponse> {
+  return apiJson<ConversationDeleteResponse>(`/api/conversations/${conversationId}`, {
+    method: "DELETE",
+  });
 }
 
 export function recordRealInterview(
