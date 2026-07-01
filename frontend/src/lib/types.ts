@@ -47,6 +47,11 @@ export interface ConversationDetailResponse extends ConversationHistoryItem {
   messages: ConversationMessage[];
 }
 
+export interface ConversationDeleteResponse {
+  id: string;
+  status: "deleted";
+}
+
 export interface HealthResponse {
   status: "ok";
   storage: {

@@ -55,6 +55,12 @@ def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> N
         }.issubset(turn_columns)
         config_columns = {column["name"] for column in inspector.get_columns("interview_configs")}
         assert "language" in config_columns
+        session_columns = {column["name"] for column in inspector.get_columns("interview_sessions")}
+        assert {"title", "deleted_at"}.issubset(session_columns)
+        learning_session_columns = {
+            column["name"] for column in inspector.get_columns("learning_sessions")
+        }
+        assert "deleted_at" in learning_session_columns
 
         artifact_columns = {column["name"] for column in inspector.get_columns("artifacts")}
         assert {
@@ -102,6 +108,7 @@ def test_learning_conversation_tables_exist_in_schema() -> None:
         "chat_model",
         "started_at",
         "updated_at",
+        "deleted_at",
     }.issubset(learning_session_columns)
 
     learning_message_columns = {

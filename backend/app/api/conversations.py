@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import not_found
 from app.db.session import session_scope
-from app.schemas.conversations import ConversationDetailResponse, ConversationListResponse
+from app.schemas.conversations import (
+    ConversationDeleteResponse,
+    ConversationDetailResponse,
+    ConversationHistoryItemResponse,
+    ConversationListResponse,
+    ConversationRenameRequest,
+)
 from app.services.conversation_service import ConversationService
 
 
@@ -33,3 +39,26 @@ def get_conversation(
     if detail is None:
         raise not_found("conversation_not_found", "Conversation not found.")
     return detail
+
+
+@router.patch("/{conversation_id}", response_model=ConversationHistoryItemResponse)
+def rename_conversation(
+    conversation_id: str,
+    payload: ConversationRenameRequest,
+    session: Session = Depends(get_session),
+) -> ConversationHistoryItemResponse:
+    renamed = ConversationService().rename_conversation(session, conversation_id, payload.title)
+    if renamed is None:
+        raise not_found("conversation_not_found", "Conversation not found.")
+    return renamed
+
+
+@router.delete("/{conversation_id}", response_model=ConversationDeleteResponse)
+def delete_conversation(
+    conversation_id: str,
+    session: Session = Depends(get_session),
+) -> ConversationDeleteResponse:
+    deleted = ConversationService().delete_conversation(session, conversation_id)
+    if not deleted:
+        raise not_found("conversation_not_found", "Conversation not found.")
+    return ConversationDeleteResponse(id=conversation_id, status="deleted")

@@ -82,3 +82,81 @@ def test_conversation_detail_projects_learning_messages(client, monkeypatch) -> 
     assert len(body["messages"]) == 2
     assert body["messages"][0]["role"] == "user"
     assert body["messages"][1]["role"] == "assistant"
+
+
+def test_learning_conversation_can_be_renamed_and_deleted_without_removing_artifact(
+    client, monkeypatch
+) -> None:
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    learning = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={"text": "今天学习了 MySQL 覆盖索引。", "language": "zh-CN"},
+    )
+    learning_body = _sse_result(learning.text)
+    conversation_id = learning_body["conversation_id"]
+    artifact_id = learning_body["artifact"]["id"]
+
+    rename_response = client.patch(
+        f"/api/conversations/{conversation_id}",
+        json={"title": "  MySQL 索引复习  "},
+    )
+
+    assert rename_response.status_code == 200
+    assert rename_response.json()["title"] == "MySQL 索引复习"
+    assert any(
+        item["id"] == conversation_id and item["title"] == "MySQL 索引复习"
+        for item in client.get("/api/conversations").json()["conversations"]
+    )
+
+    delete_response = client.delete(f"/api/conversations/{conversation_id}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"id": conversation_id, "status": "deleted"}
+    assert client.get(f"/api/conversations/{conversation_id}").status_code == 404
+    assert all(
+        item["id"] != conversation_id
+        for item in client.get("/api/conversations").json()["conversations"]
+    )
+    assert client.get(f"/api/workspace/artifacts/{artifact_id}").status_code == 200
+
+
+def test_interview_conversation_can_be_renamed_and_deleted(client) -> None:
+    interview = client.post(
+        "/api/interview-sessions",
+        json={
+            "target_company": "",
+            "target_role": "",
+            "job_description": "",
+            "extra_prompt": "Backend cache interview",
+            "language": "zh-CN",
+            "mode": "comprehensive",
+            "chat_model_provider": "qwen",
+            "chat_model": "qwen3.7-plus",
+            "target_rounds": 1,
+        },
+    ).json()
+    session_id = interview["session"]["id"]
+
+    rename_response = client.patch(
+        f"/api/conversations/{session_id}",
+        json={"title": "缓存专项面试"},
+    )
+
+    assert rename_response.status_code == 200
+    assert rename_response.json()["kind"] == "interview"
+    assert rename_response.json()["title"] == "缓存专项面试"
+    assert any(
+        item["id"] == session_id and item["title"] == "缓存专项面试"
+        for item in client.get("/api/conversations").json()["conversations"]
+    )
+
+    delete_response = client.delete(f"/api/conversations/{session_id}")
+
+    assert delete_response.status_code == 200
+    assert client.get(f"/api/conversations/{session_id}").status_code == 404
+    assert client.get(f"/api/interview-sessions/{session_id}").status_code == 404
