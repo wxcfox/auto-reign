@@ -15,12 +15,25 @@ def _sse_result(body: str) -> dict[str, object]:
     raise AssertionError("SSE response did not include a result event.")
 
 
-def test_conversation_history_merges_interviews_and_learning(client, monkeypatch) -> None:
+def _stub_index_rebuild(monkeypatch) -> None:
     class RecordingIndexService:
         def rebuild_index(self, session_factory, workspace, repository) -> str:
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+
+def _create_learning_conversation(client, text: str) -> dict[str, object]:
+    response = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={"text": text, "language": "zh-CN"},
+    )
+    assert response.status_code == 200
+    return _sse_result(response.text)
+
+
+def test_conversation_history_merges_interviews_and_learning(client, monkeypatch) -> None:
+    _stub_index_rebuild(monkeypatch)
 
     interview = client.post(
         "/api/interview-sessions",
@@ -36,11 +49,7 @@ def test_conversation_history_merges_interviews_and_learning(client, monkeypatch
             "target_rounds": 1,
         },
     ).json()
-    learning = client.post(
-        "/api/workspace/learning-notes/stream",
-        json={"text": "今天学习了 Redis 缓存穿透。", "language": "zh-CN"},
-    )
-    learning_body = _sse_result(learning.text)
+    learning_body = _create_learning_conversation(client, "今天学习了 Redis 缓存穿透。")
 
     response = client.get("/api/conversations")
 
@@ -60,17 +69,10 @@ def test_conversation_history_merges_interviews_and_learning(client, monkeypatch
 
 
 def test_conversation_detail_projects_learning_messages(client, monkeypatch) -> None:
-    class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
-            return "rebuilt"
-
-    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
-
-    learning = client.post(
-        "/api/workspace/learning-notes/stream",
-        json={"text": "学习 MySQL 覆盖索引。", "language": "zh-CN"},
-    )
-    conversation_id = _sse_result(learning.text)["conversation_id"]
+    _stub_index_rebuild(monkeypatch)
+    conversation_id = _create_learning_conversation(client, "学习 MySQL 覆盖索引。")[
+        "conversation_id"
+    ]
 
     response = client.get(f"/api/conversations/{conversation_id}")
 
@@ -87,17 +89,8 @@ def test_conversation_detail_projects_learning_messages(client, monkeypatch) -> 
 def test_learning_conversation_can_be_renamed_and_deleted_without_removing_artifact(
     client, monkeypatch
 ) -> None:
-    class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
-            return "rebuilt"
-
-    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
-
-    learning = client.post(
-        "/api/workspace/learning-notes/stream",
-        json={"text": "今天学习了 MySQL 覆盖索引。", "language": "zh-CN"},
-    )
-    learning_body = _sse_result(learning.text)
+    _stub_index_rebuild(monkeypatch)
+    learning_body = _create_learning_conversation(client, "今天学习了 MySQL 覆盖索引。")
     conversation_id = learning_body["conversation_id"]
     artifact_id = learning_body["artifact"]["id"]
 
@@ -128,22 +121,11 @@ def test_learning_conversation_can_be_renamed_and_deleted_without_removing_artif
 def test_renaming_learning_conversation_preserves_created_time_history_order(
     client, monkeypatch
 ) -> None:
-    class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
-            return "rebuilt"
-
-    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
-
-    first = client.post(
-        "/api/workspace/learning-notes/stream",
-        json={"text": "先学习 Redis 缓存穿透。", "language": "zh-CN"},
-    )
-    first_id = _sse_result(first.text)["conversation_id"]
-    second = client.post(
-        "/api/workspace/learning-notes/stream",
-        json={"text": "后学习 MySQL 覆盖索引。", "language": "zh-CN"},
-    )
-    second_id = _sse_result(second.text)["conversation_id"]
+    _stub_index_rebuild(monkeypatch)
+    first = _create_learning_conversation(client, "先学习 Redis 缓存穿透。")
+    second = _create_learning_conversation(client, "后学习 MySQL 覆盖索引。")
+    first_id = first["conversation_id"]
+    second_id = second["conversation_id"]
 
     before_ids = [item["id"] for item in client.get("/api/conversations").json()["conversations"]]
     assert before_ids.index(second_id) < before_ids.index(first_id)

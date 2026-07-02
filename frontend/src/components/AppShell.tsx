@@ -129,21 +129,12 @@ export function AppShell({ children }: AppShellProps) {
   );
   const [moreOpen, setMoreOpen] = useState(secondaryNavActive);
 
-  const refreshConversations = useCallback(async (preservedConversation?: ConversationHistoryItem) => {
+  const refreshConversations = useCallback(async () => {
     const refreshId = conversationRefreshId.current + 1;
     conversationRefreshId.current = refreshId;
     try {
       const response = await listConversations();
       if (mountedRef.current && refreshId === conversationRefreshId.current) {
-        if (preservedConversation) {
-          const preservedKey = conversationKey(preservedConversation);
-          setConversations(
-            response.conversations.map((conversation) =>
-              conversationKey(conversation) === preservedKey ? preservedConversation : conversation,
-            ),
-          );
-          return;
-        }
         setConversations(response.conversations);
       }
     } catch {
@@ -230,7 +221,6 @@ export function AppShell({ children }: AppShellProps) {
       );
       setRenamingConversation(null);
       setRenameValue("");
-      await refreshConversations(renamedConversation);
     } catch {
       setHistoryActionError(t("errors.generic_save"));
     } finally {

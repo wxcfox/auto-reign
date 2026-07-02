@@ -40,6 +40,12 @@ describe("AppShell", () => {
     };
   }
 
+  function clickMenuItem(name: RegExp) {
+    const menuItem = screen.getByRole("menuitem", { name });
+    fireEvent.pointerDown(menuItem);
+    fireEvent.click(menuItem);
+  }
+
   beforeEach(() => {
     vi.resetAllMocks();
     navigationMocks.pathname = "/interview";
@@ -182,18 +188,8 @@ describe("AppShell", () => {
   });
 
   it("renames a history conversation from the three-dot menu", async () => {
-    const renamedConversation = conversationResponse("Cache practice", "interview", "active-session")
-      .conversations[0];
     vi.mocked(listConversations)
-      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"))
-      .mockResolvedValueOnce({
-        conversations: [
-          {
-            ...renamedConversation,
-            last_message: "Active backend interview latest message",
-          },
-        ],
-      });
+      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"));
 
     render(
       <AppShell>
@@ -202,9 +198,7 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Active backend interview/i }));
-    const renameMenuItem = screen.getByRole("menuitem", { name: /Rename/i });
-    fireEvent.pointerDown(renameMenuItem);
-    fireEvent.click(renameMenuItem);
+    clickMenuItem(/Rename/i);
     const input = screen.getByLabelText(/Conversation name/i);
 
     expect(input).toHaveValue("Active backend interview");
@@ -218,33 +212,7 @@ describe("AppShell", () => {
     const renamedLink = await screen.findByRole("link", { name: /Cache practice/i });
     expect(renamedLink).toHaveAttribute("href", "/interview?session=active-session");
     expect(renamedLink).toHaveTextContent("Cache practice");
-    expect(renamedLink).not.toHaveTextContent("Active backend interview latest message");
-  });
-
-  it("keeps the patched conversation title visible when the follow-up refresh is stale", async () => {
-    vi.mocked(listConversations)
-      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"))
-      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"));
-
-    render(
-      <AppShell>
-        <div>Current page</div>
-      </AppShell>,
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: /Actions for Active backend interview/i }));
-    const renameMenuItem = screen.getByRole("menuitem", { name: /Rename/i });
-    fireEvent.pointerDown(renameMenuItem);
-    fireEvent.click(renameMenuItem);
-    fireEvent.change(screen.getByLabelText(/Conversation name/i), {
-      target: { value: "Cache practice" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
-
-    expect(await screen.findByRole("link", { name: /Cache practice/i }))
-      .toHaveAttribute("href", "/interview?session=active-session");
-    expect(screen.queryByRole("link", { name: /Active backend interview/i }))
-      .not.toBeInTheDocument();
+    expect(renamedLink).not.toHaveTextContent("Renamed latest message");
   });
 
   it("deletes a history conversation after confirmation", async () => {
@@ -266,9 +234,7 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Redis cache learning/i }));
-    const deleteMenuItem = screen.getByRole("menuitem", { name: /Delete/i });
-    fireEvent.pointerDown(deleteMenuItem);
-    fireEvent.click(deleteMenuItem);
+    clickMenuItem(/Delete/i);
 
     await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith("learning-session"));
     expect(confirmSpy).toHaveBeenCalledWith('Delete conversation "Redis cache learning"?');
@@ -299,9 +265,7 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Redis cache learning/i }));
-    const deleteMenuItem = screen.getByRole("menuitem", { name: /Delete/i });
-    fireEvent.pointerDown(deleteMenuItem);
-    fireEvent.click(deleteMenuItem);
+    clickMenuItem(/Delete/i);
 
     await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith("learning-session"));
     expect(navigationMocks.replace).toHaveBeenCalledWith("/learn");
