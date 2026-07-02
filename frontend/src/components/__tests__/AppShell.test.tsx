@@ -92,6 +92,7 @@ describe("AppShell", () => {
 
     const activeSessionLink = await screen.findByRole("link", { name: /Active backend interview/i });
     expect(activeSessionLink).toHaveAttribute("href", "/interview?session=active-session");
+    expect(activeSessionLink).toHaveAttribute("title", "Active backend interview");
     expect(screen.getByRole("link", { name: /Redis cache learning/i }))
       .toHaveAttribute("href", "/learn?session=learning-session");
     expect(screen.queryByText(/Completed/i)).not.toBeInTheDocument();

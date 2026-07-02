@@ -335,7 +335,7 @@ export function AppShell({ children }: AppShellProps) {
             const pending = historyActionPendingKey === itemKey;
             return (
               <div className="sidebar-history-row" key={itemKey}>
-                <Link className="sidebar-history-item" href={item.href} aria-label={title}>
+                <Link className="sidebar-history-item" href={item.href} aria-label={title} title={title}>
                   <MessageSquareText size={16} aria-hidden="true" />
                   <span className="sidebar-label">{title}</span>
                 </Link>
