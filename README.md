@@ -1,6 +1,6 @@
 # Auto Reign
 
-*自回归式问答：每一个 token 都是通往掌控面试的一步。*
+*Autoregressive Q&A — every token is a step to the throne.*
 
 **本地优先的 AI 模拟面试工作台，基于你自己的资料库出题、追问、点评，并自动沉淀薄弱项和复盘报告。**
 
