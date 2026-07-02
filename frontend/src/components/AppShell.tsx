@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -29,6 +37,15 @@ import type { ConversationHistoryItem } from "@/lib/types";
 type AppShellProps = {
   children: ReactNode;
 };
+
+function isHistoryMenuSurfaceTarget(target: EventTarget | null) {
+  return target instanceof Element && target.closest("[data-history-menu-surface]") !== null;
+}
+
+function stopHistoryMenuPointerDown(event: ReactPointerEvent<HTMLElement>) {
+  event.stopPropagation();
+  event.nativeEvent.stopImmediatePropagation();
+}
 
 function readPreferredDarkMode() {
   if (typeof window === "undefined") {
@@ -134,7 +151,10 @@ export function AppShell({ children }: AppShellProps) {
     if (historyMenuKey === null) {
       return;
     }
-    const closeMenu = () => {
+    const closeMenu = (event: PointerEvent) => {
+      if (isHistoryMenuSurfaceTarget(event.target)) {
+        return;
+      }
       setHistoryMenuKey(null);
     };
     document.addEventListener("pointerdown", closeMenu);
@@ -304,13 +324,14 @@ export function AppShell({ children }: AppShellProps) {
                   aria-expanded={menuOpen}
                   aria-label={t("actions.conversation_actions", { title })}
                   className="sidebar-history-action"
+                  data-history-menu-surface="true"
                   disabled={pending}
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     setHistoryMenuKey((current) => (current === itemKey ? null : itemKey));
                   }}
-                  onPointerDown={(event) => event.stopPropagation()}
+                  onPointerDown={stopHistoryMenuPointerDown}
                   type="button"
                 >
                   <MoreHorizontal size={15} aria-hidden="true" />
@@ -318,9 +339,10 @@ export function AppShell({ children }: AppShellProps) {
                 {menuOpen ? (
                   <div
                     className="sidebar-history-menu"
+                    data-history-menu-surface="true"
                     role="menu"
                     onClick={(event) => event.stopPropagation()}
-                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerDown={stopHistoryMenuPointerDown}
                   >
                     <button
                       onClick={() => openRenameDialog(item, title)}

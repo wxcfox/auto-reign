@@ -183,7 +183,9 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Active backend interview/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Rename/i }));
+    const renameMenuItem = screen.getByRole("menuitem", { name: /Rename/i });
+    fireEvent.pointerDown(renameMenuItem);
+    fireEvent.click(renameMenuItem);
     const input = screen.getByLabelText(/Conversation name/i);
 
     expect(input).toHaveValue("Active backend interview");
@@ -217,7 +219,9 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Redis cache learning/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Delete/i }));
+    const deleteMenuItem = screen.getByRole("menuitem", { name: /Delete/i });
+    fireEvent.pointerDown(deleteMenuItem);
+    fireEvent.click(deleteMenuItem);
 
     await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith("learning-session"));
     expect(confirmSpy).toHaveBeenCalledWith('Delete conversation "Redis cache learning"?');
