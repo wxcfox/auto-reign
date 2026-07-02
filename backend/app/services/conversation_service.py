@@ -65,7 +65,7 @@ class ConversationService:
             for adapter in self.adapters
             for conversation in adapter.list_recent(session, limit=limit)
         ]
-        return sorted(conversations, key=lambda item: item.updated_at, reverse=True)[:limit]
+        return sorted(conversations, key=lambda item: item.started_at, reverse=True)[:limit]
 
     def get_conversation(
         self,

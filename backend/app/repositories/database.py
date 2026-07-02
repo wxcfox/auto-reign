@@ -100,7 +100,7 @@ class LearningSessionRepository:
             session.scalars(
                 select(models.LearningSession)
                 .where(models.LearningSession.deleted_at.is_(None))
-                .order_by(models.LearningSession.updated_at.desc())
+                .order_by(models.LearningSession.started_at.desc())
                 .limit(limit)
             )
         )

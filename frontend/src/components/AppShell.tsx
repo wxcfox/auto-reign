@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -19,7 +27,7 @@ import {
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
@@ -29,6 +37,26 @@ import type { ConversationHistoryItem } from "@/lib/types";
 type AppShellProps = {
   children: ReactNode;
 };
+
+function isHistoryMenuSurfaceTarget(target: EventTarget | null) {
+  return target instanceof Element && target.closest("[data-history-menu-surface]") !== null;
+}
+
+function stopHistoryMenuPointerDown(event: ReactPointerEvent<HTMLElement>) {
+  event.stopPropagation();
+  event.nativeEvent.stopImmediatePropagation();
+}
+
+function conversationLandingPath(kind: ConversationHistoryItem["kind"]) {
+  return kind === "learning" ? "/learn" : "/interview";
+}
+
+function isCurrentBrowserConversation(item: ConversationHistoryItem) {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return `${window.location.pathname}${window.location.search}` === item.href;
+}
 
 function readPreferredDarkMode() {
   if (typeof window === "undefined") {
@@ -76,6 +104,7 @@ function writeSidebarCollapsed(collapsed: boolean) {
 
 export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
+  const router = useRouter();
   const { changeLanguage, getCurrentLanguage, t } = useTranslation("common");
   const [conversations, setConversations] = useState<ConversationHistoryItem[]>([]);
   const [historyMenuKey, setHistoryMenuKey] = useState<string | null>(null);
@@ -134,7 +163,10 @@ export function AppShell({ children }: AppShellProps) {
     if (historyMenuKey === null) {
       return;
     }
-    const closeMenu = () => {
+    const closeMenu = (event: PointerEvent) => {
+      if (isHistoryMenuSurfaceTarget(event.target)) {
+        return;
+      }
       setHistoryMenuKey(null);
     };
     document.addEventListener("pointerdown", closeMenu);
@@ -181,10 +213,14 @@ export function AppShell({ children }: AppShellProps) {
     setHistoryActionPendingKey(pendingKey);
     setHistoryActionError(null);
     try {
-      await renameConversation(renamingConversation.id, title);
+      const renamedConversation = await renameConversation(renamingConversation.id, title);
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversationKey(conversation) === pendingKey ? renamedConversation : conversation,
+        ),
+      );
       setRenamingConversation(null);
       setRenameValue("");
-      await refreshConversations();
     } catch {
       setHistoryActionError(t("errors.generic_save"));
     } finally {
@@ -199,6 +235,7 @@ export function AppShell({ children }: AppShellProps) {
       return;
     }
     const pendingKey = conversationKey(item);
+    const deletingCurrentConversation = isCurrentBrowserConversation(item);
     setHistoryActionPendingKey(pendingKey);
     setHistoryActionError(null);
     try {
@@ -206,6 +243,9 @@ export function AppShell({ children }: AppShellProps) {
       setConversations((current) =>
         current.filter((conversation) => conversationKey(conversation) !== pendingKey),
       );
+      if (deletingCurrentConversation) {
+        router.replace(conversationLandingPath(item.kind));
+      }
       await refreshConversations();
     } catch {
       setHistoryActionError(t("errors.generic_save"));
@@ -295,22 +335,22 @@ export function AppShell({ children }: AppShellProps) {
             const pending = historyActionPendingKey === itemKey;
             return (
               <div className="sidebar-history-row" key={itemKey}>
-                <Link className="sidebar-history-item" href={item.href} aria-label={title}>
+                <Link className="sidebar-history-item" href={item.href} aria-label={title} title={title}>
                   <MessageSquareText size={16} aria-hidden="true" />
                   <span className="sidebar-label">{title}</span>
-                  <small className="sidebar-label">{item.last_message}</small>
                 </Link>
                 <button
                   aria-expanded={menuOpen}
                   aria-label={t("actions.conversation_actions", { title })}
                   className="sidebar-history-action"
+                  data-history-menu-surface="true"
                   disabled={pending}
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     setHistoryMenuKey((current) => (current === itemKey ? null : itemKey));
                   }}
-                  onPointerDown={(event) => event.stopPropagation()}
+                  onPointerDown={stopHistoryMenuPointerDown}
                   type="button"
                 >
                   <MoreHorizontal size={15} aria-hidden="true" />
@@ -318,9 +358,10 @@ export function AppShell({ children }: AppShellProps) {
                 {menuOpen ? (
                   <div
                     className="sidebar-history-menu"
+                    data-history-menu-surface="true"
                     role="menu"
                     onClick={(event) => event.stopPropagation()}
-                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerDown={stopHistoryMenuPointerDown}
                   >
                     <button
                       onClick={() => openRenameDialog(item, title)}

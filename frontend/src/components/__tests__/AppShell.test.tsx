@@ -5,8 +5,16 @@ import { AppShell } from "../AppShell";
 import i18next from "@/i18n/setup";
 import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
 
+const navigationMocks = vi.hoisted(() => ({
+  pathname: "/interview",
+  replace: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/interview",
+  usePathname: () => navigationMocks.pathname,
+  useRouter: () => ({
+    replace: navigationMocks.replace,
+  }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -32,8 +40,16 @@ describe("AppShell", () => {
     };
   }
 
+  function clickMenuItem(name: RegExp) {
+    const menuItem = screen.getByRole("menuitem", { name });
+    fireEvent.pointerDown(menuItem);
+    fireEvent.click(menuItem);
+  }
+
   beforeEach(() => {
     vi.resetAllMocks();
+    navigationMocks.pathname = "/interview";
+    window.history.replaceState(null, "", "/");
     i18next.changeLanguage("en");
     try {
       window.localStorage?.clear();
@@ -76,6 +92,7 @@ describe("AppShell", () => {
 
     const activeSessionLink = await screen.findByRole("link", { name: /Active backend interview/i });
     expect(activeSessionLink).toHaveAttribute("href", "/interview?session=active-session");
+    expect(activeSessionLink).toHaveAttribute("title", "Active backend interview");
     expect(screen.getByRole("link", { name: /Redis cache learning/i }))
       .toHaveAttribute("href", "/learn?session=learning-session");
     expect(screen.queryByText(/Completed/i)).not.toBeInTheDocument();
@@ -173,8 +190,7 @@ describe("AppShell", () => {
 
   it("renames a history conversation from the three-dot menu", async () => {
     vi.mocked(listConversations)
-      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"))
-      .mockResolvedValueOnce(conversationResponse("Cache practice", "interview", "active-session"));
+      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"));
 
     render(
       <AppShell>
@@ -183,7 +199,7 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Active backend interview/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Rename/i }));
+    clickMenuItem(/Rename/i);
     const input = screen.getByLabelText(/Conversation name/i);
 
     expect(input).toHaveValue("Active backend interview");
@@ -194,8 +210,10 @@ describe("AppShell", () => {
     await waitFor(() =>
       expect(renameConversation).toHaveBeenCalledWith("active-session", "Cache practice"),
     );
-    expect(await screen.findByRole("link", { name: /Cache practice/i }))
-      .toHaveAttribute("href", "/interview?session=active-session");
+    const renamedLink = await screen.findByRole("link", { name: /Cache practice/i });
+    expect(renamedLink).toHaveAttribute("href", "/interview?session=active-session");
+    expect(renamedLink).toHaveTextContent("Cache practice");
+    expect(renamedLink).not.toHaveTextContent("Renamed latest message");
   });
 
   it("deletes a history conversation after confirmation", async () => {
@@ -217,11 +235,41 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Actions for Redis cache learning/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Delete/i }));
+    clickMenuItem(/Delete/i);
 
     await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith("learning-session"));
     expect(confirmSpy).toHaveBeenCalledWith('Delete conversation "Redis cache learning"?');
+    expect(navigationMocks.replace).not.toHaveBeenCalled();
     expect(screen.queryByRole("link", { name: /Redis cache learning/i })).not.toBeInTheDocument();
+
+    confirmSpy.mockRestore();
+  });
+
+  it("navigates away after deleting the current history conversation", async () => {
+    navigationMocks.pathname = "/learn";
+    window.history.replaceState(null, "", "/learn?session=learning-session");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(listConversations)
+      .mockResolvedValueOnce({
+        conversations: [
+          ...conversationResponse("Active backend interview", "interview", "active-session").conversations,
+          ...conversationResponse("Redis cache learning", "learning", "learning-session").conversations,
+        ],
+      })
+      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"));
+    vi.mocked(deleteConversation).mockResolvedValue({ id: "learning-session", status: "deleted" });
+
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Actions for Redis cache learning/i }));
+    clickMenuItem(/Delete/i);
+
+    await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith("learning-session"));
+    expect(navigationMocks.replace).toHaveBeenCalledWith("/learn");
 
     confirmSpy.mockRestore();
   });
