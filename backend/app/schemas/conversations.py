@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 ConversationKind = Literal["interview", "learning"]
@@ -33,3 +33,14 @@ class ConversationListResponse(BaseModel):
 
 class ConversationDetailResponse(ConversationHistoryItemResponse):
     messages: list[ConversationMessageResponse]
+
+
+class ConversationRenameRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=120)
+
+
+class ConversationDeleteResponse(BaseModel):
+    id: str
+    status: Literal["deleted"]

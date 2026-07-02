@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -15,13 +15,14 @@ import {
   PencilLine,
   Plus,
   Sun,
+  Trash2,
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { listConversations } from "@/lib/api";
+import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
 import { CONVERSATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import type { ConversationHistoryItem } from "@/lib/types";
 
@@ -77,10 +78,17 @@ export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
   const { changeLanguage, getCurrentLanguage, t } = useTranslation("common");
   const [conversations, setConversations] = useState<ConversationHistoryItem[]>([]);
+  const [historyMenuKey, setHistoryMenuKey] = useState<string | null>(null);
+  const [historyActionError, setHistoryActionError] = useState<string | null>(null);
+  const [historyActionPendingKey, setHistoryActionPendingKey] = useState<string | null>(null);
+  const [renamingConversation, setRenamingConversation] =
+    useState<ConversationHistoryItem | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const conversationRefreshId = useRef(0);
+  const mountedRef = useRef(false);
   const primaryNavItems = [
     { href: "/library", label: t("nav.library"), icon: Database },
   ];
@@ -92,22 +100,23 @@ export function AppShell({ children }: AppShellProps) {
   );
   const [moreOpen, setMoreOpen] = useState(secondaryNavActive);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function refreshConversations() {
-      const refreshId = conversationRefreshId.current + 1;
-      conversationRefreshId.current = refreshId;
-      try {
-        const response = await listConversations();
-        if (!cancelled && refreshId === conversationRefreshId.current) {
-          setConversations(response.conversations);
-        }
-      } catch {
-        if (!cancelled && refreshId === conversationRefreshId.current) {
-          setConversations([]);
-        }
+  const refreshConversations = useCallback(async () => {
+    const refreshId = conversationRefreshId.current + 1;
+    conversationRefreshId.current = refreshId;
+    try {
+      const response = await listConversations();
+      if (mountedRef.current && refreshId === conversationRefreshId.current) {
+        setConversations(response.conversations);
+      }
+    } catch {
+      if (mountedRef.current && refreshId === conversationRefreshId.current) {
+        setConversations([]);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
 
     void refreshConversations();
     const handleConversationsChanged = () => {
@@ -116,10 +125,21 @@ export function AppShell({ children }: AppShellProps) {
     window.addEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
 
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
       window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
     };
-  }, []);
+  }, [refreshConversations]);
+
+  useEffect(() => {
+    if (historyMenuKey === null) {
+      return;
+    }
+    const closeMenu = () => {
+      setHistoryMenuKey(null);
+    };
+    document.addEventListener("pointerdown", closeMenu);
+    return () => document.removeEventListener("pointerdown", closeMenu);
+  }, [historyMenuKey]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
@@ -136,6 +156,63 @@ export function AppShell({ children }: AppShellProps) {
   const ThemeIcon = darkMode ? Sun : Moon;
   const SidebarIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   const UserMenuIcon = settingsOpen ? ChevronDown : ChevronUp;
+
+  function conversationKey(item: ConversationHistoryItem) {
+    return `${item.kind}:${item.id}`;
+  }
+
+  function openRenameDialog(item: ConversationHistoryItem, title: string) {
+    setHistoryActionError(null);
+    setHistoryMenuKey(null);
+    setRenamingConversation(item);
+    setRenameValue(title);
+  }
+
+  async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renamingConversation) {
+      return;
+    }
+    const title = renameValue.trim();
+    if (!title) {
+      return;
+    }
+    const pendingKey = conversationKey(renamingConversation);
+    setHistoryActionPendingKey(pendingKey);
+    setHistoryActionError(null);
+    try {
+      await renameConversation(renamingConversation.id, title);
+      setRenamingConversation(null);
+      setRenameValue("");
+      await refreshConversations();
+    } catch {
+      setHistoryActionError(t("errors.generic_save"));
+    } finally {
+      setHistoryActionPendingKey(null);
+    }
+  }
+
+  async function handleDeleteConversation(item: ConversationHistoryItem, title: string) {
+    setHistoryMenuKey(null);
+    const confirmed = window.confirm(t("actions.delete_conversation_confirm", { title }));
+    if (!confirmed) {
+      return;
+    }
+    const pendingKey = conversationKey(item);
+    setHistoryActionPendingKey(pendingKey);
+    setHistoryActionError(null);
+    try {
+      await deleteConversation(item.id);
+      setConversations((current) =>
+        current.filter((conversation) => conversationKey(conversation) !== pendingKey),
+      );
+      await refreshConversations();
+    } catch {
+      setHistoryActionError(t("errors.generic_save"));
+    } finally {
+      setHistoryActionPendingKey(null);
+    }
+  }
 
   return (
     <div className="app-shell" data-sidebar-collapsed={sidebarCollapsed}>
@@ -203,22 +280,68 @@ export function AppShell({ children }: AppShellProps) {
         </section>
         <section className="sidebar-history" aria-labelledby="sidebar-history-heading">
           <h2 id="sidebar-history-heading">{t("nav.history")}</h2>
+          {historyActionError ? (
+            <p className="sidebar-history-error" role="alert">
+              {historyActionError}
+            </p>
+          ) : null}
           {conversations.length === 0 ? (
             <p className="sidebar-history-empty">{t("nav.empty_history")}</p>
           ) : null}
           {conversations.map((item) => {
             const title = item.title || t("nav.untitled_session");
+            const itemKey = conversationKey(item);
+            const menuOpen = historyMenuKey === itemKey;
+            const pending = historyActionPendingKey === itemKey;
             return (
-              <Link
-                className="sidebar-history-item"
-                href={item.href}
-                aria-label={title}
-                key={`${item.kind}:${item.id}`}
-              >
-                <MessageSquareText size={16} aria-hidden="true" />
-                <span className="sidebar-label">{title}</span>
-                <small className="sidebar-label">{item.last_message}</small>
-              </Link>
+              <div className="sidebar-history-row" key={itemKey}>
+                <Link className="sidebar-history-item" href={item.href} aria-label={title}>
+                  <MessageSquareText size={16} aria-hidden="true" />
+                  <span className="sidebar-label">{title}</span>
+                  <small className="sidebar-label">{item.last_message}</small>
+                </Link>
+                <button
+                  aria-expanded={menuOpen}
+                  aria-label={t("actions.conversation_actions", { title })}
+                  className="sidebar-history-action"
+                  disabled={pending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setHistoryMenuKey((current) => (current === itemKey ? null : itemKey));
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  type="button"
+                >
+                  <MoreHorizontal size={15} aria-hidden="true" />
+                </button>
+                {menuOpen ? (
+                  <div
+                    className="sidebar-history-menu"
+                    role="menu"
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => openRenameDialog(item, title)}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <PencilLine size={15} aria-hidden="true" />
+                      <span>{t("actions.rename_conversation")}</span>
+                    </button>
+                    <button
+                      className="sidebar-history-menu-danger"
+                      onClick={() => void handleDeleteConversation(item, title)}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                      <span>{t("actions.delete_conversation")}</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </section>
@@ -259,6 +382,57 @@ export function AppShell({ children }: AppShellProps) {
         </div>
       </aside>
       <main className="app-main">{children}</main>
+      {renamingConversation ? (
+        <div className="dialog-backdrop">
+          <form
+            aria-labelledby="rename-conversation-title"
+            aria-modal="true"
+            className="dialog-panel rename-conversation-dialog"
+            onSubmit={handleRenameSubmit}
+            role="dialog"
+          >
+            <div className="dialog-heading">
+              <h2 id="rename-conversation-title">{t("actions.rename_conversation")}</h2>
+              <p>{t("actions.rename_conversation_description")}</p>
+            </div>
+            <label htmlFor="rename-conversation-input">
+              {t("actions.conversation_name")}
+            </label>
+            <input
+              autoFocus
+              id="rename-conversation-input"
+              maxLength={120}
+              onChange={(event) => setRenameValue(event.target.value)}
+              value={renameValue}
+            />
+            {historyActionError ? (
+              <p className="form-error" role="alert">
+                {historyActionError}
+              </p>
+            ) : null}
+            <div className="dialog-actions">
+              <button
+                className="button"
+                onClick={() => {
+                  setHistoryActionError(null);
+                  setRenamingConversation(null);
+                  setRenameValue("");
+                }}
+                type="button"
+              >
+                {t("actions.cancel")}
+              </button>
+              <button
+                className="button button-primary"
+                disabled={!renameValue.trim() || historyActionPendingKey !== null}
+                type="submit"
+              >
+                {t("actions.save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -32,7 +32,14 @@
     "working": "Working..."
   },
   "actions": {
+    "cancel": "Cancel",
+    "conversation_actions": "Actions for {{title}}",
+    "conversation_name": "Conversation name",
+    "delete_conversation": "Delete",
+    "delete_conversation_confirm": "Delete conversation \"{{title}}\"?",
     "save": "Save",
+    "rename_conversation": "Rename",
+    "rename_conversation_description": "Keep it short and easy to recognize.",
     "upload": "Upload",
     "start": "Start interview",
     "new_interview": "New interview",

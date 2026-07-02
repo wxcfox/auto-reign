@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy.orm import Session
@@ -33,6 +33,19 @@ class ConversationAdapter(Protocol):
         conversation_id: str,
     ) -> ConversationDetailResponse | None: ...
 
+    def rename(
+        self,
+        session: Session,
+        conversation_id: str,
+        title: str,
+    ) -> ConversationHistoryItemResponse | None: ...
+
+    def delete(
+        self,
+        session: Session,
+        conversation_id: str,
+    ) -> bool: ...
+
 
 class ConversationService:
     def __init__(self, adapters: list[ConversationAdapter] | None = None) -> None:
@@ -64,6 +77,28 @@ class ConversationService:
             if detail is not None:
                 return detail
         return None
+
+    def rename_conversation(
+        self,
+        session: Session,
+        conversation_id: str,
+        title: str,
+    ) -> ConversationHistoryItemResponse | None:
+        for adapter in self.adapters:
+            renamed = adapter.rename(session, conversation_id, title)
+            if renamed is not None:
+                return renamed
+        return None
+
+    def delete_conversation(
+        self,
+        session: Session,
+        conversation_id: str,
+    ) -> bool:
+        for adapter in self.adapters:
+            if adapter.delete(session, conversation_id):
+                return True
+        return False
 
 
 class LearningConversationAdapter:
@@ -101,6 +136,35 @@ class LearningConversationAdapter:
             **self._history_item(learning_session, messages).model_dump(),
             messages=[self._message_response(message) for message in messages],
         )
+
+    def rename(
+        self,
+        session: Session,
+        conversation_id: str,
+        title: str,
+    ) -> ConversationHistoryItemResponse | None:
+        learning_session = self.session_repository.get(session, conversation_id)
+        if learning_session is None:
+            return None
+        learning_session.title = title
+        learning_session.updated_at = _now()
+        session.flush()
+        messages = self.message_repository.list_for_session(session, learning_session.id)
+        return self._history_item(learning_session, messages)
+
+    def delete(
+        self,
+        session: Session,
+        conversation_id: str,
+    ) -> bool:
+        learning_session = self.session_repository.get(session, conversation_id)
+        if learning_session is None:
+            return False
+        deleted_at = _now()
+        learning_session.deleted_at = deleted_at
+        learning_session.updated_at = deleted_at
+        session.flush()
+        return True
 
     def _history_item(
         self,
@@ -166,6 +230,32 @@ class InterviewConversationAdapter:
             messages=self._messages(turns),
         )
 
+    def rename(
+        self,
+        session: Session,
+        conversation_id: str,
+        title: str,
+    ) -> ConversationHistoryItemResponse | None:
+        interview_session = self.session_repository.get(session, conversation_id)
+        if interview_session is None:
+            return None
+        interview_session.title = title
+        session.flush()
+        turns = self.turn_repository.list_for_session(session, interview_session.id)
+        return self._history_item(interview_session, turns)
+
+    def delete(
+        self,
+        session: Session,
+        conversation_id: str,
+    ) -> bool:
+        interview_session = self.session_repository.get(session, conversation_id)
+        if interview_session is None:
+            return False
+        interview_session.deleted_at = _now()
+        session.flush()
+        return True
+
     def _history_item(
         self,
         interview_session: models.InterviewSession,
@@ -183,6 +273,8 @@ class InterviewConversationAdapter:
 
     @staticmethod
     def _title(interview_session: models.InterviewSession) -> str:
+        if interview_session.title and interview_session.title.strip():
+            return interview_session.title.strip()
         config = interview_session.config
         natural_context = config.extra_prompt.strip()
         if natural_context:
@@ -300,3 +392,7 @@ def _excerpt(value: str, max_length: int = 160) -> str:
     if len(normalized) <= max_length:
         return normalized
     return f"{normalized[: max_length - 1]}..."
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)

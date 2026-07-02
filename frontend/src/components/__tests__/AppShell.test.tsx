@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
 import i18next from "@/i18n/setup";
-import { listConversations } from "@/lib/api";
+import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/interview",
 }));
 
 vi.mock("@/lib/api", () => ({
+  deleteConversation: vi.fn(),
   listConversations: vi.fn(),
+  renameConversation: vi.fn(),
 }));
 
 describe("AppShell", () => {
@@ -31,7 +33,7 @@ describe("AppShell", () => {
   }
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     i18next.changeLanguage("en");
     try {
       window.localStorage?.clear();
@@ -39,6 +41,18 @@ describe("AppShell", () => {
       // Tests run without persistent localStorage.
     }
     document.documentElement.dataset.theme = "light";
+    vi.mocked(deleteConversation).mockResolvedValue({ id: "deleted-session", status: "deleted" });
+    vi.mocked(renameConversation).mockImplementation((id, title) =>
+      Promise.resolve({
+        id,
+        kind: "interview",
+        title,
+        href: `/interview?session=${id}`,
+        started_at: "2026-06-23T00:00:00Z",
+        updated_at: "2026-06-23T00:10:00Z",
+        last_message: "Renamed latest message",
+      }),
+    );
     vi.mocked(listConversations).mockResolvedValue({
       conversations: [
         ...conversationResponse("Active backend interview", "interview", "active-session").conversations,
@@ -155,5 +169,60 @@ describe("AppShell", () => {
       .toHaveAttribute("href", "/learn?session=done-session");
     expect(screen.queryByRole("link", { name: /Initial backend interview/i })).not.toBeInTheDocument();
     expect(listConversations).toHaveBeenCalledTimes(2);
+  });
+
+  it("renames a history conversation from the three-dot menu", async () => {
+    vi.mocked(listConversations)
+      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"))
+      .mockResolvedValueOnce(conversationResponse("Cache practice", "interview", "active-session"));
+
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Actions for Active backend interview/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename/i }));
+    const input = screen.getByLabelText(/Conversation name/i);
+
+    expect(input).toHaveValue("Active backend interview");
+
+    fireEvent.change(input, { target: { value: "Cache practice" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() =>
+      expect(renameConversation).toHaveBeenCalledWith("active-session", "Cache practice"),
+    );
+    expect(await screen.findByRole("link", { name: /Cache practice/i }))
+      .toHaveAttribute("href", "/interview?session=active-session");
+  });
+
+  it("deletes a history conversation after confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(listConversations)
+      .mockResolvedValueOnce({
+        conversations: [
+          ...conversationResponse("Active backend interview", "interview", "active-session").conversations,
+          ...conversationResponse("Redis cache learning", "learning", "learning-session").conversations,
+        ],
+      })
+      .mockResolvedValueOnce(conversationResponse("Active backend interview", "interview", "active-session"));
+    vi.mocked(deleteConversation).mockResolvedValue({ id: "learning-session", status: "deleted" });
+
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Actions for Redis cache learning/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Delete/i }));
+
+    await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith("learning-session"));
+    expect(confirmSpy).toHaveBeenCalledWith('Delete conversation "Redis cache learning"?');
+    expect(screen.queryByRole("link", { name: /Redis cache learning/i })).not.toBeInTheDocument();
+
+    confirmSpy.mockRestore();
   });
 });

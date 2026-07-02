@@ -32,7 +32,14 @@
     "working": "处理中..."
   },
   "actions": {
+    "cancel": "取消",
+    "conversation_actions": "{{title}}的更多操作",
+    "conversation_name": "会话名称",
+    "delete_conversation": "删除",
+    "delete_conversation_confirm": "删除会话“{{title}}”？",
     "save": "保存",
+    "rename_conversation": "重命名",
+    "rename_conversation_description": "保持简短且易于识别。",
     "upload": "上传",
     "start": "开始面试",
     "new_interview": "新面试",

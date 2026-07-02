@@ -15,7 +15,7 @@
 
 Auto Reign 可以把 Markdown、TXT、PDF、DOCX、自由文本学习笔记和真实面试记录写入本地工作区，在 Qdrant 中索引可检索 chunk，以聊天式流程进行书面模拟面试，并在本地保存历史对话、题库、高频问题、复习状态和复盘报告。自由文本学习笔记会追加到每日 `sources/notes/YYYY-MM-DD.md`，再整理为面试短卡片；真实面试记录会保存到 `sources/interviews/`，并更新高频问题和复习状态。
 
-工作台首页会读取 `review/status.md`，展示最多 3 个当前重点，并提供开始抽检和查看状态入口。模拟面试没有设置表单和结束按钮；用户点击新面试后可以直接开始，也可以在输入框里用自然语言说明公司、岗位、JD、主题或轮数。每次有效回答都会实时沉淀为练习记录；如果点评暴露缺失点或薄弱点，会同步创建或更新 `questions/` 中的题库条目，并用真实练习证据更新复习状态。会话达到本轮配置题数后，会在最后一题反馈之后自动生成整体评价和复盘报告；如果最后一题包含追问，则在追问反馈之后再收尾。侧边栏历史对话同时包含面试和学习，不展示“已完成”或“处理中”状态；学习对话可以继续追加，面试对话重新打开后由面试流程自身决定是否还能继续作答。
+工作台首页会读取 `review/status.md`，展示最多 3 个当前重点，并提供开始抽检和查看状态入口。模拟面试没有设置表单和结束按钮；用户点击新面试后可以直接开始，也可以在输入框里用自然语言说明公司、岗位、JD、主题或轮数。每次有效回答都会实时沉淀为练习记录；如果点评暴露缺失点或薄弱点，会同步创建或更新 `questions/` 中的题库条目，并用真实练习证据更新复习状态。会话达到本轮配置题数后，会在最后一题反馈之后自动生成整体评价和复盘报告；如果最后一题包含追问，则在追问反馈之后再收尾。侧边栏历史对话同时包含面试和学习，不展示“已完成”或“处理中”状态；每条历史右侧的三点菜单支持重命名和删除。学习对话可以继续追加，面试对话重新打开后由面试流程自身决定是否还能继续作答。删除历史只隐藏对应会话投影，不删除工作区里的资料、练习证据或报告文件。
 
 ## 快速开始
 
@@ -157,7 +157,7 @@ OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-comp
 
 ## 资料库
 
-上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。上传原始文件保存到 `DATA_DIR/workspace/sources/documents`；“新学习”自由文本原文追加到 `DATA_DIR/workspace/sources/notes/YYYY-MM-DD.md`，并按主题合并生成使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」格式的 `knowledge` 短卡片，同时把用户输入和整理结果写入学习对话。继续学习时，前端会把历史会话的 `conversation_id` 传给 `POST /api/workspace/learning-notes/stream` 追加消息；侧边栏历史列表通过 `GET /api/conversations` 合并面试和学习。PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/workspace/sources/extracted`。真实面试粘贴记录保存到 `DATA_DIR/workspace/sources/interviews`，并更新 `review/high-frequency.md` 和 `review/status.md`。资料入库统一通过 workspace API 完成：上传资料使用 `POST /api/workspace/materials/upload`，学习笔记使用 `POST /api/workspace/learning-notes/stream`，真实面试记录使用 `POST /api/workspace/real-interview-records`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识、题库、项目、真实面试、高频复盘和练习内容会被切块并以向量形式保存到 Qdrant。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
+上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。上传原始文件保存到 `DATA_DIR/workspace/sources/documents`；“新学习”自由文本原文追加到 `DATA_DIR/workspace/sources/notes/YYYY-MM-DD.md`，并按主题合并生成使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」格式的 `knowledge` 短卡片，同时把用户输入和整理结果写入学习对话。继续学习时，前端会把历史会话的 `conversation_id` 传给 `POST /api/workspace/learning-notes/stream` 追加消息；侧边栏历史列表通过 `GET /api/conversations` 合并面试和学习，并通过 `PATCH /api/conversations/{id}` 和 `DELETE /api/conversations/{id}` 重命名或隐藏会话。PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/workspace/sources/extracted`。真实面试粘贴记录保存到 `DATA_DIR/workspace/sources/interviews`，并更新 `review/high-frequency.md` 和 `review/status.md`。资料入库统一通过 workspace API 完成：上传资料使用 `POST /api/workspace/materials/upload`，学习笔记使用 `POST /api/workspace/learning-notes/stream`，真实面试记录使用 `POST /api/workspace/real-interview-records`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识、题库、项目、真实面试、高频复盘和练习内容会被切块并以向量形式保存到 Qdrant。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
 
 索引和检索只读取 workspace artifact 的 active collection。Markdown/递归切块、embedding、Qdrant vectorstore 和 retriever 由 LangChain 组件处理；workspace 协议、provenance、可索引规则、active collection 发布、检索后处理、上下文预算和 prompt 安全边界由 Auto Reign 应用代码控制。
 
@@ -175,7 +175,7 @@ OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-comp
 6. 打开新面试，可以不输入直接开始，也可以在聊天输入框中描述公司、岗位、JD、主题或轮数。
 7. 回答问题并观察反馈，确认练习记录、题库和复习状态会实时入库；达到本轮配置题数后，确认最后一题反馈之后会自动展示整体评价。
 8. 打开复盘页，粘贴一段真实面试记录，确认系统抽取问题、暴露问题，并更新高频问题和复习状态。
-9. 从侧边栏打开历史，确认历史面试和历史学习都可以重新打开，学习对话可以继续追加。
+9. 从侧边栏打开历史，确认历史面试和历史学习都可以重新打开，学习对话可以继续追加，并确认历史条目右侧三点菜单可以重命名和删除会话。
 
 ## 当前不包含的能力
 
