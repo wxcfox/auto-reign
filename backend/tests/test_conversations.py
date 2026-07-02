@@ -125,6 +125,41 @@ def test_learning_conversation_can_be_renamed_and_deleted_without_removing_artif
     assert client.get(f"/api/workspace/artifacts/{artifact_id}").status_code == 200
 
 
+def test_renaming_learning_conversation_preserves_created_time_history_order(
+    client, monkeypatch
+) -> None:
+    class RecordingIndexService:
+        def rebuild_index(self, session_factory, workspace, repository) -> str:
+            return "rebuilt"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
+
+    first = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={"text": "先学习 Redis 缓存穿透。", "language": "zh-CN"},
+    )
+    first_id = _sse_result(first.text)["conversation_id"]
+    second = client.post(
+        "/api/workspace/learning-notes/stream",
+        json={"text": "后学习 MySQL 覆盖索引。", "language": "zh-CN"},
+    )
+    second_id = _sse_result(second.text)["conversation_id"]
+
+    before_ids = [item["id"] for item in client.get("/api/conversations").json()["conversations"]]
+    assert before_ids.index(second_id) < before_ids.index(first_id)
+
+    rename_response = client.patch(
+        f"/api/conversations/{first_id}",
+        json={"title": "Redis 缓存穿透复习"},
+    )
+
+    assert rename_response.status_code == 200
+    after = client.get("/api/conversations").json()["conversations"]
+    after_ids = [item["id"] for item in after]
+    assert after_ids.index(second_id) < after_ids.index(first_id)
+    assert next(item for item in after if item["id"] == first_id)["title"] == "Redis 缓存穿透复习"
+
+
 def test_interview_conversation_can_be_renamed_and_deleted(client) -> None:
     interview = client.post(
         "/api/interview-sessions",
