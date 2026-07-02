@@ -27,7 +27,7 @@ import {
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
@@ -45,6 +45,17 @@ function isHistoryMenuSurfaceTarget(target: EventTarget | null) {
 function stopHistoryMenuPointerDown(event: ReactPointerEvent<HTMLElement>) {
   event.stopPropagation();
   event.nativeEvent.stopImmediatePropagation();
+}
+
+function conversationLandingPath(kind: ConversationHistoryItem["kind"]) {
+  return kind === "learning" ? "/learn" : "/interview";
+}
+
+function isCurrentBrowserConversation(item: ConversationHistoryItem) {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return `${window.location.pathname}${window.location.search}` === item.href;
 }
 
 function readPreferredDarkMode() {
@@ -93,6 +104,7 @@ function writeSidebarCollapsed(collapsed: boolean) {
 
 export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
+  const router = useRouter();
   const { changeLanguage, getCurrentLanguage, t } = useTranslation("common");
   const [conversations, setConversations] = useState<ConversationHistoryItem[]>([]);
   const [historyMenuKey, setHistoryMenuKey] = useState<string | null>(null);
@@ -117,12 +129,21 @@ export function AppShell({ children }: AppShellProps) {
   );
   const [moreOpen, setMoreOpen] = useState(secondaryNavActive);
 
-  const refreshConversations = useCallback(async () => {
+  const refreshConversations = useCallback(async (preservedConversation?: ConversationHistoryItem) => {
     const refreshId = conversationRefreshId.current + 1;
     conversationRefreshId.current = refreshId;
     try {
       const response = await listConversations();
       if (mountedRef.current && refreshId === conversationRefreshId.current) {
+        if (preservedConversation) {
+          const preservedKey = conversationKey(preservedConversation);
+          setConversations(
+            response.conversations.map((conversation) =>
+              conversationKey(conversation) === preservedKey ? preservedConversation : conversation,
+            ),
+          );
+          return;
+        }
         setConversations(response.conversations);
       }
     } catch {
@@ -201,10 +222,15 @@ export function AppShell({ children }: AppShellProps) {
     setHistoryActionPendingKey(pendingKey);
     setHistoryActionError(null);
     try {
-      await renameConversation(renamingConversation.id, title);
+      const renamedConversation = await renameConversation(renamingConversation.id, title);
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversationKey(conversation) === pendingKey ? renamedConversation : conversation,
+        ),
+      );
       setRenamingConversation(null);
       setRenameValue("");
-      await refreshConversations();
+      await refreshConversations(renamedConversation);
     } catch {
       setHistoryActionError(t("errors.generic_save"));
     } finally {
@@ -219,6 +245,7 @@ export function AppShell({ children }: AppShellProps) {
       return;
     }
     const pendingKey = conversationKey(item);
+    const deletingCurrentConversation = isCurrentBrowserConversation(item);
     setHistoryActionPendingKey(pendingKey);
     setHistoryActionError(null);
     try {
@@ -226,6 +253,9 @@ export function AppShell({ children }: AppShellProps) {
       setConversations((current) =>
         current.filter((conversation) => conversationKey(conversation) !== pendingKey),
       );
+      if (deletingCurrentConversation) {
+        router.replace(conversationLandingPath(item.kind));
+      }
       await refreshConversations();
     } catch {
       setHistoryActionError(t("errors.generic_save"));
@@ -318,7 +348,6 @@ export function AppShell({ children }: AppShellProps) {
                 <Link className="sidebar-history-item" href={item.href} aria-label={title}>
                   <MessageSquareText size={16} aria-hidden="true" />
                   <span className="sidebar-label">{title}</span>
-                  <small className="sidebar-label">{item.last_message}</small>
                 </Link>
                 <button
                   aria-expanded={menuOpen}
