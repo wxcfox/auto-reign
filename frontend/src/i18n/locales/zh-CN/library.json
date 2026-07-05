@@ -21,6 +21,14 @@
     "updated_at": "更新时间",
     "actions": "操作"
   },
+  "pagination": {
+    "label": "文件分页",
+    "total_count": "共 {{count}} 条",
+    "previous": "上一页",
+    "next": "下一页",
+    "page_size": "每页",
+    "page_size_label": "每页文件数"
+  },
   "actions": {
     "edit": "编辑",
     "delete": "删除"

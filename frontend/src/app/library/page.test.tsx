@@ -44,6 +44,24 @@ const artifacts = [
   },
 ];
 
+function makeArtifact(index: number) {
+  const padded = String(index).padStart(2, "0");
+  return {
+    id: `knowledge-${padded}`,
+    kind: "knowledge",
+    owner: "knowledge",
+    relative_path: `knowledge/topic-${padded}.md`,
+    display_name: `topic-${padded}.md`,
+    revision: 1,
+    processing_status: "completed",
+    index_status: "completed",
+    recovery_required: false,
+    allowed_operations: ["replace_body"],
+    created_at: "2026-06-22T10:00:00Z",
+    updated_at: "2026-06-23T10:00:00Z",
+  };
+}
+
 describe("LibraryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -108,5 +126,50 @@ describe("LibraryPage", () => {
     await waitFor(() => expect(deleteWorkspaceArtifact).toHaveBeenCalledWith("knowledge-1"));
     expect(await screen.findByText(/File deleted/i)).toBeInTheDocument();
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("redis.md"));
+  });
+
+  it("paginates the file table with page controls and page size selector", async () => {
+    vi.mocked(getWorkspaceArtifacts).mockResolvedValue({
+      artifacts: Array.from({ length: 13 }, (_, index) => makeArtifact(index + 1)),
+    });
+
+    render(<LibraryPage />);
+
+    expect(await screen.findByRole("link", { name: "topic-01.md" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "topic-10.md" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "topic-11.md" })).not.toBeInTheDocument();
+    expect(screen.getByText("13 items")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1" })).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(screen.getByRole("button", { name: /Next page/i }));
+
+    expect(screen.queryByRole("link", { name: "topic-01.md" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "topic-11.md" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "topic-13.md" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Files per page/i), { target: { value: "20" } });
+
+    expect(screen.getByRole("link", { name: "topic-01.md" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "topic-13.md" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Next page/i })).not.toBeInTheDocument();
+  });
+
+  it("resets pagination to the first page when search filters change", async () => {
+    vi.mocked(getWorkspaceArtifacts).mockResolvedValue({
+      artifacts: Array.from({ length: 13 }, (_, index) => makeArtifact(index + 1)),
+    });
+
+    render(<LibraryPage />);
+
+    expect(await screen.findByRole("link", { name: "topic-01.md" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Next page/i }));
+    expect(screen.getByRole("link", { name: "topic-13.md" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /Filter by keyword/i }), {
+      target: { value: "topic-01" },
+    });
+
+    expect(screen.getByRole("link", { name: "topic-01.md" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Next page/i })).not.toBeInTheDocument();
   });
 });

@@ -1770,11 +1770,15 @@ a:focus-visible {
   width: min(260px, 34vw);
 }
 
-.library-table-scroll {
-  overflow-x: auto;
+.library-table-shell {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+  overflow: hidden;
+}
+
+.library-table-scroll {
+  overflow-x: auto;
 }
 
 .library-table {
@@ -1898,6 +1902,80 @@ a:focus-visible {
   opacity: 0.55;
 }
 
+.library-pagination-bar {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.library-pagination-total {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.library-pagination-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.library-pagination-button,
+.library-pagination-ellipsis {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  color: var(--text-muted);
+}
+
+.library-pagination-button {
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.library-pagination-button:hover:not(:disabled),
+.library-pagination-button[data-active="true"] {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.library-pagination-button[data-active="true"] {
+  border-color: var(--border);
+}
+
+.library-pagination-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.library-page-size {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.library-page-size select {
+  width: 72px;
+  height: 32px;
+  padding: 0 26px 0 10px;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -2007,6 +2085,19 @@ a:focus-visible {
 
   .library-files {
     padding: 16px 0;
+  }
+
+  .library-pagination-bar {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .library-pagination-pages {
+    justify-content: flex-start;
+  }
+
+  .library-page-size {
+    justify-content: flex-start;
   }
 
   .segmented-control {
