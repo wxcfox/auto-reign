@@ -134,7 +134,7 @@ def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monk
         raise AssertionError("workspace search should not run for an empty library")
 
     monkeypatch.setattr(
-        "app.services.embedding_service.DeterministicEmbeddings.embed_query",
+        "tests.fakes.FakeOpenAIEmbeddings.embed_query",
         fail_embed_query,
     )
     monkeypatch.setattr(

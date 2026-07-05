@@ -1,34 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-import math
-import re
-
 from fastapi import HTTPException
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
 
 from app.core.config import Settings, get_settings
 from app.core.errors import service_unavailable
-
-
-class DeterministicEmbeddings(Embeddings):
-    def __init__(self, dimension: int = 32) -> None:
-        self.dimension = dimension
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self.embed_query(text) for text in texts]
-
-    def embed_query(self, text: str) -> list[float]:
-        vector = [0.0] * self.dimension
-        words = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", text.lower())
-        for word in words or [text.lower()]:
-            digest = hashlib.sha256(word.encode("utf-8")).digest()
-            index = digest[0] % len(vector)
-            sign = 1.0 if digest[1] % 2 == 0 else -1.0
-            vector[index] += sign
-        norm = math.sqrt(sum(value * value for value in vector)) or 1.0
-        return [value / norm for value in vector]
 
 
 class EmbeddingService:
@@ -55,8 +32,6 @@ class EmbeddingService:
         return self.embeddings.embed_query(text)
 
     def _build_embeddings(self) -> Embeddings:
-        if self.settings.deterministic_model_fallback:
-            return DeterministicEmbeddings()
         provider_config = self._resolve_provider()
         if provider_config is None:
             raise service_unavailable(

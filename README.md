@@ -148,12 +148,11 @@ docker compose config
 | `QWEN_CHAT_MODELS` | Qwen 聊天模型白名单，逗号分隔。 |
 | `DEEPSEEK_BASE_URL` | DeepSeek OpenAI-compatible API base URL。 |
 | `QWEN_BASE_URL` | Qwen OpenAI-compatible 区域 API base URL。 |
-| `DETERMINISTIC_MODEL_FALLBACK` | 在测试或离线演示中使用本地确定性聊天和向量。 |
 | `NEXT_PUBLIC_API_BASE_URL` | 浏览器访问后端 API 的公开 URL。 |
 
 Provider key 只从后端环境变量读取。API 只返回 provider 是否可用和配置的模型名称，绝不返回 key 值。前端不接收 key，也不会把 key 写入 MySQL、Qdrant、报告或工作区文件。
 
-OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-compatible endpoint。默认配置使用 Qwen 同时提供聊天和 embedding，因此有效的 `QWEN_API_KEY` 足以在本地运行文档索引、检索和面试。OpenAI 仍然支持聊天和 embedding；使用 OpenAI embedding 时设置 `EMBEDDING_PROVIDER=openai` 和 `EMBEDDING_MODEL=text-embedding-3-small`。`DETERMINISTIC_MODEL_FALLBACK=true` 只应用于自动化测试或明确的离线演示；它会绕过 provider 调用，使用稳定的本地响应和 hash 向量。
+OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-compatible endpoint。默认配置使用 Qwen 同时提供聊天和 embedding，因此有效的 `QWEN_API_KEY` 足以在本地运行文档索引、检索和面试。OpenAI 仍然支持聊天和 embedding；使用 OpenAI embedding 时设置 `EMBEDDING_PROVIDER=openai` 和 `EMBEDDING_MODEL=text-embedding-3-small`。
 
 ## 资料库
 

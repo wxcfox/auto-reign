@@ -65,7 +65,6 @@ def test_model_service_uses_selected_provider(
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
-        deterministic_model_fallback=False,
         **settings_overrides,
     )
     client = FakeOpenAIClient(
@@ -103,7 +102,6 @@ def test_model_service_streams_provider_chunks(tmp_path) -> None:
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
         openai_api_key="provider-secret",
-        deterministic_model_fallback=False,
     )
 
     class FakeStreamCompletions:
@@ -136,15 +134,238 @@ def test_model_service_streams_provider_chunks(tmp_path) -> None:
     assert completions.calls[0]["model"] == "gpt-4.1-mini"
 
 
-def test_model_service_streams_deterministic_answer_in_chunks(tmp_path) -> None:
+def test_model_service_streams_require_configured_provider(
+    tmp_path,
+) -> None:
     settings = Settings(
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
-        deterministic_model_fallback=True,
     )
     service = ModelService(settings=settings)
+
+    with pytest.raises(HTTPException) as error:
+        list(
+            service.stream_answer_evaluation(
+                AnswerEvaluationRequest(
+                    question="How do you operate the service?",
+                    answer="With dashboards and alerts.",
+                    provider="openai",
+                    model="gpt-4.1-mini",
+                )
+            )
+        )
+
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "provider_not_configured"
+
+
+def test_model_service_requires_configured_provider(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+    )
+    service = ModelService(settings=settings)
+
+    with pytest.raises(HTTPException) as error:
+        service.generate_question(
+            QuestionGenerationRequest(
+                target_company="OpenAI",
+                target_role="Backend Engineer",
+                provider="openai",
+                model="gpt-4.1-mini",
+            )
+        )
+
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "provider_not_configured"
+
+
+def test_model_service_streams_learning_note_summary_from_provider(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+
+    class FakeStreamCompletions:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return [
+                SimpleNamespace(choices=[SimpleNamespace(delta={"content": "# Redis"})]),
+                SimpleNamespace(choices=[SimpleNamespace(delta={"content": "\n\nSummary"})]),
+            ]
+
+    completions = FakeStreamCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    chunks = list(
+        service.stream_learning_note_summary(
+            "Redis cache stampede",
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+
+    assert chunks == ["# Redis", "\n\nSummary"]
+    assert completions.calls[0]["stream"] is True
+    assert completions.calls[0]["model"] == "gpt-4.1-mini"
+
+
+def test_model_service_generates_report_from_provider(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+    client = FakeOpenAIClient("# 面试复盘报告\n\nprovider output")
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    report = service.generate_report(
+        ReportGenerationRequest(
+            session_id="session-1",
+            language="zh-CN",
+            turns=[],
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+
+    assert report == "# 面试复盘报告\n\nprovider output"
+
+
+def test_model_service_evaluates_answer_from_provider(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+    client = FakeOpenAIClient(
+        '{"feedback":"Provider feedback.","missing_points":["Metrics"],'
+        '"follow_up_question":"Which metrics?","weaknesses":["Observability"],'
+        '"review_suggestions":["Add an SLO example."]}'
+    )
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    result = service.evaluate_answer(
+        AnswerEvaluationRequest(
+            question="How do you operate the service?",
+            answer="With dashboards and alerts.",
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+
+    assert result.feedback == "Provider feedback."
+
+
+def test_model_service_summarizes_learning_note_from_provider(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+    client = FakeOpenAIClient(
+        '{"title":"Redis","summary":"Cache stampede notes.",'
+        '"key_points":["Locking"],"interview_takeaways":["Explain tradeoffs"],'
+        '"follow_up_questions":["How does it fail?"]}'
+    )
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    result = service.summarize_learning_note(
+        "Redis cache stampede",
+        provider="openai",
+        model="gpt-4.1-mini",
+    )
+
+    assert result.title == "Redis"
+    assert result.key_points == ["Locking"]
+
+
+def test_model_service_generates_generic_question_from_provider_without_target_fields(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+    client = FakeOpenAIClient("Provider generated question")
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+
+    question = service.generate_question(
+        QuestionGenerationRequest(
+            target_company="",
+            target_role="",
+            extra_prompt="面试字节后端岗位，JD 关注缓存和高并发。",
+            language="zh-CN",
+            provider="openai",
+            model="gpt-4.1-mini",
+        )
+    )
+
+    assert question == "Provider generated question"
+
+
+def test_model_service_streams_provider_answer_evaluation(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+
+    class FakeStreamCompletions:
+        def create(self, **_kwargs):
+            return [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content='{"feedback":"Provider')
+                        )
+                    ]
+                ),
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=' feedback","missing_points":[]'
+                                ',"follow_up_question":"","weaknesses":[]'
+                                ',"review_suggestions":[]}'
+                            )
+                        )
+                    ]
+                ),
+            ]
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=FakeStreamCompletions()))
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
 
     chunks = list(
         service.stream_answer_evaluation(
@@ -157,9 +378,8 @@ def test_model_service_streams_deterministic_answer_in_chunks(tmp_path) -> None:
         )
     )
 
-    assert len(chunks) > 1
     parsed = service.parse_answer_evaluation("".join(chunks))
-    assert parsed.feedback.startswith("The answer shows")
+    assert parsed.feedback == "Provider feedback"
 
 
 def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
@@ -168,7 +388,6 @@ def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
-        deterministic_model_fallback=False,
     )
     service = ModelService(settings=settings)
 
@@ -187,76 +406,6 @@ def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
     assert "key" not in error.value.detail["message"].lower()
 
 
-def test_model_service_uses_deterministic_fallback_when_enabled(tmp_path) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-        deterministic_model_fallback=True,
-    )
-    service = ModelService(settings=settings)
-
-    question = service.generate_question(
-        QuestionGenerationRequest(
-            target_company="OpenAI",
-            target_role="Backend Engineer",
-            provider="openai",
-            model="gpt-4.1-mini",
-        )
-    )
-
-    assert question == "How would you explain your Backend Engineer experience for OpenAI?"
-
-
-def test_model_service_generates_generic_question_without_target_fields(tmp_path) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-        deterministic_model_fallback=True,
-    )
-    service = ModelService(settings=settings)
-
-    question = service.generate_question(
-        QuestionGenerationRequest(
-            target_company="",
-            target_role="",
-            extra_prompt="面试字节后端岗位，JD 关注缓存和高并发。",
-            language="zh-CN",
-            provider="openai",
-            model="gpt-4.1-mini",
-        )
-    )
-
-    assert "目标公司" not in question
-    assert "目标岗位" not in question
-    assert "最近做过" in question
-
-
-def test_model_service_uses_chinese_fallback_outputs_when_requested(tmp_path) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-        deterministic_model_fallback=True,
-    )
-    service = ModelService(settings=settings)
-
-    report = service.generate_report(
-        ReportGenerationRequest(
-            session_id="session-1",
-            language="zh-CN",
-            turns=[],
-            provider="openai",
-            model="gpt-4.1-mini",
-        )
-    )
-    assert "# 面试复盘报告" in report
-
-
 def test_model_service_hides_provider_failure_details(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
@@ -264,7 +413,6 @@ def test_model_service_hides_provider_failure_details(tmp_path) -> None:
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
         openai_api_key="openai-secret",
-        deterministic_model_fallback=False,
     )
 
     class FailingCompletions:
@@ -298,7 +446,6 @@ def test_model_service_logs_provider_error_details(
         qdrant_url=":memory:",
         qdrant_collection="auto_reign_test",
         openai_api_key="openai-secret",
-        deterministic_model_fallback=False,
     )
 
     class FailingCompletions:
