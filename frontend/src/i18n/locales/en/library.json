@@ -21,6 +21,14 @@
     "updated_at": "Updated",
     "actions": "Actions"
   },
+  "pagination": {
+    "label": "File pagination",
+    "total_count": "{{count}} items",
+    "previous": "Previous page",
+    "next": "Next page",
+    "page_size": "Per page",
+    "page_size_label": "Files per page"
+  },
   "actions": {
     "edit": "Edit",
     "delete": "Delete"
