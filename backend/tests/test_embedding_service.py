@@ -2,31 +2,32 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.config import Settings
-from app.services.embedding_service import DeterministicEmbeddings, EmbeddingService
+from app.services.embedding_service import EmbeddingService
 
 
-def test_deterministic_embeddings_are_stable_and_normalized() -> None:
-    embeddings = DeterministicEmbeddings(dimension=32)
+class FakeEmbeddings:
+    def __init__(self, dimension: int = 32) -> None:
+        self.dimension = dimension
 
-    first = embeddings.embed_query("Redis cache stampede")
-    second = embeddings.embed_query("Redis cache stampede")
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_query(text) for text in texts]
 
-    assert first == second
-    assert len(first) == 32
-    assert round(sum(value * value for value in first), 6) == 1.0
+    def embed_query(self, text: str) -> list[float]:
+        value = float(len(text))
+        return [value, 0.0]
 
 
-def test_embedding_service_uses_deterministic_fallback(tmp_path) -> None:
+def test_embedding_service_uses_injected_test_double(tmp_path) -> None:
+    embeddings = FakeEmbeddings()
     settings = Settings(
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
-        deterministic_model_fallback=True,
     )
-    service = EmbeddingService(settings=settings)
+    service = EmbeddingService(settings=settings, embeddings=embeddings)
 
-    assert service.embed_documents(["one", "two"]) == service.embed_documents(["one", "two"])
-    assert service.embed_query("one") == service.embed_documents(["one"])[0]
+    assert service.embed_documents(["one", "two"]) == [[3.0, 0.0], [3.0, 0.0]]
+    assert service.embed_query("three") == [5.0, 0.0]
 
 
 def test_embedding_service_configures_qwen_openai_compatible_client(monkeypatch, tmp_path) -> None:
@@ -50,7 +51,6 @@ def test_embedding_service_configures_qwen_openai_compatible_client(monkeypatch,
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
-        deterministic_model_fallback=False,
         embedding_provider="qwen",
         embedding_model="text-embedding-v4",
         qwen_api_key="qwen-secret",
@@ -76,7 +76,6 @@ def test_embedding_service_requires_configured_provider(tmp_path) -> None:
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
-        deterministic_model_fallback=False,
         embedding_provider="qwen",
         qwen_api_key=None,
     )

@@ -7,8 +7,8 @@ from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 
 from app.repositories.vector_store import VectorStoreUnavailable, stable_vector_id
 from app.core.config import Settings
-from app.services.embedding_service import DeterministicEmbeddings
 from app.services.workspace_vector_store import WorkspaceVectorHit, WorkspaceVectorStore
+from tests.fakes import StableTestEmbeddings
 
 
 class FakeLangChainQdrant:
@@ -112,7 +112,7 @@ def reset_fake_langchain_qdrant() -> None:
 def make_store(client: FakeQdrantClient | None = None) -> WorkspaceVectorStore:
     return WorkspaceVectorStore(
         client=client or FakeQdrantClient(),
-        embeddings=DeterministicEmbeddings(),
+        embeddings=StableTestEmbeddings(),
     )
 
 
@@ -165,7 +165,6 @@ def test_delete_does_not_initialize_embeddings_when_provider_is_unconfigured(tmp
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
         qdrant_url=":memory:",
-        deterministic_model_fallback=False,
         qwen_api_key=None,
     )
     client = FakeQdrantClient()
@@ -319,7 +318,7 @@ def test_qdrant_client_failures_map_to_unavailable() -> None:
 
 def test_in_memory_qdrant_upserts_searches_and_deletes_artifact_chunks() -> None:
     client = QdrantClient(location=":memory:")
-    store = WorkspaceVectorStore(client=client, embeddings=DeterministicEmbeddings())
+    store = WorkspaceVectorStore(client=client, embeddings=StableTestEmbeddings())
     try:
         store.upsert_documents(
             "workspace",
