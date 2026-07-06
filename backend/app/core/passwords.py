@@ -46,8 +46,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         algorithm, iterations_text, salt_text, digest_text = password_hash.split("$", 3)
         if algorithm != _ALGORITHM:
             return False
-        iterations = int(iterations_text)
-        if iterations != _ITERATIONS:
+        if iterations_text != str(_ITERATIONS):
             return False
         salt = _b64decode(salt_text)
         if len(salt) != _SALT_BYTES:
@@ -58,7 +57,7 @@ def verify_password(password: str, password_hash: str) -> bool:
             "sha256",
             password.encode("utf-8"),
             salt,
-            iterations,
+            _ITERATIONS,
         )
     except (binascii.Error, UnicodeEncodeError, ValueError, TypeError):
         return False

@@ -153,6 +153,17 @@ def test_verify_password_rejects_nonstandard_iterations_with_matching_digest() -
     assert verify_password("same password", password_hash) is False
 
 
+@pytest.mark.parametrize("iterations_text", ["0600000", "+600000", " 600000"])
+def test_verify_password_rejects_noncanonical_iteration_text(
+    iterations_text: str,
+) -> None:
+    password_hash = _password_hash("same password", b"1234567890123456", 600_000)
+    algorithm, _iterations, salt, digest = password_hash.split("$")
+    noncanonical_hash = f"{algorithm}${iterations_text}${salt}${digest}"
+
+    assert verify_password("same password", noncanonical_hash) is False
+
+
 @pytest.mark.parametrize("salt", [b"short salt", b"12345678901234567"])
 def test_verify_password_rejects_nonstandard_salt_length_with_matching_digest(
     salt: bytes,
