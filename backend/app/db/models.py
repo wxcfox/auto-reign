@@ -1,8 +1,19 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    and_,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, foreign, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 
@@ -82,6 +93,9 @@ class Artifact(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_conversations_id_user"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[int] = mapped_column(
@@ -98,20 +112,31 @@ class Conversation(Base):
 
     user: Mapped[User] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(
-        back_populates="conversation", cascade="all, delete-orphan"
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        primaryjoin=lambda: and_(
+            Conversation.id == foreign(Message.conversation_id),
+            Conversation.user_id == Message.user_id,
+        ),
+        foreign_keys=lambda: [Message.conversation_id],
     )
 
 
 class Message(Base):
     __tablename__ = "messages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["conversation_id", "user_id"],
+            ["conversations.id", "conversations.user_id"],
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
-    )
+    conversation_id: Mapped[str] = mapped_column(String(36), index=True)
     role: Mapped[str] = mapped_column(String(16))
     message_type: Mapped[str] = mapped_column(String(64))
     content: Mapped[str] = mapped_column(Text, default="")
@@ -119,4 +144,11 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
 
     user: Mapped[User] = relationship(back_populates="messages")
-    conversation: Mapped[Conversation] = relationship(back_populates="messages")
+    conversation: Mapped[Conversation] = relationship(
+        back_populates="messages",
+        primaryjoin=lambda: and_(
+            Conversation.id == foreign(Message.conversation_id),
+            Conversation.user_id == Message.user_id,
+        ),
+        foreign_keys=[conversation_id],
+    )

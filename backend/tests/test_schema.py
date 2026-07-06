@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,8 +19,13 @@ TARGET_TABLES = {
     "users",
 }
 OLD_TABLES = {
+    "interview_configs",
     "interview_sessions",
+    "interview_turns",
+    "learning_messages",
     "learning_sessions",
+    "processing_jobs",
+    "reports",
     "workspace_settings",
 }
 
@@ -68,6 +73,55 @@ def test_artifact_paths_are_unique_per_user() -> None:
             session.commit()
 
 
+def test_messages_must_belong_to_conversation_owner() -> None:
+    User = models.User
+    Conversation = models.Conversation
+    Message = models.Message
+
+    engine = create_engine("sqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        alice = User(username="alice", password_hash="hash-a")
+        bob = User(username="bob", password_hash="hash-b")
+        session.add_all([alice, bob])
+        session.flush()
+
+        conversation = Conversation(user_id=alice.id, kind="interview")
+        session.add(conversation)
+        session.flush()
+
+        session.add(
+            Message(
+                user_id=alice.id,
+                conversation_id=conversation.id,
+                role="user",
+                message_type="answer",
+            )
+        )
+        session.commit()
+
+        conversation_id = conversation.id
+        bob_id = bob.id
+
+    with Session(engine) as session:
+        session.add(
+            Message(
+                user_id=bob_id,
+                conversation_id=conversation_id,
+                role="user",
+                message_type="answer",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
 def test_migration_on_empty_database_creates_target_tables_without_data_dir(
     tmp_path, monkeypatch
 ) -> None:
@@ -93,12 +147,20 @@ def test_migration_on_empty_database_creates_target_tables_without_data_dir(
             for constraint in inspector.get_unique_constraints("artifacts")
         }
         assert "uq_artifacts_user_path" in artifact_unique_constraints
+        conversation_unique_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("conversations")
+        }
+        assert "uq_conversations_id_user" in conversation_unique_constraints
 
         message_foreign_keys = inspector.get_foreign_keys("messages")
         assert {
             (foreign_key["referred_table"], tuple(foreign_key["constrained_columns"]))
             for foreign_key in message_foreign_keys
-        } == {("users", ("user_id",)), ("conversations", ("conversation_id",))}
+        } == {
+            ("users", ("user_id",)),
+            ("conversations", ("conversation_id", "user_id")),
+        }
     finally:
         engine.dispose()
         get_settings.cache_clear()
@@ -159,8 +221,12 @@ def test_mysql_offline_migration_creates_target_schema_without_json_defaults(
     assert "CREATE TABLE conversations" in stdout
     assert "CREATE TABLE messages" in stdout
     assert "CONSTRAINT uq_artifacts_user_path UNIQUE (user_id, relative_path)" in stdout
+    assert "CONSTRAINT uq_conversations_id_user UNIQUE (id, user_id)" in stdout
     assert "FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE" in stdout
-    assert "FOREIGN KEY(conversation_id) REFERENCES conversations (id) ON DELETE CASCADE" in stdout
+    assert (
+        "FOREIGN KEY(conversation_id, user_id) REFERENCES conversations (id, user_id) "
+        "ON DELETE CASCADE"
+    ) in stdout
     assert "settings_json JSON NOT NULL" in stdout
     assert "status_json JSON NOT NULL" in stdout
     assert "metadata_json JSON NOT NULL" in stdout

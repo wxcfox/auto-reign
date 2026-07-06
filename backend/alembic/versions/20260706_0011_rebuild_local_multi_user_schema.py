@@ -104,6 +104,7 @@ def _create_target_tables() -> None:
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("id", "user_id", name="uq_conversations_id_user"),
     )
     op.create_index("ix_conversations_kind", "conversations", ["kind"])
     op.create_index("ix_conversations_user_id", "conversations", ["user_id"])
@@ -118,7 +119,11 @@ def _create_target_tables() -> None:
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("metadata_json", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["conversation_id", "user_id"],
+            ["conversations.id", "conversations.user_id"],
+            ondelete="CASCADE",
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
