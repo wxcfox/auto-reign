@@ -17,17 +17,18 @@ def reset_user_password(
     session_factory: sessionmaker[Session],
     username: str,
 ) -> None:
-    password = getpass.getpass("New password: ")
-    confirmation = getpass.getpass("Confirm new password: ")
-    if password != confirmation:
-        raise SystemExit("Passwords do not match.")
-    if len(password) < 12:
-        raise SystemExit("Password must contain at least 12 characters.")
-
     with session_scope(session_factory) as session:
         user = session.scalar(select(models.User).where(models.User.username == username))
         if user is None:
             raise SystemExit(f"User not found: {username}")
+
+        password = getpass.getpass("New password: ")
+        confirmation = getpass.getpass("Confirm new password: ")
+        if password != confirmation:
+            raise SystemExit("Passwords do not match.")
+        if len(password) < 12:
+            raise SystemExit("Password must contain at least 12 characters.")
+
         user.password_hash = hash_password(password)
         user.token_version += 1
         session.flush()

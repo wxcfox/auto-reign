@@ -17,7 +17,11 @@ def get_session(request: Request) -> Iterator[Session]:
 
 
 def _auth_error(code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=401, detail={"code": code, "message": message})
+    return HTTPException(
+        status_code=401,
+        detail={"code": code, "message": message},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def get_current_user(
