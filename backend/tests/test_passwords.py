@@ -31,6 +31,16 @@ def _signed_token(header: str, payload: str, secret: str = "test-secret") -> str
     return f"{signing_input}.{_b64encode(signature)}"
 
 
+def _password_hash(password: str, salt: bytes, iterations: int) -> str:
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        iterations,
+    )
+    return f"pbkdf2_sha256${iterations}${_b64encode(salt)}${_b64encode(digest)}"
+
+
 def test_hash_password_does_not_store_plaintext() -> None:
     hashed = hash_password("correct horse battery staple")
 
@@ -83,16 +93,34 @@ def test_verify_password_rejects_malformed_hashes(
 
 def test_verify_password_rejects_malformed_base64_with_matching_digest() -> None:
     salt = b"salt"
-    digest = hashlib.pbkdf2_hmac(
-        "sha256",
-        "same password".encode("utf-8"),
-        salt,
-        1,
-    )
+    digest = hashlib.pbkdf2_hmac("sha256", b"same password", salt, 600_000)
     malformed_salt = f"{_b64encode(salt)}==*"
-    password_hash = f"pbkdf2_sha256$1${malformed_salt}${_b64encode(digest)}"
+    password_hash = f"pbkdf2_sha256$600000${malformed_salt}${_b64encode(digest)}"
 
     assert verify_password("same password", password_hash) is False
+
+
+def test_verify_password_rejects_nonstandard_iterations_with_matching_digest() -> None:
+    password_hash = _password_hash("same password", b"1234567890123456", 1)
+
+    assert verify_password("same password", password_hash) is False
+
+
+@pytest.mark.parametrize("salt", [b"short salt", b"12345678901234567"])
+def test_verify_password_rejects_nonstandard_salt_length_with_matching_digest(
+    salt: bytes,
+) -> None:
+    password_hash = _password_hash("same password", salt, 600_000)
+
+    assert verify_password("same password", password_hash) is False
+
+
+def test_verify_password_rejects_padded_base64_sections_with_matching_digest() -> None:
+    password_hash = _password_hash("same password", b"1234567890123456", 600_000)
+    algorithm, iterations, salt, digest = password_hash.split("$")
+    padded_hash = f"{algorithm}${iterations}${salt}=${digest}="
+
+    assert verify_password("same password", padded_hash) is False
 
 
 def test_access_token_round_trip(monkeypatch) -> None:

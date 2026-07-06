@@ -17,6 +17,8 @@ def _b64encode(value: bytes) -> str:
 
 
 def _b64decode(value: str) -> bytes:
+    if value.endswith("="):
+        raise ValueError("Padded base64 is not accepted.")
     padding = "=" * (-len(value) % 4)
     return base64.b64decode(
         f"{value}{padding}".encode("ascii"),
@@ -42,9 +44,11 @@ def verify_password(password: str, password_hash: str) -> bool:
         if algorithm != _ALGORITHM:
             return False
         iterations = int(iterations_text)
-        if iterations <= 0:
+        if iterations != _ITERATIONS:
             return False
         salt = _b64decode(salt_text)
+        if len(salt) != _SALT_BYTES:
+            return False
         expected_digest = _b64decode(digest_text)
 
         actual_digest = hashlib.pbkdf2_hmac(
