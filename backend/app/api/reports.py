@@ -1,25 +1,23 @@
-from collections.abc import Iterator
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_session, get_user_scope
 from app.core.errors import not_found
-from app.db.session import session_scope
-from app.repositories.database import ReportRepository
+from app.core.user_scope import UserScope
 from app.schemas.reports import ReportDetailResponse, ReportListResponse, ReportResponse
-from app.services.artifact_service import InvalidFrontMatter
-from app.services.workspace_service import UnsafeWorkspacePath
 
 router = APIRouter(prefix="/api/reports")
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    with session_scope(request.app.state.session_factory) as session:
-        yield session
-
-
 @router.get("", response_model=ReportListResponse)
-def list_reports(session: Session = Depends(get_session)) -> ReportListResponse:
+def list_reports(
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> ReportListResponse:
+    from app.repositories.database import ReportRepository
+
     reports = ReportRepository().list(session)
     return ReportListResponse(reports=[ReportResponse.model_validate(report) for report in reports])
 
@@ -29,7 +27,12 @@ def get_report(
     report_id: str,
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ReportDetailResponse:
+    from app.repositories.database import ReportRepository
+    from app.services.artifact_service import InvalidFrontMatter
+    from app.services.workspace_service import UnsafeWorkspacePath
+
     report = ReportRepository().get(session, report_id)
     if report is None:
         raise not_found("report_not_found", "Report not found.")

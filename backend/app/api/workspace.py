@@ -1,27 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_session, get_user_scope
 from app.api.sse import http_error_payload, sse_event
 from app.core.artifact_permissions import (
     ALLOWED_OPERATIONS,
     ArtifactPermissionError,
     assert_operation_allowed,
 )
+from app.core.user_scope import UserScope
 from app.core.errors import bad_request
 from app.core.errors import conflict as conflict_error
 from app.core.errors import not_found
 from app.core.errors import service_unavailable
 from app.db.session import session_scope
-from app.repositories.artifact_repository import ArtifactRepository
-from app.repositories.vector_store import VectorStoreError
-from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
 from app.schemas.workspace import (
     ArtifactDeleteResponse,
     ArtifactDetailResponse,
@@ -38,20 +37,9 @@ from app.schemas.workspace import (
     UploadMaterialsResponse,
     WorkspaceStatusResponse,
 )
-from app.services.artifact_service import ArtifactConflict
-from app.services.ingestion_service import IngestionService, UploadItem
-from app.services.index_service import IndexService
-from app.services.learning_conversation_service import LearningConversationService
 from app.services.markdown_utils import (
     markdown_list_items,
     markdown_sections,
-)
-from app.services.model_service import ModelService
-from app.services.workspace_content_service import (
-    LearningNotePersistenceResult,
-    RealInterviewRecordPersistenceResult,
-    WorkspaceContentProjectionError,
-    WorkspaceContentService,
 )
 from app.services.workspace_paths import REVIEW_STATUS_PATH
 
@@ -59,24 +47,23 @@ from app.services.workspace_paths import REVIEW_STATUS_PATH
 router = APIRouter(prefix="/api/workspace")
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    with session_scope(request.app.state.session_factory) as session:
-        yield session
-
-
 @router.get("", response_model=WorkspaceStatusResponse)
-def workspace_status(session: Session = Depends(get_session)) -> WorkspaceStatusResponse:
-    settings = WorkspaceSettingsRepository().get_or_create(session)
-    artifacts = ArtifactRepository().list(session)
+def workspace_status(scope: UserScope = Depends(get_user_scope)) -> WorkspaceStatusResponse:
     return WorkspaceStatusResponse(
-        schema_version=settings.schema_version,
-        language=settings.language,
-        artifact_count=len(artifacts),
+        schema_version=1,
+        language="zh-CN",
+        artifact_count=0,
+        initialized=scope.workspace_root.exists(),
     )
 
 
 @router.get("/artifacts", response_model=ArtifactListResponse)
-def list_artifacts(session: Session = Depends(get_session)) -> ArtifactListResponse:
+def list_artifacts(
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> ArtifactListResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
     artifacts = ArtifactRepository().list(session)
     return ArtifactListResponse(artifacts=[_summary(artifact) for artifact in artifacts])
 
@@ -85,7 +72,10 @@ def list_artifacts(session: Session = Depends(get_session)) -> ArtifactListRespo
 def preparation_tasks(
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> PreparationTasksResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
     repository = ArtifactRepository()
     status = repository.get_by_relative_path(session, REVIEW_STATUS_PATH)
     if status is None:
@@ -115,8 +105,13 @@ def preparation_tasks(
 
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
 def get_artifact(
-    artifact_id: str, request: Request, session: Session = Depends(get_session)
+    artifact_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactDetailResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
     artifact = ArtifactRepository().get(session, artifact_id)
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
@@ -135,7 +130,11 @@ def replace_artifact_body(
     payload: ReplaceBodyRequest,
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactSummaryResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.services.artifact_service import ArtifactConflict
+
     repository = ArtifactRepository()
     artifact = repository.get(session, artifact_id)
     if artifact is None:
@@ -169,7 +168,13 @@ def delete_artifact(
     artifact_id: str,
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactDeleteResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.repositories.vector_store import VectorStoreError
+    from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
+    from app.services.index_service import IndexService
+
     repository = ArtifactRepository()
     artifact = repository.get(session, artifact_id)
     if artifact is None:
@@ -201,7 +206,14 @@ def delete_artifact(
 
 
 @router.post("/rebuild-projection", response_model=WorkspaceStatusResponse)
-def rebuild_projection(request: Request, session: Session = Depends(get_session)) -> WorkspaceStatusResponse:
+def rebuild_projection(
+    request: Request,
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> WorkspaceStatusResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
+
     request.app.state.workspace_service.rebuild_projection(
         session,
         ArtifactRepository(),
@@ -221,7 +233,12 @@ async def upload_materials(
     request: Request,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
+    scope: UserScope = Depends(get_user_scope),
 ) -> UploadMaterialsResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.services.ingestion_service import IngestionService, UploadItem
+    from app.services.index_service import IndexService
+
     uploads = [
         UploadItem(
             filename=file.filename or "material.txt",
@@ -257,7 +274,14 @@ def record_learning_note_stream(
     payload: LearningNoteRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
+    from app.services.model_service import ModelService
+    from app.services.workspace_content_service import (
+        WorkspaceContentProjectionError,
+        WorkspaceContentService,
+    )
+
     note = payload.text.strip()
     if not note:
         raise bad_request("learning_note_empty", "Learning note text is required.")
@@ -326,7 +350,10 @@ def record_real_interview(
     payload: RealInterviewRecordRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope: UserScope = Depends(get_user_scope),
 ) -> RealInterviewRecordResponse:
+    from app.services.workspace_content_service import WorkspaceContentProjectionError
+
     record = payload.text.strip()
     if not record:
         raise bad_request("real_interview_record_empty", "Real interview record text is required.")
@@ -344,7 +371,9 @@ def record_real_interview(
     return response
 
 
-def _workspace_content_service(request: Request) -> WorkspaceContentService:
+def _workspace_content_service(request: Request) -> Any:
+    from app.services.workspace_content_service import WorkspaceContentService
+
     return WorkspaceContentService(
         workspace_service=request.app.state.workspace_service,
         artifact_service=request.app.state.artifact_service,
@@ -353,6 +382,9 @@ def _workspace_content_service(request: Request) -> WorkspaceContentService:
 
 
 def _enqueue_index_rebuild(request: Request, background_tasks: BackgroundTasks) -> None:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.services.index_service import IndexService
+
     background_tasks.add_task(
         IndexService().rebuild_index,
         request.app.state.session_factory,
@@ -367,6 +399,8 @@ def _persist_learning_conversation(
     note: str,
     response: LearningNoteResponse,
 ) -> str:
+    from app.services.learning_conversation_service import LearningConversationService
+
     conversation_service = LearningConversationService()
     with session_scope(request.app.state.session_factory) as session:
         learning_session = conversation_service.get_or_create_session(
@@ -392,6 +426,8 @@ def _persist_learning_conversation(
 
 
 def _require_learning_conversation(request: Request, conversation_id: str) -> None:
+    from app.services.learning_conversation_service import LearningConversationService
+
     conversation_service = LearningConversationService()
     with session_scope(request.app.state.session_factory) as session:
         conversation_service.require_session(session, conversation_id)
@@ -404,7 +440,7 @@ def _learning_assistant_message(response: LearningNoteResponse) -> str:
     return f"# {title}\n\n{response.card_markdown.strip()}"
 
 
-def _learning_note_response(result: LearningNotePersistenceResult) -> LearningNoteResponse:
+def _learning_note_response(result: Any) -> LearningNoteResponse:
     return LearningNoteResponse(
         conversation_id="",
         source=UploadedSourceResponse(
@@ -419,7 +455,7 @@ def _learning_note_response(result: LearningNotePersistenceResult) -> LearningNo
 
 
 def _real_interview_record_response(
-    result: RealInterviewRecordPersistenceResult,
+    result: Any,
 ) -> RealInterviewRecordResponse:
     return RealInterviewRecordResponse(
         raw_artifact=_summary(result.raw_artifact),
@@ -431,7 +467,13 @@ def _real_interview_record_response(
 
 
 @router.post("/rebuild-index")
-def rebuild_index(request: Request) -> dict[str, str]:
+def rebuild_index(
+    request: Request,
+    scope: UserScope = Depends(get_user_scope),
+) -> dict[str, str]:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.services.index_service import IndexService
+
     collection = IndexService().rebuild_index(
         request.app.state.session_factory,
         request.app.state.workspace_service,

@@ -5,8 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.conversations import router as conversations_router
 from app.api.health import router as health_router
+from app.api.interviews import router as interviews_router
 from app.api.models import router as models_router
+from app.api.reports import router as reports_router
+from app.api.workspace import router as workspace_router
 from app.core.config import get_settings
 from app.db.session import create_engine_for_settings, make_session_factory
 
@@ -35,6 +39,10 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(health_router)
     app.include_router(models_router)
+    app.include_router(workspace_router)
+    app.include_router(interviews_router)
+    app.include_router(conversations_router)
+    app.include_router(reports_router)
     return app
 
 
