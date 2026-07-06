@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
@@ -121,21 +120,3 @@ class Message(Base):
 
     user: Mapped[User] = relationship(back_populates="messages")
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
-
-
-_REMOVED_MODEL_NAMES = {
-    "InterviewConfig",
-    "InterviewSession",
-    "InterviewTurn",
-    "LearningMessage",
-    "LearningSession",
-    "ProcessingJob",
-    "Report",
-    "WorkspaceSettings",
-}
-
-
-def __getattr__(name: str) -> Any:
-    if name in _REMOVED_MODEL_NAMES:
-        return Any
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
