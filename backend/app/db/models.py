@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
-from sqlalchemy.types import TypeDecorator
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 
 def _uuid() -> str:
@@ -40,179 +41,101 @@ class Base(DeclarativeBase):
     pass
 
 
-class InterviewConfig(Base):
-    __tablename__ = "interview_configs"
+class User(Base):
+    __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    target_company: Mapped[str] = mapped_column(String(255))
-    target_role: Mapped[str] = mapped_column(String(255))
-    job_description: Mapped[str] = mapped_column(Text, default="")
-    extra_prompt: Mapped[str] = mapped_column(Text, default="")
-    language: Mapped[str] = mapped_column(String(16), default="en")
-    mode: Mapped[str] = mapped_column(String(64))
-    chat_model_provider: Mapped[str] = mapped_column(String(64))
-    chat_model: Mapped[str] = mapped_column(String(120))
-    target_rounds: Mapped[int] = mapped_column(Integer, default=3)
-    is_last_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
-
-    sessions: Mapped[list["InterviewSession"]] = relationship(back_populates="config")
-
-
-class InterviewSession(Base):
-    __tablename__ = "interview_sessions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    config_id: Mapped[str] = mapped_column(ForeignKey("interview_configs.id"))
-    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), default="active")
-    current_round: Mapped[int] = mapped_column(Integer, default=1)
-    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    report_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-
-    config: Mapped[InterviewConfig] = relationship(back_populates="sessions")
-    turns: Mapped[list["InterviewTurn"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan"
-    )
-    reports: Mapped[list["Report"]] = relationship(back_populates="session")
-
-
-class InterviewTurn(Base):
-    __tablename__ = "interview_turns"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(ForeignKey("interview_sessions.id", ondelete="CASCADE"))
-    round_index: Mapped[int] = mapped_column(Integer)
-    question: Mapped[str] = mapped_column(Text)
-    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
-    missing_points: Mapped[list[str]] = mapped_column(JSON, default=list)
-    follow_up_question: Mapped[str | None] = mapped_column(Text, nullable=True)
-    follow_up_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    follow_up_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
-    follow_up_missing_points: Mapped[list[str]] = mapped_column(JSON, default=list)
-    follow_up_weaknesses: Mapped[list[str]] = mapped_column(JSON, default=list)
-    follow_up_review_suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
-    follow_up_better_answer: Mapped[str] = mapped_column(Text, default="")
-    follow_up_mastery_change: Mapped[str] = mapped_column(String(64), default="unchanged")
-    follow_up_should_write_weakness: Mapped[bool] = mapped_column(Boolean, default=False)
-    follow_up_should_write_high_frequency: Mapped[bool] = mapped_column(Boolean, default=False)
-    follow_up_tested_points: Mapped[list[str]] = mapped_column(JSON, default=list)
-    weaknesses: Mapped[list[str]] = mapped_column(JSON, default=list)
-    review_suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
-    better_answer: Mapped[str] = mapped_column(Text, default="")
-    mastery_change: Mapped[str] = mapped_column(String(64), default="unchanged")
-    should_write_weakness: Mapped[bool] = mapped_column(Boolean, default=False)
-    should_write_high_frequency: Mapped[bool] = mapped_column(Boolean, default=False)
-    tested_points: Mapped[list[str]] = mapped_column(JSON, default=list)
-    retrieved_context_refs: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-
-    session: Mapped[InterviewSession] = relationship(back_populates="turns")
-
-
-class Report(Base):
-    __tablename__ = "reports"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(ForeignKey("interview_sessions.id"))
-    report_path: Mapped[str] = mapped_column(String(1024))
-    summary: Mapped[str] = mapped_column(Text)
-    weaknesses: Mapped[list[str]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-
-    session: Mapped[InterviewSession] = relationship(back_populates="reports")
-
-
-class LearningSession(Base):
-    __tablename__ = "learning_sessions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    title: Mapped[str] = mapped_column(String(255), default="学习记录")
-    language: Mapped[str] = mapped_column(String(16), default="zh-CN")
-    chat_model_provider: Mapped[str] = mapped_column(String(64), default="")
-    chat_model: Mapped[str] = mapped_column(String(120), default="")
-    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
-    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-
-    messages: Mapped[list["LearningMessage"]] = relationship(
-        back_populates="session",
-        cascade="all, delete-orphan",
-    )
-
-
-class LearningMessage(Base):
-    __tablename__ = "learning_messages"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(
-        ForeignKey("learning_sessions.id", ondelete="CASCADE")
-    )
-    role: Mapped[str] = mapped_column(String(16))
-    message_type: Mapped[str] = mapped_column(String(64))
-    content: Mapped[str] = mapped_column(Text)
-    artifact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    artifact_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    message_metadata: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-
-    session: Mapped[LearningSession] = relationship(back_populates="messages")
-
-
-class WorkspaceSettings(Base):
-    __tablename__ = "workspace_settings"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="default")
-    schema_version: Mapped[int] = mapped_column(Integer, default=1)
-    language: Mapped[str] = mapped_column(String(16), default="zh-CN")
-    embedding_config: Mapped[str] = mapped_column(String(255), default="")
-    active_collection: Mapped[str] = mapped_column(String(255), default="")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=1)
+    settings_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+
+    artifacts: Mapped[list["Artifact"]] = relationship(back_populates="user")
+    conversations: Mapped[list["Conversation"]] = relationship(back_populates="user")
+    messages: Mapped[list["Message"]] = relationship(back_populates="user")
 
 
 class Artifact(Base):
     __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "relative_path", name="uq_artifacts_user_path"),
+    )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    relative_path: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    relative_path: Mapped[str] = mapped_column(String(512))
     content_hash: Mapped[str] = mapped_column(String(128), default="")
     revision: Mapped[int] = mapped_column(Integer, default=1)
-    source_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
-    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
-    processing_status: Mapped[str] = mapped_column(String(32), default="completed")
-    index_status: Mapped[str] = mapped_column(String(32), default="pending")
-    language: Mapped[str] = mapped_column(String(16), default="zh-CN")
-    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    media_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    origin: Mapped[str] = mapped_column(String(16), default="llm")
-    edited_by: Mapped[str] = mapped_column(String(16), default="system")
-    recovery_required: Mapped[bool] = mapped_column(Boolean, default=False)
-    recovery_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    status_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
+    user: Mapped[User] = relationship(back_populates="artifacts")
 
-class ProcessingJob(Base):
-    __tablename__ = "processing_jobs"
+
+class Conversation(Base):
+    __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    operation: Mapped[str] = mapped_column(String(64), nullable=False)
-    artifact_id: Mapped[str | None] = mapped_column(
-        ForeignKey("artifacts.id", ondelete="CASCADE"), nullable=True
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    status: Mapped[str] = mapped_column(String(32), default="pending")
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    config_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    summary_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
-    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    next_retry_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="conversations")
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    message_type: Mapped[str] = mapped_column(String(64))
+    content: Mapped[str] = mapped_column(Text, default="")
+    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+
+    user: Mapped[User] = relationship(back_populates="messages")
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+_REMOVED_MODEL_NAMES = {
+    "InterviewConfig",
+    "InterviewSession",
+    "InterviewTurn",
+    "LearningMessage",
+    "LearningSession",
+    "ProcessingJob",
+    "Report",
+    "WorkspaceSettings",
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _REMOVED_MODEL_NAMES:
+        return Any
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

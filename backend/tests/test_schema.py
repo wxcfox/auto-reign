@@ -1,143 +1,120 @@
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.db import models
 from app.db.models import Base
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
-APPLICATION_TABLES = {
+TARGET_TABLES = {
     "artifacts",
-    "interview_configs",
+    "conversations",
+    "messages",
+    "users",
+}
+OLD_TABLES = {
     "interview_sessions",
-    "interview_turns",
-    "learning_messages",
     "learning_sessions",
-    "processing_jobs",
-    "reports",
     "workspace_settings",
 }
 
 
-def test_migration_creates_and_drops_required_schema(tmp_path, monkeypatch) -> None:
+def test_base_metadata_contains_only_target_core_tables() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    inspector = inspect(engine)
+
+    table_names = set(inspector.get_table_names())
+    assert TARGET_TABLES.issubset(table_names)
+    assert OLD_TABLES.isdisjoint(table_names)
+    assert table_names == TARGET_TABLES
+
+
+def test_artifact_paths_are_unique_per_user() -> None:
+    assert hasattr(models, "User")
+    assert hasattr(models, "Artifact")
+    User = models.User
+    Artifact = models.Artifact
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        alice = User(username="alice", password_hash="hash-a")
+        bob = User(username="bob", password_hash="hash-b")
+        session.add_all([alice, bob])
+        session.flush()
+
+        session.add_all(
+            [
+                Artifact(user_id=alice.id, kind="note", relative_path="notes/cache.md"),
+                Artifact(user_id=bob.id, kind="note", relative_path="notes/cache.md"),
+            ]
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        alice_id = session.scalar(text("SELECT id FROM users WHERE username = 'alice'"))
+        session.add(
+            Artifact(user_id=alice_id, kind="note", relative_path="notes/cache.md")
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_migration_on_empty_database_creates_target_tables_without_data_dir(
+    tmp_path, monkeypatch
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'migration.db'}"
+    data_dir = tmp_path / "data"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
     get_settings.cache_clear()
 
     engine = create_engine(database_url)
     try:
+        assert not data_dir.exists()
         config = Config(ALEMBIC_INI)
         command.upgrade(config, "head")
         command.check(config)
 
         inspector = inspect(engine)
-        assert set(inspector.get_table_names()) == APPLICATION_TABLES | {"alembic_version"}
+        assert set(inspector.get_table_names()) == TARGET_TABLES | {"alembic_version"}
+        assert not data_dir.exists()
 
-        turn_columns = {column["name"] for column in inspector.get_columns("interview_turns")}
-        assert {
-            "follow_up_feedback",
-            "follow_up_missing_points",
-            "follow_up_weaknesses",
-            "follow_up_review_suggestions",
-            "better_answer",
-            "mastery_change",
-            "should_write_weakness",
-            "should_write_high_frequency",
-            "tested_points",
-            "follow_up_better_answer",
-            "follow_up_mastery_change",
-            "follow_up_should_write_weakness",
-            "follow_up_should_write_high_frequency",
-            "follow_up_tested_points",
-        }.issubset(turn_columns)
-        config_columns = {column["name"] for column in inspector.get_columns("interview_configs")}
-        assert "language" in config_columns
-        session_columns = {column["name"] for column in inspector.get_columns("interview_sessions")}
-        assert {"title", "deleted_at"}.issubset(session_columns)
-        learning_session_columns = {
-            column["name"] for column in inspector.get_columns("learning_sessions")
+        artifact_unique_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("artifacts")
         }
-        assert "deleted_at" in learning_session_columns
+        assert "uq_artifacts_user_path" in artifact_unique_constraints
 
-        artifact_columns = {column["name"] for column in inspector.get_columns("artifacts")}
+        message_foreign_keys = inspector.get_foreign_keys("messages")
         assert {
-            "kind",
-            "relative_path",
-            "source_refs",
-            "evidence_refs",
-            "processing_status",
-            "index_status",
-            "recovery_required",
-        }.issubset(artifact_columns)
-
-        turn_foreign_key = next(
-            foreign_key
-            for foreign_key in inspector.get_foreign_keys("interview_turns")
-            if foreign_key["constrained_columns"] == ["session_id"]
-        )
-        assert turn_foreign_key["referred_table"] == "interview_sessions"
-        assert turn_foreign_key["referred_columns"] == ["id"]
-        assert turn_foreign_key["options"]["ondelete"] == "CASCADE"
-
-        command.downgrade(config, "base")
-        assert set(inspect(engine).get_table_names()) == {"alembic_version"}
+            (foreign_key["referred_table"], tuple(foreign_key["constrained_columns"]))
+            for foreign_key in message_foreign_keys
+        } == {("users", ("user_id",)), ("conversations", ("conversation_id",))}
     finally:
         engine.dispose()
         get_settings.cache_clear()
 
 
-def test_learning_conversation_tables_exist_in_schema() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    inspector = inspect(engine)
-
-    assert "learning_sessions" in inspector.get_table_names()
-    assert "learning_messages" in inspector.get_table_names()
-
-    learning_session_columns = {
-        column["name"] for column in inspector.get_columns("learning_sessions")
-    }
-    assert {
-        "id",
-        "title",
-        "language",
-        "chat_model_provider",
-        "chat_model",
-        "started_at",
-        "updated_at",
-        "deleted_at",
-    }.issubset(learning_session_columns)
-
-    learning_message_columns = {
-        column["name"] for column in inspector.get_columns("learning_messages")
-    }
-    assert {
-        "id",
-        "session_id",
-        "role",
-        "message_type",
-        "content",
-        "artifact_id",
-        "artifact_path",
-        "message_metadata",
-        "created_at",
-    }.issubset(learning_message_columns)
-
-
-def test_migration_removes_legacy_absolute_report_paths(tmp_path, monkeypatch) -> None:
+def test_migration_refuses_non_empty_legacy_tables(tmp_path, monkeypatch) -> None:
     database_url = f"sqlite:///{tmp_path / 'migration.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     get_settings.cache_clear()
 
     engine = create_engine(database_url)
     try:
         config = Config(ALEMBIC_INI)
-        command.upgrade(config, "20260627_0007")
-        timestamp = "2026-06-27 00:00:00"
+        command.upgrade(config, "20260701_0010")
+        timestamp = "2026-07-06 00:00:00"
         with engine.begin() as connection:
             connection.execute(
                 text(
@@ -150,66 +127,25 @@ def test_migration_removes_legacy_absolute_report_paths(tmp_path, monkeypatch) -
                 ),
                 {"timestamp": timestamp},
             )
-            connection.execute(
-                text(
-                    "INSERT INTO interview_sessions "
-                    "(id, config_id, status, current_round, started_at, ended_at, report_path) "
-                    "VALUES "
-                    "('session-legacy', 'config-1', 'completed', 1, :timestamp, :timestamp, "
-                    ":legacy_path), "
-                    "('session-current', 'config-1', 'completed', 1, :timestamp, :timestamp, "
-                    "'reports/current.md')"
-                ),
-                {"timestamp": timestamp, "legacy_path": str(tmp_path / "reports" / "legacy.md")},
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO reports "
-                    "(id, session_id, report_path, summary, weaknesses, created_at) "
-                    "VALUES "
-                    "('report-legacy', 'session-legacy', :legacy_path, 'old', '[]', :timestamp), "
-                    "('report-current', 'session-current', 'reports/current.md', 'current', '[]', "
-                    ":timestamp)"
-                ),
-                {"timestamp": timestamp, "legacy_path": str(tmp_path / "reports" / "legacy.md")},
-            )
 
-        command.upgrade(config, "head")
+        with pytest.raises(RuntimeError) as exc_info:
+            command.upgrade(config, "head")
 
-        with engine.connect() as connection:
-            session_paths = dict(
-                connection.execute(
-                    text("SELECT id, report_path FROM interview_sessions ORDER BY id")
-                ).all()
-            )
-            report_paths = dict(
-                connection.execute(text("SELECT id, report_path FROM reports ORDER BY id")).all()
-            )
-
-        assert session_paths["session-legacy"] is None
-        assert session_paths["session-current"] == "reports/current.md"
-        assert report_paths == {"report-current": "reports/current.md"}
+        message = str(exc_info.value)
+        assert "Run ./reset-data.sh explicitly before upgrading" in message
+        assert "interview_configs" in message
     finally:
         engine.dispose()
         get_settings.cache_clear()
 
 
-def test_alembic_does_not_create_data_directories(tmp_path, monkeypatch) -> None:
-    data_dir = tmp_path / "read-only-data"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'side-effect.db'}")
-    monkeypatch.setenv("DATA_DIR", str(data_dir))
-    get_settings.cache_clear()
-
-    try:
-        assert not data_dir.exists()
-        command.upgrade(Config(ALEMBIC_INI), "head")
-        assert not data_dir.exists()
-    finally:
-        get_settings.cache_clear()
-
-
-def test_mysql_offline_migration_does_not_set_json_defaults(monkeypatch, capsys) -> None:
-    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://auto_reign:auto_reign@127.0.0.1:13306/auto_reign")
+def test_mysql_offline_migration_creates_target_schema_without_json_defaults(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "mysql+pymysql://auto_reign:auto_reign@127.0.0.1:13306/auto_reign",
+    )
     get_settings.cache_clear()
 
     try:
@@ -218,12 +154,16 @@ def test_mysql_offline_migration_does_not_set_json_defaults(monkeypatch, capsys)
     finally:
         get_settings.cache_clear()
 
-    assert "follow_up_missing_points JSON NOT NULL" in stdout
-    assert "follow_up_weaknesses JSON NOT NULL" in stdout
-    assert "follow_up_review_suggestions JSON NOT NULL" in stdout
-    assert "follow_up_tested_points JSON NOT NULL" in stdout
-    assert "better_answer TEXT NOT NULL DEFAULT" not in stdout
-    assert "follow_up_better_answer TEXT NOT NULL DEFAULT" not in stdout
-    assert "JSON NOT NULL DEFAULT '[]'" not in stdout
-    assert "relative_path VARCHAR(1024)" not in stdout
-    assert "relative_path VARCHAR(512)" in stdout
+    assert "CREATE TABLE users" in stdout
+    assert "CREATE TABLE artifacts" in stdout
+    assert "CREATE TABLE conversations" in stdout
+    assert "CREATE TABLE messages" in stdout
+    assert "CONSTRAINT uq_artifacts_user_path UNIQUE (user_id, relative_path)" in stdout
+    assert "FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE" in stdout
+    assert "FOREIGN KEY(conversation_id) REFERENCES conversations (id) ON DELETE CASCADE" in stdout
+    assert "settings_json JSON NOT NULL" in stdout
+    assert "status_json JSON NOT NULL" in stdout
+    assert "metadata_json JSON NOT NULL" in stdout
+    assert "config_json JSON NOT NULL" in stdout
+    assert "summary_json JSON NOT NULL" in stdout
+    assert "JSON NOT NULL DEFAULT" not in stdout
