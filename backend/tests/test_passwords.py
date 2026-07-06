@@ -62,13 +62,36 @@ def test_hash_password_uses_unique_salt() -> None:
 @pytest.mark.parametrize(
     "password_hash",
     [
+        "",
+        "not-a-password-hash",
+        "pbkdf2_sha256$600000$AA",
+        "argon2$600000$AA$AA",
+        "pbkdf2_sha256$not-an-int$AA$AA",
         "pbkdf2_sha256$0$AA$AA",
         "pbkdf2_sha256$-1$AA$AA",
+        "pbkdf2_sha256$600000$A$AA",
+        "pbkdf2_sha256$600000$AA$A",
+        "pbkdf2_sha256$600000$é$AA",
+        "pbkdf2_sha256$600000$AA$é",
     ],
 )
-def test_verify_password_rejects_malformed_iteration_counts(
+def test_verify_password_rejects_malformed_hashes(
     password_hash: str,
 ) -> None:
+    assert verify_password("same password", password_hash) is False
+
+
+def test_verify_password_rejects_malformed_base64_with_matching_digest() -> None:
+    salt = b"salt"
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        "same password".encode("utf-8"),
+        salt,
+        1,
+    )
+    malformed_salt = f"{_b64encode(salt)}==*"
+    password_hash = f"pbkdf2_sha256$1${malformed_salt}${_b64encode(digest)}"
+
     assert verify_password("same password", password_hash) is False
 
 

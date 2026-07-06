@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import secrets
@@ -17,7 +18,11 @@ def _b64encode(value: bytes) -> str:
 
 def _b64decode(value: str) -> bytes:
     padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(f"{value}{padding}".encode("ascii"))
+    return base64.b64decode(
+        f"{value}{padding}".encode("ascii"),
+        altchars=b"-_",
+        validate=True,
+    )
 
 
 def hash_password(password: str) -> str:
@@ -48,7 +53,7 @@ def verify_password(password: str, password_hash: str) -> bool:
             salt,
             iterations,
         )
-    except (ValueError, TypeError):
+    except (binascii.Error, UnicodeEncodeError, ValueError, TypeError):
         return False
 
     return hmac.compare_digest(actual_digest, expected_digest)
