@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "../AppShell";
 import i18next from "@/i18n/setup";
 import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
+import { clearAuthToken } from "@/lib/auth";
 
 const navigationMocks = vi.hoisted(() => ({
   pathname: "/interview",
@@ -21,6 +22,10 @@ vi.mock("@/lib/api", () => ({
   deleteConversation: vi.fn(),
   listConversations: vi.fn(),
   renameConversation: vi.fn(),
+}));
+
+vi.mock("@/lib/auth", () => ({
+  clearAuthToken: vi.fn(),
 }));
 
 describe("AppShell", () => {
@@ -144,6 +149,20 @@ describe("AppShell", () => {
 
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.getByRole("button", { name: /浅色模式/i })).toBeInTheDocument();
+  });
+
+  it("logs out from the user settings menu", async () => {
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Log out/i }));
+
+    expect(clearAuthToken).toHaveBeenCalled();
+    expect(navigationMocks.replace).toHaveBeenCalledWith("/login");
   });
 
   it("collapses and expands the sidebar", async () => {

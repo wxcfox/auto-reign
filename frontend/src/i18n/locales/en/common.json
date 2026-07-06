@@ -6,9 +6,25 @@
     "user": "Local user",
     "dark_mode": "Dark mode",
     "light_mode": "Light mode",
+    "logout": "Log out",
     "switch_language_to": "Switch to {{language}}",
     "collapse_sidebar": "Collapse sidebar",
     "expand_sidebar": "Expand sidebar"
+  },
+  "auth": {
+    "login_title": "Log in to Auto Reign",
+    "register_title": "Create local account",
+    "username": "Username",
+    "password": "Password",
+    "login_action": "Log in",
+    "register_action": "Create account",
+    "no_account": "No account yet?",
+    "has_account": "Already have an account?",
+    "create_account_link": "Create one",
+    "login_link": "Log in",
+    "invalid_credentials": "Username or password is incorrect.",
+    "password_too_short": "Password must be at least 12 characters.",
+    "register_failed": "The account could not be created."
   },
   "nav": {
     "dashboard": "Dashboard",

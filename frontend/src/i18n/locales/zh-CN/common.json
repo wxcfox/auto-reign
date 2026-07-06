@@ -6,9 +6,25 @@
     "user": "本地用户",
     "dark_mode": "深色模式",
     "light_mode": "浅色模式",
+    "logout": "退出登录",
     "switch_language_to": "切换到{{language}}",
     "collapse_sidebar": "收起侧边栏",
     "expand_sidebar": "展开侧边栏"
+  },
+  "auth": {
+    "login_title": "登录 Auto Reign",
+    "register_title": "创建本地账号",
+    "username": "用户名",
+    "password": "密码",
+    "login_action": "登录",
+    "register_action": "创建账号",
+    "no_account": "还没有账号？",
+    "has_account": "已有账号？",
+    "create_account_link": "创建一个",
+    "login_link": "登录",
+    "invalid_credentials": "用户名或密码不正确。",
+    "password_too_short": "密码至少需要 12 个字符。",
+    "register_failed": "账号创建失败。"
   },
   "nav": {
     "dashboard": "总览",
