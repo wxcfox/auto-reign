@@ -48,6 +48,18 @@ def test_hash_password_does_not_store_plaintext() -> None:
     assert hashed.startswith("pbkdf2_sha256$")
 
 
+def test_hash_password_uses_fixed_local_format() -> None:
+    hashed = hash_password("correct horse battery staple")
+    algorithm, iterations, salt, digest = hashed.split("$")
+
+    assert algorithm == "pbkdf2_sha256"
+    assert iterations == "600000"
+    assert len(base64.urlsafe_b64decode(f"{salt}==".encode("ascii"))) == 16
+    assert base64.urlsafe_b64decode(f"{digest}==".encode("ascii"))
+    assert "=" not in salt
+    assert "=" not in digest
+
+
 def test_verify_password_accepts_correct_password() -> None:
     hashed = hash_password("correct horse battery staple")
 
