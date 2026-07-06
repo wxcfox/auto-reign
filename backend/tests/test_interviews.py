@@ -375,6 +375,7 @@ def test_workspace_retrieval_service_uses_query_plan(client: TestClient) -> None
         service = WorkspaceRetrievalService(
             vector_store=FakeStore(),
             query_planner=FakePlanner(),
+            user_id=1,
         )
         hits = service.search(
             session,

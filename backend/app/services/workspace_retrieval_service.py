@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from qdrant_client.http.models import FieldCondition, Filter, MatchAny
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -25,7 +24,7 @@ class WorkspaceRetrievalService:
         vector_store: WorkspaceVectorStore | None = None,
         query_planner: RetrievalQueryPlanner | None = None,
         postprocessor: RetrievalPostProcessor | None = None,
-        user_id: int | None = None,
+        user_id: int,
     ) -> None:
         self.settings = settings or get_settings()
         self.vector_store = vector_store or (
@@ -68,17 +67,11 @@ class WorkspaceRetrievalService:
         ]
 
     def _active_collection(self, session: Session) -> str:
-        user_id = self.user_id
-        if user_id is None:
-            first_user = session.scalar(select(models.User).order_by(models.User.id).limit(1))
-            user_id = first_user.id if first_user is not None else None
-        user = session.get(models.User, user_id) if user_id is not None else None
+        user = session.get(models.User, self.user_id)
         active_collection = (user.settings_json or {}).get("active_collection") if user is not None else None
         if isinstance(active_collection, str) and active_collection:
             return active_collection
-        if self.user_id is not None:
-            return ""
-        return self.settings.qdrant_collection
+        return ""
 
     def _metadata_filter(self, artifact_kinds: tuple[str, ...]) -> Filter | None:
         if not artifact_kinds:
