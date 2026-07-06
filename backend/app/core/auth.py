@@ -80,8 +80,13 @@ def decode_access_token(token: str) -> AccessTokenPayload:
     settings = get_settings()
     try:
         header, payload, signature = token.split(".", 2)
+        header.encode("ascii")
+        payload.encode("ascii")
+        signature.encode("ascii")
     except ValueError as exc:
         raise TokenInvalidError("Malformed JWT.") from exc
+    except UnicodeEncodeError as exc:
+        raise TokenInvalidError("JWT section is malformed.") from exc
 
     expected_signature = _sign(f"{header}.{payload}", settings.jwt_secret_key)
     if not hmac.compare_digest(signature, expected_signature):

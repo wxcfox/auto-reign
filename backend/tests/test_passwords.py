@@ -124,6 +124,26 @@ def test_access_token_rejects_signed_malformed_json_sections(
     get_settings.cache_clear()
 
 
+@pytest.mark.parametrize(
+    "token",
+    [
+        "é.valid.signature",
+        "valid.é.signature",
+        "valid.valid.é",
+    ],
+)
+def test_access_token_rejects_non_ascii_sections(token: str, monkeypatch) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
 def test_access_token_rejects_expired_token(monkeypatch) -> None:
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
     from app.core.config import get_settings
