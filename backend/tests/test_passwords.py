@@ -31,6 +31,12 @@ def _signed_token(header: str, payload: str, secret: str = "test-secret") -> str
     return f"{signing_input}.{_b64encode(signature)}"
 
 
+def _signed_access_token(payload: dict[str, object]) -> str:
+    return _signed_token(
+        _b64encode_json({"alg": "HS256", "typ": "JWT"}), _b64encode_json(payload)
+    )
+
+
 def _password_hash(password: str, salt: bytes, iterations: int) -> str:
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -180,6 +186,39 @@ def test_access_token_rejects_signed_malformed_json_sections(
 
     get_settings.cache_clear()
     token = _signed_token(header, payload)
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "exp": 4_102_444_800,
+            "sub": "alice",
+            "token_version": 2,
+            "user_id": True,
+        },
+        {
+            "exp": 4_102_444_800,
+            "sub": "alice",
+            "token_version": False,
+            "user_id": 7,
+        },
+    ],
+)
+def test_access_token_rejects_boolean_integer_claims(
+    payload: dict[str, object],
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token(payload)
 
     with pytest.raises(TokenInvalidError):
         decode_access_token(token)

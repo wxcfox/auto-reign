@@ -103,9 +103,9 @@ def decode_access_token(token: str) -> AccessTokenPayload:
     exp = payload_data.get("exp")
     if not isinstance(username, str) or not username:
         raise TokenInvalidError("JWT subject is missing.")
-    if not isinstance(user_id, int) or user_id <= 0:
+    if type(user_id) is not int or user_id <= 0:
         raise TokenInvalidError("JWT user_id is missing.")
-    if not isinstance(token_version, int) or token_version < 0:
+    if type(token_version) is not int or token_version < 0:
         raise TokenInvalidError("JWT token_version is missing.")
     if not isinstance(exp, int):
         raise TokenInvalidError("JWT exp is missing.")
