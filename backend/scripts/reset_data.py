@@ -13,7 +13,6 @@ from sqlalchemy.engine import Engine
 from app.core.config import get_settings
 from app.db.session import create_engine_for_settings
 from app.services.workspace_vector_store import get_workspace_vector_store
-from app.services.workspace_service import WorkspaceService
 
 
 def reset_data(
@@ -29,7 +28,6 @@ def reset_data(
     _delete_qdrant_collections(vector_store, qdrant_collection, workspace_collection)
     _drop_all_tables(engine)
     run_migrations()
-    WorkspaceService(data_dir / "workspace").initialize()
     return backup
 
 
@@ -60,9 +58,9 @@ def _delete_qdrant_collections(
     vector_store, qdrant_collection: str, workspace_collection: str
 ) -> None:
     vector_store.delete_collection(qdrant_collection)
-    prefix = f"{workspace_collection}__"
+    prefixes = (f"{workspace_collection}__", "auto_reign_user_")
     for collection_name in vector_store.list_collections():
-        if collection_name.startswith(prefix):
+        if collection_name.startswith(prefixes):
             vector_store.delete_collection(collection_name)
 
 
@@ -80,6 +78,10 @@ def main() -> None:
         qdrant_collection=settings.qdrant_collection,
         workspace_collection=settings.qdrant_collection,
         run_migrations=run_migrations,
+    )
+    print(
+        "Deleted local user data under "
+        f"{settings.data_dir / 'users'} and legacy {settings.data_dir / 'workspace'} when present."
     )
     if backup is not None:
         print(f"Backed up old data to {backup}")

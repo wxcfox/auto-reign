@@ -5,10 +5,10 @@
 ```mermaid
 flowchart TD
   A["用户上传资料、记录学习笔记或粘贴真实面试"] --> B{"输入类型"}
-  B -->|Markdown 或 TXT| C["原始文件保存到 DATA_DIR/workspace/sources/documents"]
-  B -->|PDF 或 DOCX| D["原始文件保存到 DATA_DIR/workspace/sources/documents"]
+  B -->|Markdown 或 TXT| C["原始文件保存到 DATA_DIR/users/{user_id}/workspace/sources/documents"]
+  B -->|PDF 或 DOCX| D["原始文件保存到 DATA_DIR/users/{user_id}/workspace/sources/documents"]
   D --> E["可解析时提取文本到 sources/extracted"]
-  B -->|学习笔记| F["把原始笔记保存到 DATA_DIR/workspace/sources/notes"]
+  B -->|学习笔记| F["把原始笔记保存到 DATA_DIR/users/{user_id}/workspace/sources/notes"]
   B -->|真实面试记录| V["保存到 sources/interviews 并抽取问题和薄弱线索"]
   F --> G["整理为 knowledge 短卡片"]
   V --> W["更新 review/high-frequency 和 review/status"]
@@ -26,7 +26,7 @@ flowchart TD
   M --> N["LangChain Markdown/递归切块"]
   N --> O["LangChain embedding 生成向量"]
   O --> P["LangChain QdrantVectorStore 写入 chunk 向量和元数据"]
-  P --> Q["在工作区设置中记录活跃向量 collection"]
+  P --> Q["在当前用户 settings_json.active_collection 中记录活跃向量 collection"]
   Q --> R["WorkspaceRetrievalService 生成 query plan"]
   R --> S["LangChain retriever 查询 active collection"]
   S --> T["Auto Reign 后处理、来源多样性和上下文预算"]
@@ -35,13 +35,15 @@ flowchart TD
 
 ## 当前存储职责
 
-- `DATA_DIR/workspace/sources/notes/` 保存“新学习”自由文本输入的原始记录。它作为 source provenance 使用，不由 AI 覆盖。
-- `DATA_DIR/workspace/sources/documents/` 保存用户上传的原始文件。来源文件会在元数据中保留用户的原始文件名，并在资料库中展示该名称。
-- `DATA_DIR/workspace/sources/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。
-- `DATA_DIR/workspace/sources/interviews/` 保存真实面试原始记录和确定性抽取结果，不由 AI 改写原文。
-- `DATA_DIR/workspace/knowledge/`、`DATA_DIR/workspace/questions/`、`DATA_DIR/workspace/projects/`、`DATA_DIR/workspace/review/`、`DATA_DIR/workspace/profile/`、`DATA_DIR/workspace/practice/`、`DATA_DIR/workspace/state/` 和 `DATA_DIR/workspace/reports/` 保存系统管理的 Markdown 资产。
-- MySQL 保存工作区 artifact 投影、处理状态、索引状态、修订版本、学习对话、面试会话和报告元数据。
-- Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 可以从文件工作区和 MySQL artifact 投影重新构建。LangChain 负责 Markdown/递归切块、embedding、QdrantVectorStore 写入和 retriever 查询，Auto Reign 负责 workspace 协议、provenance、可索引规则、active collection 发布、检索后处理和上下文预算。
+- `DATA_DIR/users/{user_id}/workspace/sources/notes/` 保存“新学习”自由文本输入的原始记录。它作为 source provenance 使用，不由 AI 覆盖。
+- `DATA_DIR/users/{user_id}/workspace/sources/documents/` 保存用户上传的原始文件。来源文件会在元数据中保留用户的原始文件名，并在资料库中展示该名称。
+- `DATA_DIR/users/{user_id}/workspace/sources/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。
+- `DATA_DIR/users/{user_id}/workspace/sources/interviews/` 保存真实面试原始记录和确定性抽取结果，不由 AI 改写原文。
+- `DATA_DIR/users/{user_id}/workspace/knowledge/`、`DATA_DIR/users/{user_id}/workspace/questions/`、`DATA_DIR/users/{user_id}/workspace/projects/`、`DATA_DIR/users/{user_id}/workspace/review/`、`DATA_DIR/users/{user_id}/workspace/profile/`、`DATA_DIR/users/{user_id}/workspace/practice/`、`DATA_DIR/users/{user_id}/workspace/state/` 和 `DATA_DIR/users/{user_id}/workspace/reports/` 保存系统管理的 Markdown 资产。
+- MySQL 保存本地用户、用户级 artifact 投影、处理状态、索引状态、修订版本、学习和面试统一会话、消息与报告摘要。
+- Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 保存在当前用户的 `settings_json.active_collection`，可以从该用户的文件工作区和 MySQL artifact 投影重新构建。LangChain 负责 Markdown/递归切块、embedding、QdrantVectorStore 写入和 retriever 查询，Auto Reign 负责 workspace 协议、provenance、可索引规则、active collection 发布、检索后处理和上下文预算。
+
+资料入库、投影重建、索引重建和检索都只处理当前 JWT 用户对应的工作区。Qdrant active collection 保存在当前用户的 `settings_json.active_collection`。
 
 ## 索引规则
 
@@ -62,4 +64,4 @@ flowchart TD
 
 ## 面试点评检索
 
-面试出题先读取候选人画像、目标画像、掌握状态、复习状态和高频问题，再使用用户自然语言提示、当前题目和轮次构造检索 query plan。项目深挖模式会优先加入 `projects/` 材料。LangChain retriever 只查询当前 workspace active collection；Auto Reign 会对结果做分数阈值、单 artifact 上限、来源多样性和上下文预算控制。回答点评和追问点评会额外结合当前题目、用户回答、项目材料、历史薄弱点和检索片段。检索片段只作为不可信用户资料使用，不能覆盖系统 prompt，也不能把 AI 生成报告当作新的事实来源。
+面试出题先读取候选人画像、目标画像、掌握状态、复习状态和高频问题，再使用用户自然语言提示、当前题目和轮次构造检索 query plan。项目深挖模式会优先加入 `projects/` 材料。LangChain retriever 只查询当前 JWT 用户的 workspace active collection；Auto Reign 会对结果做分数阈值、单 artifact 上限、来源多样性和上下文预算控制。回答点评和追问点评会额外结合当前题目、用户回答、项目材料、历史薄弱点和检索片段。检索片段只作为不可信用户资料使用，不能覆盖系统 prompt，也不能把 AI 生成报告当作新的事实来源。
