@@ -99,6 +99,7 @@ def test_me_requires_bearer_token(client):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
     assert response.json()["detail"]["code"] == "auth_required"
 
 
@@ -114,6 +115,7 @@ def test_login_rejects_bad_password(client):
     )
 
     assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
     assert response.json()["detail"]["code"] == "invalid_credentials"
 
 
@@ -176,6 +178,7 @@ def test_change_password_rejects_wrong_old_password(client):
     )
 
     assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
     assert response.json()["detail"]["code"] == "invalid_credentials"
 
 

@@ -38,6 +38,7 @@ def _invalid_credentials() -> HTTPException:
             "code": "invalid_credentials",
             "message": "Username or password is incorrect.",
         },
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
