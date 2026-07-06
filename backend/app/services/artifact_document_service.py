@@ -5,6 +5,12 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
+from app.services.artifact_metadata import (
+    artifact_evidence_refs,
+    artifact_language,
+    artifact_source_refs,
+)
+
 
 class ArtifactDocumentBuilder:
     def build(self, artifact: Any, body: str) -> Document:
@@ -18,9 +24,9 @@ class ArtifactDocumentBuilder:
                 "source_type": "artifact",
                 "relative_path": artifact.relative_path,
                 "revision": artifact.revision,
-                "source_refs": list(artifact.source_refs or []),
-                "evidence_refs": list(artifact.evidence_refs or []),
-                "language": artifact.language,
+                "source_refs": artifact_source_refs(artifact),
+                "evidence_refs": artifact_evidence_refs(artifact),
+                "language": artifact_language(artifact),
             },
         )
 

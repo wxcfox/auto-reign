@@ -209,7 +209,7 @@ def delete_artifact(
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
     index_service = IndexService()
-    target_collection = index_service.settings.qdrant_collection
+    target_collection = _active_collection(session, scope)
     try:
         index_service.vector_store.delete_artifact_chunks(target_collection, artifact_id)
     except VectorStoreError as exc:
@@ -293,7 +293,9 @@ async def upload_materials(
         IndexService().rebuild_index,
         request.app.state.session_factory,
         workspace,
-        _scoped_repository(scope.user_id),
+        ArtifactRepository(),
+        user_id=scope.user_id,
+        qdrant_prefix=scope.qdrant_prefix,
     )
     return UploadMaterialsResponse(
         sources=[UploadedSourceResponse(**source.__dict__) for source in result.sources]
@@ -419,12 +421,16 @@ def _enqueue_index_rebuild(
     background_tasks: BackgroundTasks,
     scope: UserScope,
 ) -> None:
+    from app.repositories.artifact_repository import ArtifactRepository
+
     workspace, _ = _workspace_services(scope)
     background_tasks.add_task(
         IndexService().rebuild_index,
         request.app.state.session_factory,
         workspace,
-        _scoped_repository(scope.user_id),
+        ArtifactRepository(),
+        user_id=scope.user_id,
+        qdrant_prefix=scope.qdrant_prefix,
     )
 
 
@@ -560,11 +566,15 @@ def rebuild_index(
     request: Request,
     scope: UserScope = Depends(get_user_scope),
 ) -> dict[str, str]:
+    from app.repositories.artifact_repository import ArtifactRepository
+
     workspace, _ = _workspace_services(scope)
     collection = IndexService().rebuild_index(
         request.app.state.session_factory,
         workspace,
-        _scoped_repository(scope.user_id),
+        ArtifactRepository(),
+        user_id=scope.user_id,
+        qdrant_prefix=scope.qdrant_prefix,
     )
     return {"status": "ok", "collection": collection}
 
@@ -575,22 +585,14 @@ def _workspace_services(scope: UserScope) -> tuple[WorkspaceService, ArtifactSer
     return workspace, ArtifactService(workspace)
 
 
-class _ScopedArtifactRepository:
-    def __init__(self, user_id: int) -> None:
-        self.user_id = user_id
-        from app.repositories.artifact_repository import ArtifactRepository
+def _active_collection(session: Session, scope: UserScope) -> str:
+    from app.db import models
 
-        self.repository = ArtifactRepository()
-
-    def get(self, session: Session, artifact_id: str):
-        return self.repository.get(session, user_id=self.user_id, artifact_id=artifact_id)
-
-    def list(self, session: Session):
-        return self.repository.list(session, user_id=self.user_id)
-
-
-def _scoped_repository(user_id: int) -> _ScopedArtifactRepository:
-    return _ScopedArtifactRepository(user_id)
+    user = session.get(models.User, scope.user_id)
+    if user is None:
+        return scope.qdrant_prefix
+    active_collection = (user.settings_json or {}).get("active_collection")
+    return active_collection if isinstance(active_collection, str) and active_collection else scope.qdrant_prefix
 
 
 def _summary(artifact) -> ArtifactSummaryResponse:

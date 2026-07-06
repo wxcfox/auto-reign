@@ -9,6 +9,7 @@ from app.db import models
 from app.db.session import session_scope
 from app.repositories.vector_store import VectorStoreUnavailable
 from app.services.artifact_service import ArtifactService
+from app.services.index_service import IndexService
 from app.services.workspace_service import WorkspaceService
 
 
@@ -50,6 +51,30 @@ def _disable_index_rebuild(monkeypatch) -> None:
             return "noop"
 
     monkeypatch.setattr("app.api.workspace.IndexService", NoopIndexService)
+
+
+class RecordingWorkspaceVectorStore:
+    def __init__(self) -> None:
+        self.upserts: list[tuple[str, list[object]]] = []
+        self.deleted_collections: list[str] = []
+        self.collections: set[str] = set()
+
+    def prepare_documents(self, documents: list[object]) -> None:
+        del documents
+
+    def upsert_documents(self, collection_name: str, documents: list[object]) -> None:
+        self.collections.add(collection_name)
+        self.upserts.append((collection_name, documents))
+
+    def delete_artifact_chunks(self, collection_name: str, artifact_id: str) -> None:
+        del collection_name, artifact_id
+
+    def delete_collection(self, collection_name: str) -> None:
+        self.deleted_collections.append(collection_name)
+        self.collections.discard(collection_name)
+
+    def list_collections(self) -> list[str]:
+        return sorted(self.collections)
 
 
 def _sse_result(body: str) -> dict[str, object]:
@@ -171,11 +196,19 @@ def test_workspace_artifacts_include_source_display_name(client, monkeypatch) ->
 
 def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch) -> None:
     token = _register(client)
-    calls: list[tuple[object, object, object]] = []
+    calls: list[tuple[object, object, object, int, str]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
-            calls.append((session_factory, workspace, repository))
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            calls.append((session_factory, workspace, repository, user_id, qdrant_prefix))
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
@@ -190,6 +223,38 @@ def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch
     assert len(calls) == 1
     assert calls[0][0] is client.app.state.session_factory
     assert calls[0][1].root == _workspace_service(client).root
+    assert calls[0][3] == 1
+    assert calls[0][4] == "auto_reign_user_1"
+
+
+def test_workspace_rebuild_index_uses_user_active_collection(client, monkeypatch) -> None:
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
+    artifacts.create_markdown("knowledge/index-me.md", kind="knowledge", body="# Index\n\nbody")
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    store = RecordingWorkspaceVectorStore()
+    store.collections.update({"auto_reign_user_1__old", "auto_reign_user_1__orphan"})
+    with session_scope(client.app.state.session_factory) as session:
+        user = session.get(models.User, 1)
+        user.settings_json = {**user.settings_json, "active_collection": "auto_reign_user_1__old"}
+
+    monkeypatch.setattr(
+        "app.api.workspace.IndexService",
+        lambda: IndexService(vector_store=store),
+    )
+
+    response = client.post("/api/workspace/rebuild-index", headers=_auth(token))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["collection"].startswith("auto_reign_user_1__")
+    assert body["collection"] != "auto_reign_user_1__old"
+    assert store.upserts
+    assert "auto_reign_user_1__old" in store.deleted_collections
+    assert "auto_reign_user_1__orphan" in store.deleted_collections
+    with session_scope(client.app.state.session_factory) as session:
+        user = session.get(models.User, 1)
+        assert user.settings_json["active_collection"] == body["collection"]
 
 
 def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) -> None:
@@ -197,7 +262,16 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     calls: list[tuple[object, object, object]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del user_id, qdrant_prefix
             calls.append((session_factory, workspace, repository))
             return "rebuilt"
 
@@ -256,7 +330,16 @@ def test_learning_note_stream_creates_learning_conversation(client, monkeypatch)
     token = _register(client)
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del session_factory, workspace, repository, user_id, qdrant_prefix
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
@@ -297,7 +380,16 @@ def test_learning_note_stream_appends_to_existing_learning_conversation(client, 
     token = _register(client)
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del session_factory, workspace, repository, user_id, qdrant_prefix
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
@@ -385,7 +477,16 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
             )
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del session_factory, workspace, repository, user_id, qdrant_prefix
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.ModelService", FixedModelService)
@@ -436,7 +537,16 @@ def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch
     calls: list[tuple[object, object, object]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del user_id, qdrant_prefix
             calls.append((session_factory, workspace, repository))
             return "rebuilt"
 
@@ -473,7 +583,16 @@ def test_record_real_interview_archives_extracts_and_updates_status(
     calls: list[tuple[object, object, object]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del user_id, qdrant_prefix
             calls.append((session_factory, workspace, repository))
             return "rebuilt"
 
