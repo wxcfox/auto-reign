@@ -18,9 +18,20 @@ def _b64encode(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
 
+def _standard_b64encode(value: bytes) -> str:
+    return base64.b64encode(value).decode("ascii").rstrip("=")
+
+
 def _b64encode_json(payload: object) -> str:
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return _b64encode(raw)
+
+
+def _standard_b64encode_json(payload: object, *, ensure_ascii: bool = True) -> str:
+    raw = json.dumps(
+        payload, separators=(",", ":"), sort_keys=True, ensure_ascii=ensure_ascii
+    ).encode("utf-8")
+    return _standard_b64encode(raw)
 
 
 def _signed_token(header: str, payload: str, secret: str = "test-secret") -> str:
@@ -141,6 +152,26 @@ def test_verify_password_rejects_padded_base64_sections_with_matching_digest() -
     assert verify_password("same password", padded_hash) is False
 
 
+def test_verify_password_rejects_standard_base64_salt_with_matching_digest() -> None:
+    salt = bytes([251]) * 16
+    digest = hashlib.pbkdf2_hmac("sha256", b"same password", salt, 600_000)
+    password_hash = (
+        f"pbkdf2_sha256$600000${_standard_b64encode(salt)}${_b64encode(digest)}"
+    )
+
+    assert verify_password("same password", password_hash) is False
+
+
+def test_verify_password_rejects_standard_base64_digest_with_matching_digest() -> None:
+    salt = b"1234567890123456"
+    digest = hashlib.pbkdf2_hmac("sha256", b"same password", salt, 600_000)
+    password_hash = (
+        f"pbkdf2_sha256$600000${_b64encode(salt)}${_standard_b64encode(digest)}"
+    )
+
+    assert verify_password("same password", password_hash) is False
+
+
 def test_access_token_round_trip(monkeypatch) -> None:
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
     from app.core.config import get_settings
@@ -177,6 +208,67 @@ def test_access_token_round_trip(monkeypatch) -> None:
     ],
 )
 def test_access_token_rejects_signed_malformed_json_sections(
+    header: str,
+    payload: str,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_token(header, payload)
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("header", "payload"),
+    [
+        (
+            _standard_b64encode_json({"alg": "HS256", "typ": "JWT", "x": ">"}),
+            _b64encode_json(
+                {
+                    "exp": 4_102_444_800,
+                    "sub": "alice",
+                    "token_version": 2,
+                    "user_id": 7,
+                }
+            ),
+        ),
+        (
+            _b64encode_json({"alg": "HS256", "typ": "JWT"}),
+            _standard_b64encode_json(
+                {
+                    "exp": 4_102_444_800,
+                    "sub": "alice",
+                    "token_version": 2,
+                    "user_id": 7,
+                    "x": "¾",
+                },
+                ensure_ascii=False,
+            ),
+        ),
+        (
+            f"{_b64encode_json({'alg': 'HS256', 'typ': 'JWT'})}=",
+            _b64encode_json(
+                {
+                    "exp": 4_102_444_800,
+                    "sub": "alice",
+                    "token_version": 2,
+                    "user_id": 7,
+                }
+            ),
+        ),
+        (
+            _b64encode_json({"alg": "HS256", "typ": "JWT"}),
+            f"{_b64encode_json({'exp': 4_102_444_800, 'sub': 'alice', 'token_version': 2, 'user_id': 7})}=",
+        ),
+    ],
+)
+def test_access_token_rejects_non_base64url_json_sections(
     header: str,
     payload: str,
     monkeypatch,
@@ -256,6 +348,26 @@ def test_access_token_rejects_expired_token(monkeypatch) -> None:
         user_id=7,
         token_version=2,
         expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+def test_access_token_rejects_out_of_range_exp(monkeypatch) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token(
+        {
+            "exp": 10**100,
+            "sub": "alice",
+            "token_version": 2,
+            "user_id": 7,
+        }
     )
 
     with pytest.raises(TokenInvalidError):

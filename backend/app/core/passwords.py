@@ -10,6 +10,9 @@ import secrets
 _ALGORITHM = "pbkdf2_sha256"
 _ITERATIONS = 600_000
 _SALT_BYTES = 16
+_B64URL_ALPHABET = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+)
 
 
 def _b64encode(value: bytes) -> str:
@@ -17,8 +20,8 @@ def _b64encode(value: bytes) -> str:
 
 
 def _b64decode(value: str) -> bytes:
-    if value.endswith("="):
-        raise ValueError("Padded base64 is not accepted.")
+    if not value or any(character not in _B64URL_ALPHABET for character in value):
+        raise ValueError("Invalid base64url section.")
     padding = "=" * (-len(value) % 4)
     return base64.b64decode(
         f"{value}{padding}".encode("ascii"),

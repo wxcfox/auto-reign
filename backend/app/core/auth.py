@@ -12,6 +12,11 @@ from typing import Any
 from app.core.config import get_settings
 
 
+_B64URL_ALPHABET = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+)
+
+
 class TokenInvalidError(ValueError):
     pass
 
@@ -30,6 +35,8 @@ def _b64encode_json(payload: dict[str, Any]) -> str:
 
 
 def _b64decode_json(value: str) -> dict[str, Any]:
+    if not value or any(character not in _B64URL_ALPHABET for character in value):
+        raise TokenInvalidError("JWT section is malformed.")
     padding = "=" * (-len(value) % 4)
     try:
         raw = base64.b64decode(
@@ -110,7 +117,10 @@ def decode_access_token(token: str) -> AccessTokenPayload:
     if not isinstance(exp, int):
         raise TokenInvalidError("JWT exp is missing.")
 
-    expires_at = datetime.fromtimestamp(exp, UTC)
+    try:
+        expires_at = datetime.fromtimestamp(exp, UTC)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise TokenInvalidError("JWT exp is invalid.") from exc
     if expires_at <= datetime.now(UTC):
         raise TokenInvalidError("JWT is expired.")
     return AccessTokenPayload(
