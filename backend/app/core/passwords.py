@@ -37,15 +37,18 @@ def verify_password(password: str, password_hash: str) -> bool:
         if algorithm != _ALGORITHM:
             return False
         iterations = int(iterations_text)
+        if iterations <= 0:
+            return False
         salt = _b64decode(salt_text)
         expected_digest = _b64decode(digest_text)
+
+        actual_digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            iterations,
+        )
     except (ValueError, TypeError):
         return False
 
-    actual_digest = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt,
-        iterations,
-    )
     return hmac.compare_digest(actual_digest, expected_digest)

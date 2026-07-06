@@ -1,3 +1,7 @@
+import base64
+import hashlib
+import hmac
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -8,6 +12,23 @@ from app.core.auth import (
     decode_access_token,
 )
 from app.core.passwords import hash_password, verify_password
+
+
+def _b64encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+
+def _b64encode_json(payload: object) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return _b64encode(raw)
+
+
+def _signed_token(header: str, payload: str, secret: str = "test-secret") -> str:
+    signing_input = f"{header}.{payload}"
+    signature = hmac.new(
+        secret.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256
+    ).digest()
+    return f"{signing_input}.{_b64encode(signature)}"
 
 
 def test_hash_password_does_not_store_plaintext() -> None:
@@ -38,18 +59,68 @@ def test_hash_password_uses_unique_salt() -> None:
     assert verify_password("same password", second) is True
 
 
+@pytest.mark.parametrize(
+    "password_hash",
+    [
+        "pbkdf2_sha256$0$AA$AA",
+        "pbkdf2_sha256$-1$AA$AA",
+    ],
+)
+def test_verify_password_rejects_malformed_iteration_counts(
+    password_hash: str,
+) -> None:
+    assert verify_password("same password", password_hash) is False
+
+
 def test_access_token_round_trip(monkeypatch) -> None:
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
     from app.core.config import get_settings
 
     get_settings.cache_clear()
-    token = create_access_token(username="alice", user_id=7, token_version=2)
+    token = create_access_token("alice", 7, 2)
 
     payload = decode_access_token(token)
 
     assert payload.username == "alice"
     assert payload.user_id == 7
     assert payload.token_version == 2
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("header", "payload"),
+    [
+        (
+            _b64encode(b"not-json"),
+            _b64encode_json(
+                {
+                    "exp": 4_102_444_800,
+                    "sub": "alice",
+                    "token_version": 2,
+                    "user_id": 7,
+                }
+            ),
+        ),
+        (
+            _b64encode_json({"alg": "HS256", "typ": "JWT"}),
+            _b64encode(b"\xff"),
+        ),
+    ],
+)
+def test_access_token_rejects_signed_malformed_json_sections(
+    header: str,
+    payload: str,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_token(header, payload)
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
     get_settings.cache_clear()
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -30,8 +31,15 @@ def _b64encode_json(payload: dict[str, Any]) -> str:
 
 def _b64decode_json(value: str) -> dict[str, Any]:
     padding = "=" * (-len(value) % 4)
-    raw = base64.urlsafe_b64decode(f"{value}{padding}".encode("ascii"))
-    data = json.loads(raw.decode("utf-8"))
+    try:
+        raw = base64.b64decode(
+            f"{value}{padding}".encode("ascii"),
+            altchars=b"-_",
+            validate=True,
+        )
+        data = json.loads(raw.decode("utf-8"))
+    except (binascii.Error, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise TokenInvalidError("JWT section is malformed.") from exc
     if not isinstance(data, dict):
         raise TokenInvalidError("JWT payload must be an object.")
     return data
@@ -45,7 +53,6 @@ def _sign(message: str, secret: str) -> str:
 
 
 def create_access_token(
-    *,
     username: str,
     user_id: int,
     token_version: int,
