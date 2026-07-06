@@ -79,6 +79,13 @@ class ConversationRepository:
         content: str,
         metadata_json: dict[str, object] | None = None,
     ) -> models.Message:
+        conversation = self.get(
+            session,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if conversation is None:
+            raise ValueError("conversation_not_found")
         message = models.Message(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -88,6 +95,7 @@ class ConversationRepository:
             metadata_json=metadata_json or {},
         )
         session.add(message)
+        conversation.updated_at = models._now()
         session.flush()
         return message
 

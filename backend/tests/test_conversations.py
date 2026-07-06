@@ -1,7 +1,9 @@
 import json
+from datetime import timedelta
 
 from app.db import models
 from app.db.session import session_scope
+from app.repositories.conversation_repository import ConversationRepository
 
 
 def _sse_result(body: str) -> dict[str, object]:
@@ -188,3 +190,30 @@ def test_interview_conversation_row_can_be_renamed_and_deleted(client) -> None:
 
     assert delete_response.status_code == 200
     assert client.get(f"/api/conversations/{session_id}", headers=headers).status_code == 404
+
+
+def test_conversation_repository_add_message_updates_conversation_timestamp(client) -> None:
+    _register(client, "alice")
+    repository = ConversationRepository()
+
+    with session_scope(client.app.state.session_factory) as session:
+        conversation = repository.create(
+            session,
+            user_id=1,
+            kind="learning",
+            title="Redis",
+        )
+        original_updated_at = conversation.updated_at - timedelta(days=1)
+        conversation.updated_at = original_updated_at
+        session.flush()
+
+        repository.add_message(
+            session,
+            user_id=1,
+            conversation_id=conversation.id,
+            role="user",
+            message_type="learning_note",
+            content="缓存击穿",
+        )
+
+        assert conversation.updated_at > original_updated_at
