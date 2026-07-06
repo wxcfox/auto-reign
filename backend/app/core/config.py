@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     qwen_chat_models: str = "qwen-plus,qwen-max"
     deepseek_base_url: str = "https://api.deepseek.com"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    jwt_secret_key: str = "auto-reign-local-dev-secret-change-me"
+    access_token_expire_minutes: int = 60 * 24 * 7
 
     @property
     def workspace_dir(self) -> Path:
