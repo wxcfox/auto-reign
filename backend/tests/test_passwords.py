@@ -48,6 +48,24 @@ def _signed_access_token(payload: dict[str, object]) -> str:
     )
 
 
+def _signed_access_token_with_header(
+    header: dict[str, object],
+    payload: dict[str, object],
+) -> str:
+    return _signed_token(_b64encode_json(header), _b64encode_json(payload))
+
+
+def _valid_access_token_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "exp": 4_102_444_800,
+        "sub": "alice",
+        "token_version": 2,
+        "user_id": 7,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def _password_hash(password: str, salt: bytes, iterations: int) -> str:
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -217,6 +235,118 @@ def test_access_token_rejects_signed_malformed_json_sections(
 
     get_settings.cache_clear()
     token = _signed_token(header, payload)
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("token", ["not-a-jwt", "header.payload"])
+def test_access_token_rejects_malformed_token_structure(
+    token: str,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+def test_access_token_rejects_invalid_signature(monkeypatch) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token(_valid_access_token_payload())
+    tampered_token = f"{token[:-1]}A"
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(tampered_token)
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        {"alg": "none", "typ": "JWT"},
+        {"alg": "HS256", "typ": "Bearer"},
+        {"alg": "HS256"},
+    ],
+)
+def test_access_token_rejects_invalid_header(
+    header: dict[str, object],
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token_with_header(header, _valid_access_token_payload())
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "exp": 4_102_444_800,
+            "token_version": 2,
+            "user_id": 7,
+        },
+        _valid_access_token_payload(sub=""),
+        _valid_access_token_payload(sub=123),
+    ],
+)
+def test_access_token_rejects_invalid_subject(
+    payload: dict[str, object],
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token(payload)
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("user_id", [0, -1])
+def test_access_token_rejects_non_positive_user_id(
+    user_id: int,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token(_valid_access_token_payload(user_id=user_id))
+
+    with pytest.raises(TokenInvalidError):
+        decode_access_token(token)
+
+    get_settings.cache_clear()
+
+
+def test_access_token_rejects_negative_token_version(monkeypatch) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    token = _signed_access_token(_valid_access_token_payload(token_version=-1))
 
     with pytest.raises(TokenInvalidError):
         decode_access_token(token)
