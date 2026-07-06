@@ -63,8 +63,8 @@ class IngestionService:
             content_hash = hashlib.sha256(upload.content).hexdigest()
             existing = artifact_repository.get_source_by_content_hash(
                 session,
-                user_id,
-                content_hash,
+                user_id=user_id,
+                content_hash=content_hash,
             )
             if existing is not None:
                 sources.append(
@@ -99,7 +99,12 @@ class IngestionService:
                     self._truncate(extracted.text),
                     source_ref,
             )
-            workspace.rebuild_projection(session, user_id, artifact_repository, artifact_service)
+            workspace.rebuild_projection(
+                session,
+                artifact_repository,
+                artifact_service,
+                user_id=user_id,
+            )
             session.flush()
             sources.append(
                 UploadedSource(

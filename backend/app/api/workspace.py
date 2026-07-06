@@ -65,7 +65,7 @@ def workspace_status(
     from app.repositories.artifact_repository import ArtifactRepository
 
     _workspace_services(scope)
-    artifacts = ArtifactRepository().list(session, scope.user_id)
+    artifacts = ArtifactRepository().list(session, user_id=scope.user_id)
     return WorkspaceStatusResponse(
         schema_version=1,
         language="zh-CN",
@@ -82,7 +82,7 @@ def list_artifacts(
     from app.repositories.artifact_repository import ArtifactRepository
 
     _workspace_services(scope)
-    artifacts = ArtifactRepository().list(session, scope.user_id)
+    artifacts = ArtifactRepository().list(session, user_id=scope.user_id)
     return ArtifactListResponse(artifacts=[_summary(artifact) for artifact in artifacts])
 
 
@@ -96,7 +96,11 @@ def preparation_tasks(
 
     _, artifact_service = _workspace_services(scope)
     repository = ArtifactRepository()
-    status = repository.get_by_relative_path(session, scope.user_id, REVIEW_STATUS_PATH)
+    status = repository.get_by_relative_path(
+        session,
+        user_id=scope.user_id,
+        relative_path=REVIEW_STATUS_PATH,
+    )
     if status is None:
         return PreparationTasksResponse(tasks=[])
     try:
@@ -132,7 +136,11 @@ def get_artifact(
     from app.repositories.artifact_repository import ArtifactRepository
 
     _, artifact_service = _workspace_services(scope)
-    artifact = ArtifactRepository().get(session, scope.user_id, artifact_id)
+    artifact = ArtifactRepository().get(
+        session,
+        user_id=scope.user_id,
+        artifact_id=artifact_id,
+    )
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
     body: str | None = None
@@ -157,7 +165,7 @@ def replace_artifact_body(
 
     workspace, artifact_service = _workspace_services(scope)
     repository = ArtifactRepository()
-    artifact = repository.get(session, scope.user_id, artifact_id)
+    artifact = repository.get(session, user_id=scope.user_id, artifact_id=artifact_id)
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
     try:
@@ -177,11 +185,11 @@ def replace_artifact_body(
         raise conflict_error("artifact_revision_conflict", str(exc)) from exc
     workspace.rebuild_projection(
         session,
-        scope.user_id,
         repository,
         artifact_service,
+        user_id=scope.user_id,
     )
-    updated = repository.get(session, scope.user_id, artifact_id)
+    updated = repository.get(session, user_id=scope.user_id, artifact_id=artifact_id)
     return _summary(updated)
 
 
@@ -197,7 +205,7 @@ def delete_artifact(
 
     workspace, artifact_service = _workspace_services(scope)
     repository = ArtifactRepository()
-    artifact = repository.get(session, scope.user_id, artifact_id)
+    artifact = repository.get(session, user_id=scope.user_id, artifact_id=artifact_id)
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
     index_service = IndexService()
@@ -219,9 +227,9 @@ def delete_artifact(
         raise bad_request("artifact_delete_failed", "Artifact could not be deleted.") from exc
     workspace.rebuild_projection(
         session,
-        scope.user_id,
         repository,
         artifact_service,
+        user_id=scope.user_id,
     )
     return ArtifactDeleteResponse(id=artifact_id, status="deleted")
 
@@ -238,11 +246,11 @@ def rebuild_projection(
     repository = ArtifactRepository()
     workspace.rebuild_projection(
         session,
-        scope.user_id,
         repository,
         artifact_service,
+        user_id=scope.user_id,
     )
-    artifacts = repository.list(session, scope.user_id)
+    artifacts = repository.list(session, user_id=scope.user_id)
     return WorkspaceStatusResponse(
         schema_version=1,
         language="zh-CN",
@@ -575,10 +583,10 @@ class _ScopedArtifactRepository:
         self.repository = ArtifactRepository()
 
     def get(self, session: Session, artifact_id: str):
-        return self.repository.get(session, self.user_id, artifact_id)
+        return self.repository.get(session, user_id=self.user_id, artifact_id=artifact_id)
 
     def list(self, session: Session):
-        return self.repository.list(session, self.user_id)
+        return self.repository.list(session, user_id=self.user_id)
 
 
 def _scoped_repository(user_id: int) -> _ScopedArtifactRepository:

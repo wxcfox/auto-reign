@@ -75,9 +75,16 @@ class WorkspaceService:
             raise UnsafeWorkspacePath(f"path escapes workspace root: {path}")
         return resolved.relative_to(self.root).as_posix()
 
-    def rebuild_projection(self, session: Session, user_id: int, repository, artifact_service) -> None:
+    def rebuild_projection(
+        self,
+        session: Session,
+        repository,
+        artifact_service,
+        *,
+        user_id: int,
+    ) -> None:
         existing_by_path = {
-            artifact.relative_path: artifact for artifact in repository.list(session, user_id)
+            artifact.relative_path: artifact for artifact in repository.list(session, user_id=user_id)
         }
         scanned_paths: set[str] = set()
 

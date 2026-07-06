@@ -1,3 +1,10 @@
+import inspect
+
+from app.db.session import session_scope
+from app.repositories.artifact_repository import ArtifactRepository
+from app.services.workspace_service import WorkspaceService
+
+
 def _register(client, username: str) -> str:
     return client.post(
         "/api/auth/register",
@@ -50,9 +57,39 @@ def test_users_can_create_same_learning_artifact_path_without_collision(
 
     assert first.status_code == 200
     assert second.status_code == 200
-    data_dir = client.app.state.settings.data_dir
-    assert (data_dir / "users" / "1" / "workspace" / "knowledge").exists()
-    assert (data_dir / "users" / "2" / "workspace" / "knowledge").exists()
+    first_artifact = _sse_result(first.text)["artifact"]
+    second_artifact = _sse_result(second.text)["artifact"]
+
+    assert first_artifact["relative_path"] == second_artifact["relative_path"]
+    assert first_artifact["id"] != second_artifact["id"]
+
+    repository = ArtifactRepository()
+    with session_scope(client.app.state.session_factory) as session:
+        alice_artifact = repository.get(
+            session,
+            user_id=1,
+            artifact_id=str(first_artifact["id"]),
+        )
+        bob_artifact = repository.get(
+            session,
+            user_id=2,
+            artifact_id=str(second_artifact["id"]),
+        )
+        assert alice_artifact is not None
+        assert bob_artifact is not None
+        assert alice_artifact.user_id == 1
+        assert bob_artifact.user_id == 2
+        assert alice_artifact.relative_path == bob_artifact.relative_path
+        assert repository.get(
+            session,
+            user_id=1,
+            artifact_id=str(second_artifact["id"]),
+        ) is None
+        assert repository.get(
+            session,
+            user_id=2,
+            artifact_id=str(first_artifact["id"]),
+        ) is None
 
 
 def test_user_cannot_read_other_users_artifact(client, monkeypatch) -> None:
@@ -73,3 +110,22 @@ def test_user_cannot_read_other_users_artifact(client, monkeypatch) -> None:
     forbidden = client.get(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(bob))
 
     assert forbidden.status_code == 404
+
+
+def test_rebuild_projection_requires_keyword_only_user_id() -> None:
+    signature = inspect.signature(WorkspaceService.rebuild_projection)
+
+    assert signature.parameters["user_id"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_artifact_repository_requires_keyword_only_user_boundaries() -> None:
+    methods = [
+        ArtifactRepository.get,
+        ArtifactRepository.get_by_relative_path,
+        ArtifactRepository.get_source_by_content_hash,
+        ArtifactRepository.list,
+    ]
+
+    for method in methods:
+        signature = inspect.signature(method)
+        assert signature.parameters["user_id"].kind is inspect.Parameter.KEYWORD_ONLY

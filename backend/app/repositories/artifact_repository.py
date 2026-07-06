@@ -10,7 +10,7 @@ from app.services.artifact_metadata import artifact_metadata_json, artifact_stat
 
 
 class ArtifactRepository:
-    def get(self, session: Session, user_id: int, artifact_id: str) -> models.Artifact | None:
+    def get(self, session: Session, *, user_id: int, artifact_id: str) -> models.Artifact | None:
         return session.scalar(
             select(models.Artifact).where(
                 models.Artifact.user_id == user_id,
@@ -21,6 +21,7 @@ class ArtifactRepository:
     def get_by_relative_path(
         self,
         session: Session,
+        *,
         user_id: int,
         relative_path: str,
     ) -> models.Artifact | None:
@@ -34,6 +35,7 @@ class ArtifactRepository:
     def get_source_by_content_hash(
         self,
         session: Session,
+        *,
         user_id: int,
         content_hash: str,
     ) -> models.Artifact | None:
@@ -45,7 +47,7 @@ class ArtifactRepository:
             )
         )
 
-    def list(self, session: Session, user_id: int) -> list[models.Artifact]:
+    def list(self, session: Session, *, user_id: int) -> list[models.Artifact]:
         return list(
             session.scalars(
                 select(models.Artifact)
@@ -80,9 +82,13 @@ class ArtifactRepository:
         created_at: datetime | None = None,
         updated_at: datetime | None = None,
     ) -> models.Artifact:
-        artifact = self.get(session, user_id, artifact_id)
+        artifact = self.get(session, user_id=user_id, artifact_id=artifact_id)
         if artifact is None:
-            artifact = self.get_by_relative_path(session, user_id, relative_path)
+            artifact = self.get_by_relative_path(
+                session,
+                user_id=user_id,
+                relative_path=relative_path,
+            )
         if artifact is None:
             artifact = models.Artifact(
                 id=artifact_id,

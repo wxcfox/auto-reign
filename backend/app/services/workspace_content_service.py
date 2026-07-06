@@ -115,15 +115,19 @@ class WorkspaceContentService:
         with session_scope(self.session_factory) as session:
             self.workspace_service.rebuild_projection(
                 session,
-                self.user_id,
                 self.repository,
                 self.artifact_service,
+                user_id=self.user_id,
             )
-            source_artifact = self.repository.get(session, self.user_id, source.artifact_id)
+            source_artifact = self.repository.get(
+                session,
+                user_id=self.user_id,
+                artifact_id=source.artifact_id,
+            )
             knowledge_artifact = self.repository.get_by_relative_path(
                 session,
-                self.user_id,
-                knowledge_path,
+                user_id=self.user_id,
+                relative_path=knowledge_path,
             )
             if source_artifact is None or knowledge_artifact is None:
                 raise WorkspaceContentProjectionError(
@@ -182,24 +186,24 @@ class WorkspaceContentService:
         with session_scope(self.session_factory) as session:
             self.workspace_service.rebuild_projection(
                 session,
-                self.user_id,
                 self.repository,
                 self.artifact_service,
+                user_id=self.user_id,
             )
             raw_artifact = self.repository.get(
                 session,
-                self.user_id,
-                raw_document.front_matter.id,
+                user_id=self.user_id,
+                artifact_id=raw_document.front_matter.id,
             )
             high_frequency_artifact = self.repository.get_by_relative_path(
                 session,
-                self.user_id,
-                high_frequency_path,
+                user_id=self.user_id,
+                relative_path=high_frequency_path,
             )
             status_artifact = self.repository.get_by_relative_path(
                 session,
-                self.user_id,
-                status_path,
+                user_id=self.user_id,
+                relative_path=status_path,
             )
             if raw_artifact is None or high_frequency_artifact is None or status_artifact is None:
                 raise WorkspaceContentProjectionError(
