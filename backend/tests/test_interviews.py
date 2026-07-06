@@ -1,8 +1,12 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.db import models
 from app.repositories.vector_store import VectorStoreUnavailable
+from app.services.artifact_service import ArtifactService
 from app.services.retrieval_query_planner import RetrievalRequest
+from app.services.workspace_service import WorkspaceService
 
 
 DEFAULT_QWEN_CONFIG = {
@@ -29,6 +33,28 @@ CONFIG = {
     "chat_model": "qwen3.7-plus",
     "target_rounds": 3,
 }
+
+
+def _register(client: TestClient, username: str = "alice") -> dict[str, str]:
+    response = client.post(
+        "/api/auth/register",
+        json={"username": username, "password": "correct horse battery staple"},
+    )
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture(autouse=True)
+def auth_headers(client: TestClient) -> dict[str, str]:
+    headers = _register(client)
+    client.headers.update(headers)
+    return headers
+
+
+def _artifact_service_for_user(user_id: int = 1) -> ArtifactService:
+    workspace = WorkspaceService(get_settings().data_dir / "users" / str(user_id) / "workspace")
+    workspace.initialize()
+    return ArtifactService(workspace)
 
 
 def test_get_last_config_defaults_to_qwen(client: TestClient) -> None:
@@ -194,7 +220,7 @@ def test_create_session_reads_workspace_state_before_question_generation(
 ) -> None:
     captured_contexts: list[list[str]] = []
 
-    artifacts = client.app.state.artifact_service
+    artifacts = _artifact_service_for_user()
     artifacts.create_markdown(
         "profile/candidate.md",
         kind="candidate_profile",
@@ -264,7 +290,7 @@ def test_create_session_auto_indexes_pending_workspace_artifacts(
     client: TestClient, monkeypatch
 ) -> None:
     class UploadNoopIndexService:
-        def rebuild_index(self, _session_factory, _workspace, _repository) -> str:
+        def rebuild_index(self, *_args, **_kwargs) -> str:
             return "not-built"
 
     monkeypatch.setattr("app.api.workspace.IndexService", UploadNoopIndexService)
@@ -379,6 +405,39 @@ def test_workspace_retrieval_service_uses_query_plan(client: TestClient) -> None
     assert metadata_filter.must[0].match.any == ["knowledge"]
 
 
+def test_scoped_workspace_retrieval_without_active_collection_returns_empty(
+    client: TestClient,
+) -> None:
+    class FailingStore:
+        def has_searchable_content(self, collection_name: str) -> bool:
+            raise AssertionError(f"should not search default collection {collection_name}")
+
+    from app.services.workspace_retrieval_service import WorkspaceRetrievalService
+
+    with client.app.state.session_factory() as session:
+        user = session.get(models.User, 1)
+        assert user is not None
+        user.settings_json = {**(user.settings_json or {}), "active_collection": ""}
+        session.commit()
+
+    with client.app.state.session_factory() as session:
+        service = WorkspaceRetrievalService(
+            vector_store=FailingStore(),
+            user_id=1,
+        )
+        hits = service.search(
+            session,
+            RetrievalRequest(
+                purpose="question_generation",
+                query="Redis",
+                mode="comprehensive",
+                limit=2,
+            ),
+        )
+
+    assert hits == []
+
+
 def test_natural_language_target_context_drives_workspace_retrieval(
     client: TestClient,
     monkeypatch,
@@ -472,7 +531,7 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     captured_contexts: list[list[str]] = []
     captured_queries: list[str] = []
     captured_purposes: list[str] = []
-    artifacts = client.app.state.artifact_service
+    artifacts = _artifact_service_for_user()
     artifacts.create_markdown(
         "profile/candidate.md",
         kind="candidate_profile",
@@ -687,7 +746,7 @@ def test_follow_up_feedback_keeps_structured_fields_separate(
     assert turn["follow_up_should_write_high_frequency"] is True
     assert turn["follow_up_tested_points"] == ["follow-up fallback"]
 
-    workspace = get_settings().workspace_dir
+    workspace = get_settings().data_dir / "users" / "1" / "workspace"
     practice_files = list((workspace / "practice").glob("**/*.md"))
     assert len(practice_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")
@@ -765,7 +824,7 @@ def test_project_deep_dive_includes_project_artifacts_before_question_generation
     monkeypatch,
 ) -> None:
     captured_contexts: list[list[str]] = []
-    artifacts = client.app.state.artifact_service
+    artifacts = _artifact_service_for_user()
     artifacts.create_markdown(
         "projects/order-cache.md",
         kind="project",
@@ -984,3 +1043,28 @@ def test_answers_cannot_be_submitted_twice(client: TestClient) -> None:
     )
     assert duplicate_follow_up.status_code == 409
     assert duplicate_follow_up.json()["detail"]["code"] == "follow_up_already_submitted"
+
+
+def test_user_cannot_read_other_users_interview(client: TestClient) -> None:
+    alice = dict(client.headers)
+    created = client.post("/api/interview-sessions", json=CONFIG)
+    assert created.status_code == 200
+    session_id = created.json()["session"]["id"]
+
+    bob = _register(client, "bob")
+    client.headers.update(bob)
+
+    detail = client.get(f"/api/interview-sessions/{session_id}")
+    answer = client.post(
+        f"/api/interview-sessions/{session_id}/answer",
+        json={"answer": "I should not be able to answer this."},
+    )
+    finish = client.post(f"/api/interview-sessions/{session_id}/finish")
+
+    assert detail.status_code == 404
+    assert answer.status_code == 404
+    assert finish.status_code == 404
+
+    client.headers.update(alice)
+    own_detail = client.get(f"/api/interview-sessions/{session_id}")
+    assert own_detail.status_code == 200

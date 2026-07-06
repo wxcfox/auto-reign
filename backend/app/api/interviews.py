@@ -27,17 +27,25 @@ router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
 
 
-def _ensure_index_current_best_effort(request: Request) -> None:
+def _ensure_index_current_best_effort(
+    request: Request,
+    scope: UserScope,
+    session: Session,
+) -> None:
     from app.repositories.artifact_repository import ArtifactRepository
     from app.repositories.vector_store import VectorStoreError
     from app.services.index_service import IndexService
 
+    workspace, _ = _workspace_services(scope)
     try:
         IndexService().ensure_current(
             request.app.state.session_factory,
-            request.app.state.workspace_service,
+            workspace,
             ArtifactRepository(),
+            user_id=scope.user_id,
+            qdrant_prefix=scope.qdrant_prefix,
         )
+        session.expire_all()
     except VectorStoreError as exc:
         logger.info("Workspace index refresh unavailable for interview flow: %s", exc)
 
@@ -117,12 +125,23 @@ async def _next_question_intent(request: Request) -> str:
     raise HTTPException(status_code=422, detail="Invalid next question request body.")
 
 
-def _interview_service(request: Request) -> Any:
+def _workspace_services(scope: UserScope) -> tuple[Any, Any]:
+    from app.services.artifact_service import ArtifactService
+    from app.services.workspace_service import WorkspaceService
+
+    workspace = WorkspaceService(scope.workspace_root)
+    workspace.initialize()
+    return workspace, ArtifactService(workspace)
+
+
+def _interview_service(scope: UserScope) -> Any:
     from app.services.interview_service import InterviewService
 
+    workspace, artifact_service = _workspace_services(scope)
     return InterviewService(
-        artifact_service=request.app.state.artifact_service,
-        workspace_service=request.app.state.workspace_service,
+        user_id=scope.user_id,
+        artifact_service=artifact_service,
+        workspace_service=workspace,
     )
 
 
@@ -131,9 +150,7 @@ def get_last_config(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> InterviewConfigResponse:
-    from app.services.interview_service import InterviewService
-
-    config = InterviewService().get_last_config(session)
+    config = _interview_service(scope).get_last_config(session)
     return InterviewConfigResponse.model_validate(config)
 
 
@@ -143,9 +160,7 @@ def save_last_config(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> InterviewConfigResponse:
-    from app.services.interview_service import InterviewService
-
-    config = InterviewService().save_last_config(session, config_in)
+    config = _interview_service(scope).save_last_config(session, config_in)
     return InterviewConfigResponse.model_validate(config)
 
 
@@ -156,8 +171,8 @@ def create_session(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> InterviewSessionCreatedResponse:
-    _ensure_index_current_best_effort(request)
-    interview_session, turn = _interview_service(request).create_session(session, config_in)
+    _ensure_index_current_best_effort(request, scope, session)
+    interview_session, turn = _interview_service(scope).create_session(session, config_in)
     return InterviewSessionCreatedResponse(
         session=interview_session,
         turn=turn,
@@ -171,8 +186,8 @@ def create_session_stream(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
-    _ensure_index_current_best_effort(request)
-    events = _interview_service(request).stream_create_session(session, config_in)
+    _ensure_index_current_best_effort(request, scope, session)
+    events = _interview_service(scope).stream_create_session(session, config_in)
     return _streaming_response(events, _session_created_payload, session)
 
 
@@ -182,9 +197,7 @@ def get_session_detail(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> InterviewSessionDetailResponse:
-    from app.services.interview_service import InterviewService
-
-    detail = InterviewService().get_session_detail(session, session_id)
+    detail = _interview_service(scope).get_session_detail(session, session_id)
     if detail is None:
         raise not_found("session_not_found", "Interview session not found.")
     interview_session, config, turns = detail
@@ -199,7 +212,7 @@ def submit_answer(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> AnswerFeedbackResponse:
-    feedback = _interview_service(request).submit_answer(session, session_id, answer.answer)
+    feedback = _interview_service(scope).submit_answer(session, session_id, answer.answer)
     return AnswerFeedbackResponse.model_validate(feedback.model_dump())
 
 
@@ -211,7 +224,7 @@ def submit_answer_stream(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
-    events = _interview_service(request).stream_submit_answer(session, session_id, answer.answer)
+    events = _interview_service(scope).stream_submit_answer(session, session_id, answer.answer)
     return _streaming_response(events, _answer_feedback_payload, session)
 
 
@@ -226,7 +239,7 @@ def submit_follow_up_answer(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> FollowUpFeedbackResponse:
-    feedback = _interview_service(request).submit_follow_up_answer(
+    feedback = _interview_service(scope).submit_follow_up_answer(
         session, session_id, answer.answer
     )
     return FollowUpFeedbackResponse.model_validate(feedback.model_dump())
@@ -240,7 +253,7 @@ def submit_follow_up_answer_stream(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
-    events = _interview_service(request).stream_submit_follow_up_answer(
+    events = _interview_service(scope).stream_submit_follow_up_answer(
         session, session_id, answer.answer
     )
     return _streaming_response(events, _follow_up_feedback_payload, session)
@@ -253,8 +266,8 @@ async def next_question(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> InterviewSessionCreatedResponse:
-    _ensure_index_current_best_effort(request)
-    interview_session, turn = _interview_service(request).next_question(
+    _ensure_index_current_best_effort(request, scope, session)
+    interview_session, turn = _interview_service(scope).next_question(
         session,
         session_id,
         intent=await _next_question_intent(request),
@@ -269,8 +282,8 @@ async def next_question_stream(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
-    _ensure_index_current_best_effort(request)
-    events = _interview_service(request).stream_next_question(
+    _ensure_index_current_best_effort(request, scope, session)
+    events = _interview_service(scope).stream_next_question(
         session,
         session_id,
         intent=await _next_question_intent(request),
@@ -285,7 +298,7 @@ def finish_session(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> dict[str, object]:
-    interview_session, report = _interview_service(request).finish_session(session, session_id)
+    interview_session, report = _interview_service(scope).finish_session(session, session_id)
     return {
         "session": InterviewSessionDetailResponse(
             session=interview_session,
@@ -303,5 +316,5 @@ def finish_session_stream(
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
-    events = _interview_service(request).stream_finish_session(session, session_id)
+    events = _interview_service(scope).stream_finish_session(session, session_id)
     return _streaming_response(events, _finish_session_payload, session)
