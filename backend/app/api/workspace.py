@@ -442,19 +442,23 @@ def _persist_learning_conversation(
     response: LearningNoteResponse,
 ) -> str:
     from app.db import models
+    from app.repositories.conversation_repository import ConversationRepository
 
     with session_scope(request.app.state.session_factory) as session:
+        repository = ConversationRepository()
         conversation = None
         if payload.conversation_id:
-            conversation = _get_learning_conversation(
+            conversation = repository.get(
                 session,
-                scope.user_id,
-                payload.conversation_id,
+                user_id=scope.user_id,
+                conversation_id=payload.conversation_id,
+                kind="learning",
             )
             if conversation is None:
                 raise not_found("learning_session_not_found", "Learning conversation not found.")
         if conversation is None:
-            conversation = models.Conversation(
+            conversation = repository.create(
+                session,
                 user_id=scope.user_id,
                 kind="learning",
                 title=(response.summary.title.strip() or "学习记录")[:255],
@@ -466,38 +470,40 @@ def _persist_learning_conversation(
                 },
                 summary_json={},
             )
-            session.add(conversation)
-            session.flush()
 
         assistant_markdown = _learning_assistant_message(response)
-        session.add(
-            models.Message(
-                user_id=scope.user_id,
-                conversation_id=conversation.id,
-                role="user",
-                message_type="learning_input",
-                content=note,
-                metadata_json={
-                    "source_artifact_id": response.source.artifact_id,
-                    "source_relative_path": response.source.relative_path,
-                },
-            )
+        repository.add_message(
+            session,
+            user_id=scope.user_id,
+            conversation_id=conversation.id,
+            role="user",
+            message_type="learning_input",
+            content=note,
+            metadata_json={
+                "source_artifact_id": response.source.artifact_id,
+                "source_relative_path": response.source.relative_path,
+            },
         )
-        session.add(
-            models.Message(
-                user_id=scope.user_id,
-                conversation_id=conversation.id,
-                role="assistant",
-                message_type="learning_summary",
-                content=assistant_markdown,
-                metadata_json={
-                    "artifact_id": response.artifact.id,
-                    "artifact_path": response.artifact.relative_path,
-                    "summary": response.summary.model_dump(mode="json"),
-                },
-            )
+        repository.add_message(
+            session,
+            user_id=scope.user_id,
+            conversation_id=conversation.id,
+            role="assistant",
+            message_type="learning_summary",
+            content=assistant_markdown,
+            metadata_json={
+                "artifact_id": response.artifact.id,
+                "artifact_path": response.artifact.relative_path,
+                "summary": response.summary.model_dump(mode="json"),
+            },
         )
-        conversation.title = (response.summary.title.strip() or conversation.title)[:255]
+        title = (response.summary.title.strip() or conversation.title)[:255]
+        conversation.title = title
+        conversation.summary_json = {
+            **(conversation.summary_json or {}),
+            "title": title,
+            "last_message": assistant_markdown,
+        }
         conversation.updated_at = models._now()
         session.flush()
         return conversation.id
@@ -508,24 +514,17 @@ def _require_learning_conversation(
     scope: UserScope,
     conversation_id: str,
 ) -> None:
+    from app.repositories.conversation_repository import ConversationRepository
+
     with session_scope(request.app.state.session_factory) as session:
-        if _get_learning_conversation(session, scope.user_id, conversation_id) is None:
-            raise not_found("learning_session_not_found", "Learning conversation not found.")
-
-
-def _get_learning_conversation(session: Session, user_id: int, conversation_id: str):
-    from sqlalchemy import select
-
-    from app.db import models
-
-    return session.scalar(
-        select(models.Conversation).where(
-            models.Conversation.user_id == user_id,
-            models.Conversation.id == conversation_id,
-            models.Conversation.kind == "learning",
-            models.Conversation.deleted_at.is_(None),
+        conversation = ConversationRepository().get(
+            session,
+            user_id=scope.user_id,
+            conversation_id=conversation_id,
+            kind="learning",
         )
-    )
+        if conversation is None:
+            raise not_found("learning_session_not_found", "Learning conversation not found.")
 
 
 def _learning_assistant_message(response: LearningNoteResponse) -> str:

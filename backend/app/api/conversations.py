@@ -26,7 +26,10 @@ def list_conversations(
     from app.services.conversation_service import ConversationService
 
     return ConversationListResponse(
-        conversations=ConversationService().list_conversations(session)
+        conversations=ConversationService().list_conversations(
+            session,
+            user_id=scope.user_id,
+        )
     )
 
 
@@ -38,7 +41,11 @@ def get_conversation(
 ) -> ConversationDetailResponse:
     from app.services.conversation_service import ConversationService
 
-    detail = ConversationService().get_conversation(session, conversation_id)
+    detail = ConversationService().get_conversation(
+        session,
+        conversation_id,
+        user_id=scope.user_id,
+    )
     if detail is None:
         raise not_found("conversation_not_found", "Conversation not found.")
     return detail
@@ -53,7 +60,12 @@ def rename_conversation(
 ) -> ConversationHistoryItemResponse:
     from app.services.conversation_service import ConversationService
 
-    renamed = ConversationService().rename_conversation(session, conversation_id, payload.title)
+    renamed = ConversationService().rename_conversation(
+        session,
+        conversation_id,
+        payload.title,
+        user_id=scope.user_id,
+    )
     if renamed is None:
         raise not_found("conversation_not_found", "Conversation not found.")
     return renamed
@@ -67,7 +79,11 @@ def delete_conversation(
 ) -> ConversationDeleteResponse:
     from app.services.conversation_service import ConversationService
 
-    deleted = ConversationService().delete_conversation(session, conversation_id)
+    deleted = ConversationService().delete_conversation(
+        session,
+        conversation_id,
+        user_id=scope.user_id,
+    )
     if not deleted:
         raise not_found("conversation_not_found", "Conversation not found.")
     return ConversationDeleteResponse(id=conversation_id, status="deleted")
