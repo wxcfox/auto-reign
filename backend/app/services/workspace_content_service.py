@@ -64,11 +64,13 @@ class WorkspaceContentService:
     def __init__(
         self,
         *,
+        user_id: int,
         workspace_service: WorkspaceService,
         artifact_service: ArtifactService,
         session_factory: sessionmaker[Session],
         repository: ArtifactRepository | None = None,
     ) -> None:
+        self.user_id = user_id
         self.workspace_service = workspace_service
         self.artifact_service = artifact_service
         self.session_factory = session_factory
@@ -113,11 +115,16 @@ class WorkspaceContentService:
         with session_scope(self.session_factory) as session:
             self.workspace_service.rebuild_projection(
                 session,
+                self.user_id,
                 self.repository,
                 self.artifact_service,
             )
-            source_artifact = self.repository.get(session, source.artifact_id)
-            knowledge_artifact = self.repository.get_by_relative_path(session, knowledge_path)
+            source_artifact = self.repository.get(session, self.user_id, source.artifact_id)
+            knowledge_artifact = self.repository.get_by_relative_path(
+                session,
+                self.user_id,
+                knowledge_path,
+            )
             if source_artifact is None or knowledge_artifact is None:
                 raise WorkspaceContentProjectionError(
                     "learning_note_projection_failed",
@@ -175,14 +182,25 @@ class WorkspaceContentService:
         with session_scope(self.session_factory) as session:
             self.workspace_service.rebuild_projection(
                 session,
+                self.user_id,
                 self.repository,
                 self.artifact_service,
             )
-            raw_artifact = self.repository.get(session, raw_document.front_matter.id)
-            high_frequency_artifact = self.repository.get_by_relative_path(
-                session, high_frequency_path
+            raw_artifact = self.repository.get(
+                session,
+                self.user_id,
+                raw_document.front_matter.id,
             )
-            status_artifact = self.repository.get_by_relative_path(session, status_path)
+            high_frequency_artifact = self.repository.get_by_relative_path(
+                session,
+                self.user_id,
+                high_frequency_path,
+            )
+            status_artifact = self.repository.get_by_relative_path(
+                session,
+                self.user_id,
+                status_path,
+            )
             if raw_artifact is None or high_frequency_artifact is None or status_artifact is None:
                 raise WorkspaceContentProjectionError(
                     "real_interview_projection_failed",

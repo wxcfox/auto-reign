@@ -3,12 +3,10 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.artifact_service import ArtifactService
 from app.services.extraction_service import ExtractionService
@@ -53,6 +51,7 @@ class IngestionService:
     def ingest_uploads(
         self,
         session: Session,
+        user_id: int,
         workspace: WorkspaceService,
         artifact_service: ArtifactService,
         artifact_repository: ArtifactRepository,
@@ -62,7 +61,11 @@ class IngestionService:
         for upload in uploads:
             self._validate_size(workspace, upload)
             content_hash = hashlib.sha256(upload.content).hexdigest()
-            existing = artifact_repository.get_source_by_content_hash(session, content_hash)
+            existing = artifact_repository.get_source_by_content_hash(
+                session,
+                user_id,
+                content_hash,
+            )
             if existing is not None:
                 sources.append(
                     UploadedSource(
@@ -96,18 +99,7 @@ class IngestionService:
                     self._truncate(extracted.text),
                     source_ref,
             )
-            workspace.rebuild_projection(session, artifact_repository, artifact_service)
-            session.add(
-                models.ProcessingJob(
-                    operation="ingest",
-                    artifact_id=source.artifact_id,
-                    status="completed",
-                    attempts=1,
-                    idempotency_key=f"ingest:{source.artifact_id}:{source.content_hash}",
-                    started_at=datetime.now(UTC),
-                    completed_at=datetime.now(UTC),
-                )
-            )
+            workspace.rebuild_projection(session, user_id, artifact_repository, artifact_service)
             session.flush()
             sources.append(
                 UploadedSource(

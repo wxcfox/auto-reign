@@ -8,6 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.schemas.workspace import ArtifactFrontMatter, SourceMeta
+from app.services.artifact_metadata import (
+    artifact_edited_by,
+    artifact_evidence_refs,
+    artifact_index_status,
+    artifact_language,
+    artifact_origin,
+    artifact_recovery_reason,
+    artifact_recovery_required,
+    artifact_source_refs,
+)
 from app.services.workspace_paths import (
     CANDIDATE_PROFILE_PATH,
     EXTRACTED_SOURCE_DIR,
@@ -65,8 +75,10 @@ class WorkspaceService:
             raise UnsafeWorkspacePath(f"path escapes workspace root: {path}")
         return resolved.relative_to(self.root).as_posix()
 
-    def rebuild_projection(self, session: Session, repository, artifact_service) -> None:
-        existing_by_path = {artifact.relative_path: artifact for artifact in repository.list(session)}
+    def rebuild_projection(self, session: Session, user_id: int, repository, artifact_service) -> None:
+        existing_by_path = {
+            artifact.relative_path: artifact for artifact in repository.list(session, user_id)
+        }
         scanned_paths: set[str] = set()
 
         for source_dir in (self.root / relative for relative in SOURCE_SIDE_CAR_DIRECTORIES):
@@ -78,6 +90,7 @@ class WorkspaceService:
                 scanned_paths.add(source.relative_path)
                 repository.upsert(
                     session,
+                    user_id=user_id,
                     artifact_id=source.artifact_id,
                     kind="source",
                     relative_path=source.relative_path,
@@ -127,6 +140,7 @@ class WorkspaceService:
             )
             repository.upsert(
                 session,
+                user_id=user_id,
                 artifact_id=document.front_matter.id,
                 kind=document.front_matter.kind,
                 relative_path=relative_path,
@@ -185,7 +199,7 @@ class WorkspaceService:
         if existing is None:
             return "pending"
         if existing.content_hash == content_hash:
-            return existing.index_status
+            return artifact_index_status(existing)
         return "stale"
 
     def _front_matter_from_artifact(
@@ -196,16 +210,16 @@ class WorkspaceService:
         return ArtifactFrontMatter(
             id=artifact.id,
             kind=artifact.kind,  # type: ignore[arg-type]
-            language=artifact.language,
+            language=artifact_language(artifact),
             revision=artifact.revision,
             created_at=artifact.created_at,
             updated_at=artifact.updated_at,
-            source_refs=artifact.source_refs,
-            evidence_refs=artifact.evidence_refs,
-            origin=artifact.origin,  # type: ignore[arg-type]
-            edited_by=artifact.edited_by,  # type: ignore[arg-type]
-            recovery_required=artifact.recovery_required,
-            recovery_reason=artifact.recovery_reason,
+            source_refs=artifact_source_refs(artifact),
+            evidence_refs=artifact_evidence_refs(artifact),
+            origin=artifact_origin(artifact),  # type: ignore[arg-type]
+            edited_by=artifact_edited_by(artifact),  # type: ignore[arg-type]
+            recovery_required=artifact_recovery_required(artifact),
+            recovery_reason=artifact_recovery_reason(artifact),
         )
 
     def _sha256(self, content: bytes) -> str:
