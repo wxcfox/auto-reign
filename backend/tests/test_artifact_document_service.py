@@ -10,19 +10,28 @@ from app.services.artifact_document_service import (
 
 
 def artifact(**overrides):
-    values = {
-        "id": "artifact-1",
-        "kind": "knowledge",
-        "relative_path": "knowledge/redis.md",
-        "revision": 3,
+    metadata_json = {
         "source_refs": ["source:abc"],
         "evidence_refs": ["practice:def"],
         "language": "zh-CN",
         "origin": "human",
         "edited_by": "user",
+    }
+    values = {
+        "id": "artifact-1",
+        "kind": "knowledge",
+        "relative_path": "knowledge/redis.md",
+        "revision": 3,
+        "metadata_json": metadata_json,
         "created_at": datetime(2026, 6, 25, tzinfo=UTC),
         "updated_at": datetime(2026, 6, 25, tzinfo=UTC),
     }
+    if "source_refs" in overrides:
+        metadata_json["source_refs"] = overrides.pop("source_refs")
+    if "evidence_refs" in overrides:
+        metadata_json["evidence_refs"] = overrides.pop("evidence_refs")
+    if "language" in overrides:
+        metadata_json["language"] = overrides.pop("language")
     values.update(overrides)
     return SimpleNamespace(**values)
 

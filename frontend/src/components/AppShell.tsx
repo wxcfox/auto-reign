@@ -15,6 +15,7 @@ import {
   Database,
   LayoutDashboard,
   Languages,
+  LogOut,
   MessageSquareText,
   MoreHorizontal,
   Moon,
@@ -31,6 +32,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
+import { clearAuthToken } from "@/lib/auth";
 import { CONVERSATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import type { ConversationHistoryItem } from "@/lib/types";
 
@@ -127,9 +129,14 @@ export function AppShell({ children }: AppShellProps) {
   const secondaryNavActive = secondaryNavItems.some((item) =>
     item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href),
   );
+  const isAuthPage = currentPath === "/login" || currentPath === "/register";
   const [moreOpen, setMoreOpen] = useState(secondaryNavActive);
 
   const refreshConversations = useCallback(async () => {
+    if (isAuthPage) {
+      setConversations([]);
+      return;
+    }
     const refreshId = conversationRefreshId.current + 1;
     conversationRefreshId.current = refreshId;
     try {
@@ -142,10 +149,17 @@ export function AppShell({ children }: AppShellProps) {
         setConversations([]);
       }
     }
-  }, []);
+  }, [isAuthPage]);
 
   useEffect(() => {
     mountedRef.current = true;
+
+    if (isAuthPage) {
+      setConversations([]);
+      return () => {
+        mountedRef.current = false;
+      };
+    }
 
     void refreshConversations();
     const handleConversationsChanged = () => {
@@ -157,7 +171,7 @@ export function AppShell({ children }: AppShellProps) {
       mountedRef.current = false;
       window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
     };
-  }, [refreshConversations]);
+  }, [isAuthPage, refreshConversations]);
 
   useEffect(() => {
     if (historyMenuKey === null) {
@@ -252,6 +266,16 @@ export function AppShell({ children }: AppShellProps) {
     } finally {
       setHistoryActionPendingKey(null);
     }
+  }
+
+  function handleLogout() {
+    clearAuthToken();
+    setSettingsOpen(false);
+    router.replace("/login");
+  }
+
+  if (isAuthPage) {
+    return <>{children}</>;
   }
 
   return (
@@ -417,6 +441,15 @@ export function AppShell({ children }: AppShellProps) {
               >
                 <ThemeIcon size={17} aria-hidden="true" />
                 <span>{darkMode ? t("app.light_mode") : t("app.dark_mode")}</span>
+              </button>
+              <button
+                aria-label={t("app.logout")}
+                className="sidebar-settings-action"
+                onClick={handleLogout}
+                type="button"
+              >
+                <LogOut size={17} aria-hidden="true" />
+                <span>{t("app.logout")}</span>
               </button>
             </div>
           ) : null}

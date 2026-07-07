@@ -14,7 +14,13 @@ from app.db import models
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.vector_store import VectorStoreError
-from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
+from app.services.artifact_metadata import (
+    artifact_index_status,
+    artifact_media_type,
+    artifact_processing_status,
+    artifact_recovery_required,
+    with_index_status,
+)
 from app.services.artifact_document_service import ArtifactDocumentBuilder, ArtifactTextSplitter
 from app.services.artifact_service import ArtifactService, InvalidFrontMatter
 from app.services.workspace_vector_store import WorkspaceVectorStore, get_workspace_vector_store
@@ -54,12 +60,12 @@ class IndexService:
         try:
             build = self._build_documents_for_artifact(artifact, workspace)
         except (OSError, UnicodeError, HTTPException, InvalidFrontMatter, RuntimeError):
-            artifact.index_status = "stale"
+            artifact.status_json = with_index_status(artifact, "stale")
             session.flush()
             return artifact
 
         if build.status == "stale":
-            artifact.index_status = "stale"
+            artifact.status_json = with_index_status(artifact, "stale")
             session.flush()
             return artifact
         try:
@@ -68,9 +74,9 @@ class IndexService:
             self.vector_store.delete_artifact_chunks(target_collection, artifact.id)
             if build.documents:
                 self.vector_store.upsert_documents(target_collection, build.documents)
-            artifact.index_status = "completed"
+            artifact.status_json = with_index_status(artifact, "completed")
         except VectorStoreError:
-            artifact.index_status = "stale"
+            artifact.status_json = with_index_status(artifact, "stale")
         session.flush()
         return artifact
 
@@ -80,14 +86,16 @@ class IndexService:
         workspace: WorkspaceService,
         artifact_repository: ArtifactRepository,
         *,
-        settings_repository: WorkspaceSettingsRepository | None = None,
+        user_id: int,
+        qdrant_prefix: str,
     ) -> str:
         with _REBUILD_LOCK:
             return self._rebuild_index_unlocked(
                 session_factory,
                 workspace,
                 artifact_repository,
-                settings_repository=settings_repository,
+                user_id=user_id,
+                qdrant_prefix=qdrant_prefix,
             )
 
     def ensure_current(
@@ -96,24 +104,25 @@ class IndexService:
         workspace: WorkspaceService,
         artifact_repository: ArtifactRepository,
         *,
-        settings_repository: WorkspaceSettingsRepository | None = None,
+        user_id: int,
+        qdrant_prefix: str,
     ) -> str:
-        settings_repository = settings_repository or WorkspaceSettingsRepository()
         with _REBUILD_LOCK:
             with session_factory() as session:
-                artifacts = artifact_repository.list(session)
-                settings = settings_repository.get_or_create(session)
+                artifacts = artifact_repository.list(session, user_id=user_id)
+                active_collection = self._active_collection(session, user_id, qdrant_prefix)
                 if not artifacts:
-                    return settings.active_collection
-                if settings.active_collection and all(
-                    artifact.index_status == "completed" for artifact in artifacts
+                    return active_collection
+                if active_collection and all(
+                    artifact_index_status(artifact) == "completed" for artifact in artifacts
                 ):
-                    return settings.active_collection
+                    return active_collection
             return self._rebuild_index_unlocked(
                 session_factory,
                 workspace,
                 artifact_repository,
-                settings_repository=settings_repository,
+                user_id=user_id,
+                qdrant_prefix=qdrant_prefix,
             )
 
     def _rebuild_index_unlocked(
@@ -122,18 +131,17 @@ class IndexService:
         workspace: WorkspaceService,
         artifact_repository: ArtifactRepository,
         *,
-        settings_repository: WorkspaceSettingsRepository | None = None,
+        user_id: int,
+        qdrant_prefix: str,
     ) -> str:
-        settings_repository = settings_repository or WorkspaceSettingsRepository()
-        new_collection = f"{self.settings.qdrant_collection}__{time.time_ns()}"
+        new_collection = f"{qdrant_prefix}__{time.time_ns()}"
         completed_ids: list[str] = []
         stale_ids: list[str] = []
         old_collection = ""
         try:
             with session_factory() as session:
-                settings = settings_repository.get_or_create(session)
-                old_collection = settings.active_collection
-                artifacts = artifact_repository.list(session)
+                old_collection = self._active_collection(session, user_id, qdrant_prefix)
+                artifacts = artifact_repository.list(session, user_id=user_id)
                 for artifact in artifacts:
                     try:
                         build = self._build_documents_for_artifact(artifact, workspace)
@@ -161,35 +169,46 @@ class IndexService:
 
         try:
             with session_scope(session_factory) as session:
-                settings = settings_repository.get_or_create(session)
                 for artifact_id in completed_ids:
-                    artifact = artifact_repository.get(session, artifact_id)
+                    artifact = artifact_repository.get(
+                        session,
+                        user_id=user_id,
+                        artifact_id=artifact_id,
+                    )
                     if artifact is not None:
-                        artifact.index_status = "completed"
+                        artifact.status_json = with_index_status(artifact, "completed")
                 for artifact_id in stale_ids:
-                    artifact = artifact_repository.get(session, artifact_id)
+                    artifact = artifact_repository.get(
+                        session,
+                        user_id=user_id,
+                        artifact_id=artifact_id,
+                    )
                     if artifact is not None:
-                        artifact.index_status = "stale"
-                settings.active_collection = new_collection
+                        artifact.status_json = with_index_status(artifact, "stale")
+                self._set_active_collection(session, user_id, new_collection)
         except Exception:
             self._delete_collection_best_effort(new_collection)
             raise
 
         if old_collection and old_collection != new_collection:
             self._delete_collection_best_effort(old_collection)
-        self.sweep_orphan_collections(session_factory, settings_repository=settings_repository)
+        self.sweep_orphan_collections(
+            session_factory,
+            user_id=user_id,
+            qdrant_prefix=qdrant_prefix,
+        )
         return new_collection
 
     def sweep_orphan_collections(
         self,
         session_factory: Callable[[], Session],
         *,
-        settings_repository: WorkspaceSettingsRepository | None = None,
+        user_id: int,
+        qdrant_prefix: str,
     ) -> None:
-        settings_repository = settings_repository or WorkspaceSettingsRepository()
         with session_factory() as session:
-            active_collection = settings_repository.get_or_create(session).active_collection
-        prefix = f"{self.settings.qdrant_collection}__"
+            active_collection = self._active_collection(session, user_id, qdrant_prefix)
+        prefix = f"{qdrant_prefix}__"
         for collection_name in self.vector_store.list_collections():
             if collection_name.startswith(prefix) and collection_name != active_collection:
                 self._delete_collection_best_effort(collection_name)
@@ -197,7 +216,7 @@ class IndexService:
     def _build_documents_for_artifact(
         self, artifact: models.Artifact, workspace: WorkspaceService
     ) -> "_BuildResult":
-        if artifact.recovery_required or artifact.processing_status == "needs_recovery":
+        if artifact_recovery_required(artifact) or artifact_processing_status(artifact) == "needs_recovery":
             return _BuildResult(status="stale", documents=[])
         text = self._read_indexable_text(artifact, workspace)
         if text is None:
@@ -228,11 +247,25 @@ class IndexService:
         return None
 
     def _is_text_source(self, artifact: models.Artifact) -> bool:
-        media_type = artifact.media_type or ""
+        media_type = artifact_media_type(artifact) or ""
         if media_type in {"text/markdown", "text/plain"}:
             return True
         suffix = artifact.relative_path.rsplit(".", 1)[-1].lower()
         return suffix in {"md", "txt"}
+
+    def _active_collection(self, session: Session, user_id: int, qdrant_prefix: str) -> str:
+        user = session.get(models.User, user_id)
+        if user is None:
+            raise RuntimeError("user not found for index rebuild")
+        active_collection = (user.settings_json or {}).get("active_collection")
+        return active_collection if isinstance(active_collection, str) and active_collection else qdrant_prefix
+
+    def _set_active_collection(self, session: Session, user_id: int, collection_name: str) -> None:
+        user = session.get(models.User, user_id)
+        if user is None:
+            raise RuntimeError("user not found for index rebuild")
+        user.settings_json = {**(user.settings_json or {}), "active_collection": collection_name}
+        session.flush()
 
     def _delete_collection_best_effort(self, collection_name: str) -> None:
         try:

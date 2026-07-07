@@ -147,6 +147,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     verb = "Would remove" if args.dry_run else "Removed"
+    user_data_verb = "Would delete" if args.dry_run else "Deleted"
+    print(
+        f"{user_data_verb} local user data under DATA_DIR/users and legacy "
+        "DATA_DIR/workspace when present."
+    )
     for path in result.removed_paths:
         print(f"{verb}: {path.relative_to(_repo_root())}")
     if not result.removed_paths:

@@ -1,27 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_session, get_user_scope
 from app.api.sse import http_error_payload, sse_event
 from app.core.artifact_permissions import (
     ALLOWED_OPERATIONS,
     ArtifactPermissionError,
     assert_operation_allowed,
 )
+from app.core.user_scope import UserScope
 from app.core.errors import bad_request
 from app.core.errors import conflict as conflict_error
 from app.core.errors import not_found
 from app.core.errors import service_unavailable
 from app.db.session import session_scope
-from app.repositories.artifact_repository import ArtifactRepository
-from app.repositories.vector_store import VectorStoreError
-from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
 from app.schemas.workspace import (
     ArtifactDeleteResponse,
     ArtifactDetailResponse,
@@ -38,46 +37,52 @@ from app.schemas.workspace import (
     UploadMaterialsResponse,
     WorkspaceStatusResponse,
 )
-from app.services.artifact_service import ArtifactConflict
-from app.services.ingestion_service import IngestionService, UploadItem
-from app.services.index_service import IndexService
-from app.services.learning_conversation_service import LearningConversationService
 from app.services.markdown_utils import (
     markdown_list_items,
     markdown_sections,
 )
-from app.services.model_service import ModelService
-from app.services.workspace_content_service import (
-    LearningNotePersistenceResult,
-    RealInterviewRecordPersistenceResult,
-    WorkspaceContentProjectionError,
-    WorkspaceContentService,
+from app.services.artifact_metadata import (
+    artifact_index_status,
+    artifact_processing_status,
+    artifact_recovery_required,
+    artifact_source_filename,
 )
+from app.services.artifact_service import ArtifactService
+from app.services.index_service import IndexService
+from app.services.model_service import ModelService
+from app.services.workspace_service import WorkspaceService
 from app.services.workspace_paths import REVIEW_STATUS_PATH
 
 
 router = APIRouter(prefix="/api/workspace")
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    with session_scope(request.app.state.session_factory) as session:
-        yield session
-
-
 @router.get("", response_model=WorkspaceStatusResponse)
-def workspace_status(session: Session = Depends(get_session)) -> WorkspaceStatusResponse:
-    settings = WorkspaceSettingsRepository().get_or_create(session)
-    artifacts = ArtifactRepository().list(session)
+def workspace_status(
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> WorkspaceStatusResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    _workspace_services(scope)
+    artifacts = ArtifactRepository().list(session, user_id=scope.user_id)
     return WorkspaceStatusResponse(
-        schema_version=settings.schema_version,
-        language=settings.language,
+        schema_version=1,
+        language="zh-CN",
         artifact_count=len(artifacts),
+        initialized=True,
     )
 
 
 @router.get("/artifacts", response_model=ArtifactListResponse)
-def list_artifacts(session: Session = Depends(get_session)) -> ArtifactListResponse:
-    artifacts = ArtifactRepository().list(session)
+def list_artifacts(
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> ArtifactListResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    _workspace_services(scope)
+    artifacts = ArtifactRepository().list(session, user_id=scope.user_id)
     return ArtifactListResponse(artifacts=[_summary(artifact) for artifact in artifacts])
 
 
@@ -85,13 +90,21 @@ def list_artifacts(session: Session = Depends(get_session)) -> ArtifactListRespo
 def preparation_tasks(
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> PreparationTasksResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    _, artifact_service = _workspace_services(scope)
     repository = ArtifactRepository()
-    status = repository.get_by_relative_path(session, REVIEW_STATUS_PATH)
+    status = repository.get_by_relative_path(
+        session,
+        user_id=scope.user_id,
+        relative_path=REVIEW_STATUS_PATH,
+    )
     if status is None:
         return PreparationTasksResponse(tasks=[])
     try:
-        body = request.app.state.artifact_service.read_markdown(status.relative_path).body
+        body = artifact_service.read_markdown(status.relative_path).body
     except Exception:
         return PreparationTasksResponse(tasks=[])
     sections = markdown_sections(body)
@@ -115,15 +128,25 @@ def preparation_tasks(
 
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
 def get_artifact(
-    artifact_id: str, request: Request, session: Session = Depends(get_session)
+    artifact_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactDetailResponse:
-    artifact = ArtifactRepository().get(session, artifact_id)
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    _, artifact_service = _workspace_services(scope)
+    artifact = ArtifactRepository().get(
+        session,
+        user_id=scope.user_id,
+        artifact_id=artifact_id,
+    )
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
     body: str | None = None
     if artifact.kind not in {"source"}:
         try:
-            body = request.app.state.artifact_service.read_markdown(artifact.relative_path).body
+            body = artifact_service.read_markdown(artifact.relative_path).body
         except Exception:
             body = None
     return ArtifactDetailResponse(**_summary(artifact).model_dump(), body=body)
@@ -135,9 +158,14 @@ def replace_artifact_body(
     payload: ReplaceBodyRequest,
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactSummaryResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.services.artifact_service import ArtifactConflict
+
+    workspace, artifact_service = _workspace_services(scope)
     repository = ArtifactRepository()
-    artifact = repository.get(session, artifact_id)
+    artifact = repository.get(session, user_id=scope.user_id, artifact_id=artifact_id)
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
     try:
@@ -147,7 +175,7 @@ def replace_artifact_body(
             raise HTTPException(status_code=403, detail={"code": "artifact_read_only", "message": str(exc)}) from exc
         raise bad_request("artifact_edit_invalid", str(exc)) from exc
     try:
-        request.app.state.artifact_service.replace_body(
+        artifact_service.replace_body(
             artifact.relative_path,
             expected_revision=payload.expected_revision,
             body=payload.body,
@@ -155,12 +183,13 @@ def replace_artifact_body(
         )
     except ArtifactConflict as exc:
         raise conflict_error("artifact_revision_conflict", str(exc)) from exc
-    request.app.state.workspace_service.rebuild_projection(
+    workspace.rebuild_projection(
         session,
         repository,
-        request.app.state.artifact_service,
+        artifact_service,
+        user_id=scope.user_id,
     )
-    updated = repository.get(session, artifact_id)
+    updated = repository.get(session, user_id=scope.user_id, artifact_id=artifact_id)
     return _summary(updated)
 
 
@@ -169,14 +198,18 @@ def delete_artifact(
     artifact_id: str,
     request: Request,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactDeleteResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.repositories.vector_store import VectorStoreError
+
+    workspace, artifact_service = _workspace_services(scope)
     repository = ArtifactRepository()
-    artifact = repository.get(session, artifact_id)
+    artifact = repository.get(session, user_id=scope.user_id, artifact_id=artifact_id)
     if artifact is None:
         raise not_found("artifact_not_found", "Artifact not found.")
-    workspace_settings = WorkspaceSettingsRepository().get_or_create(session)
     index_service = IndexService()
-    target_collection = workspace_settings.active_collection or index_service.settings.qdrant_collection
+    target_collection = _active_collection(session, scope)
     try:
         index_service.vector_store.delete_artifact_chunks(target_collection, artifact_id)
     except VectorStoreError as exc:
@@ -185,33 +218,42 @@ def delete_artifact(
             "Artifact chunks could not be removed from the vector index.",
         ) from exc
     try:
-        request.app.state.artifact_service.delete_artifact_files(
+        artifact_service.delete_artifact_files(
             artifact.relative_path,
             artifact_id=artifact.id,
             remove_source_sidecar=artifact.kind == "source",
         )
     except OSError as exc:
         raise bad_request("artifact_delete_failed", "Artifact could not be deleted.") from exc
-    request.app.state.workspace_service.rebuild_projection(
+    workspace.rebuild_projection(
         session,
         repository,
-        request.app.state.artifact_service,
+        artifact_service,
+        user_id=scope.user_id,
     )
     return ArtifactDeleteResponse(id=artifact_id, status="deleted")
 
 
 @router.post("/rebuild-projection", response_model=WorkspaceStatusResponse)
-def rebuild_projection(request: Request, session: Session = Depends(get_session)) -> WorkspaceStatusResponse:
-    request.app.state.workspace_service.rebuild_projection(
+def rebuild_projection(
+    request: Request,
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> WorkspaceStatusResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    workspace, artifact_service = _workspace_services(scope)
+    repository = ArtifactRepository()
+    workspace.rebuild_projection(
         session,
-        ArtifactRepository(),
-        request.app.state.artifact_service,
+        repository,
+        artifact_service,
+        user_id=scope.user_id,
     )
-    settings = WorkspaceSettingsRepository().get_or_create(session)
-    artifacts = ArtifactRepository().list(session)
+    artifacts = repository.list(session, user_id=scope.user_id)
     return WorkspaceStatusResponse(
-        schema_version=settings.schema_version,
-        language=settings.language,
+        schema_version=1,
+        language="zh-CN",
         artifact_count=len(artifacts),
     )
 
@@ -221,7 +263,12 @@ async def upload_materials(
     request: Request,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
+    scope: UserScope = Depends(get_user_scope),
 ) -> UploadMaterialsResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+    from app.services.ingestion_service import IngestionService, UploadItem
+
+    workspace, artifact_service = _workspace_services(scope)
     uploads = [
         UploadItem(
             filename=file.filename or "material.txt",
@@ -234,8 +281,9 @@ async def upload_materials(
         with session_scope(request.app.state.session_factory) as session:
             result = IngestionService().ingest_uploads(
                 session,
-                request.app.state.workspace_service,
-                request.app.state.artifact_service,
+                scope.user_id,
+                workspace,
+                artifact_service,
                 ArtifactRepository(),
                 uploads,
             )
@@ -244,8 +292,10 @@ async def upload_materials(
     background_tasks.add_task(
         IndexService().rebuild_index,
         request.app.state.session_factory,
-        request.app.state.workspace_service,
+        workspace,
         ArtifactRepository(),
+        user_id=scope.user_id,
+        qdrant_prefix=scope.qdrant_prefix,
     )
     return UploadMaterialsResponse(
         sources=[UploadedSourceResponse(**source.__dict__) for source in result.sources]
@@ -257,12 +307,18 @@ def record_learning_note_stream(
     payload: LearningNoteRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
+    from app.services.workspace_content_service import (
+        WorkspaceContentProjectionError,
+        WorkspaceContentService,
+    )
+
     note = payload.text.strip()
     if not note:
         raise bad_request("learning_note_empty", "Learning note text is required.")
     if payload.conversation_id:
-        _require_learning_conversation(request, payload.conversation_id)
+        _require_learning_conversation(request, scope, payload.conversation_id)
 
     def body() -> Iterator[str]:
         chunks: list[str] = []
@@ -281,17 +337,18 @@ def record_learning_note_stream(
                 note,
                 payload.language,
             )
-            service = _workspace_content_service(request)
+            service = _workspace_content_service(request, scope)
             response = _learning_note_response(
                 service.persist_learning_note(note, payload.language, summary)
             )
             response.conversation_id = _persist_learning_conversation(
                 request,
+                scope,
                 payload,
                 note,
                 response,
             )
-            _enqueue_index_rebuild(request, background_tasks)
+            _enqueue_index_rebuild(request, background_tasks, scope)
             yield sse_event("result", response.model_dump(mode="json"))
         except WorkspaceContentProjectionError as error:
             yield sse_event(
@@ -326,12 +383,15 @@ def record_real_interview(
     payload: RealInterviewRecordRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope: UserScope = Depends(get_user_scope),
 ) -> RealInterviewRecordResponse:
+    from app.services.workspace_content_service import WorkspaceContentProjectionError
+
     record = payload.text.strip()
     if not record:
         raise bad_request("real_interview_record_empty", "Real interview record text is required.")
     try:
-        service = _workspace_content_service(request)
+        service = _workspace_content_service(request, scope)
         response = _real_interview_record_response(
             service.persist_real_interview_record(record, payload.language)
         )
@@ -340,61 +400,131 @@ def record_real_interview(
             status_code=500,
             detail={"code": exc.code, "message": exc.message},
         ) from exc
-    _enqueue_index_rebuild(request, background_tasks)
+    _enqueue_index_rebuild(request, background_tasks, scope)
     return response
 
 
-def _workspace_content_service(request: Request) -> WorkspaceContentService:
+def _workspace_content_service(request: Request, scope: UserScope) -> Any:
+    from app.services.workspace_content_service import WorkspaceContentService
+
+    workspace, artifact_service = _workspace_services(scope)
     return WorkspaceContentService(
-        workspace_service=request.app.state.workspace_service,
-        artifact_service=request.app.state.artifact_service,
+        user_id=scope.user_id,
+        workspace_service=workspace,
+        artifact_service=artifact_service,
         session_factory=request.app.state.session_factory,
     )
 
 
-def _enqueue_index_rebuild(request: Request, background_tasks: BackgroundTasks) -> None:
+def _enqueue_index_rebuild(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    scope: UserScope,
+) -> None:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    workspace, _ = _workspace_services(scope)
     background_tasks.add_task(
         IndexService().rebuild_index,
         request.app.state.session_factory,
-        request.app.state.workspace_service,
+        workspace,
         ArtifactRepository(),
+        user_id=scope.user_id,
+        qdrant_prefix=scope.qdrant_prefix,
     )
 
 
 def _persist_learning_conversation(
     request: Request,
+    scope: UserScope,
     payload: LearningNoteRequest,
     note: str,
     response: LearningNoteResponse,
 ) -> str:
-    conversation_service = LearningConversationService()
+    from app.db import models
+    from app.repositories.conversation_repository import ConversationRepository
+
     with session_scope(request.app.state.session_factory) as session:
-        learning_session = conversation_service.get_or_create_session(
+        repository = ConversationRepository()
+        conversation = None
+        if payload.conversation_id:
+            conversation = repository.get(
+                session,
+                user_id=scope.user_id,
+                conversation_id=payload.conversation_id,
+                kind="learning",
+            )
+            if conversation is None:
+                raise not_found("learning_session_not_found", "Learning conversation not found.")
+        if conversation is None:
+            conversation = repository.create(
+                session,
+                user_id=scope.user_id,
+                kind="learning",
+                title=(response.summary.title.strip() or "学习记录")[:255],
+                status="active",
+                config_json={
+                    "language": payload.language,
+                    "provider": payload.provider or "",
+                    "model": payload.model or "",
+                },
+                summary_json={},
+            )
+
+        assistant_markdown = _learning_assistant_message(response)
+        repository.add_message(
             session,
-            conversation_id=payload.conversation_id,
-            title=response.summary.title,
-            language=payload.language,
-            provider=payload.provider,
-            model=payload.model,
+            user_id=scope.user_id,
+            conversation_id=conversation.id,
+            role="user",
+            message_type="learning_input",
+            content=note,
+            metadata_json={
+                "source_artifact_id": response.source.artifact_id,
+                "source_relative_path": response.source.relative_path,
+            },
         )
-        conversation_service.append_note_exchange(
+        repository.add_message(
             session,
-            learning_session,
-            note=note,
-            assistant_markdown=_learning_assistant_message(response),
-            summary=response.summary,
-            source_artifact_id=response.source.artifact_id,
-            source_relative_path=response.source.relative_path,
-            artifact_id=response.artifact.id,
-            artifact_path=response.artifact.relative_path,
+            user_id=scope.user_id,
+            conversation_id=conversation.id,
+            role="assistant",
+            message_type="learning_summary",
+            content=assistant_markdown,
+            metadata_json={
+                "artifact_id": response.artifact.id,
+                "artifact_path": response.artifact.relative_path,
+                "summary": response.summary.model_dump(mode="json"),
+            },
         )
-        return learning_session.id
+        title = (response.summary.title.strip() or conversation.title)[:255]
+        conversation.title = title
+        conversation.summary_json = {
+            **(conversation.summary_json or {}),
+            "title": title,
+            "last_message": assistant_markdown,
+        }
+        conversation.updated_at = models._now()
+        session.flush()
+        return conversation.id
 
 
-def _require_learning_conversation(request: Request, conversation_id: str) -> None:
-    conversation_service = LearningConversationService()
+def _require_learning_conversation(
+    request: Request,
+    scope: UserScope,
+    conversation_id: str,
+) -> None:
+    from app.repositories.conversation_repository import ConversationRepository
+
     with session_scope(request.app.state.session_factory) as session:
-        conversation_service.require_session(session, conversation_id)
+        conversation = ConversationRepository().get(
+            session,
+            user_id=scope.user_id,
+            conversation_id=conversation_id,
+            kind="learning",
+        )
+        if conversation is None:
+            raise not_found("learning_session_not_found", "Learning conversation not found.")
 
 
 def _learning_assistant_message(response: LearningNoteResponse) -> str:
@@ -404,7 +534,7 @@ def _learning_assistant_message(response: LearningNoteResponse) -> str:
     return f"# {title}\n\n{response.card_markdown.strip()}"
 
 
-def _learning_note_response(result: LearningNotePersistenceResult) -> LearningNoteResponse:
+def _learning_note_response(result: Any) -> LearningNoteResponse:
     return LearningNoteResponse(
         conversation_id="",
         source=UploadedSourceResponse(
@@ -419,7 +549,7 @@ def _learning_note_response(result: LearningNotePersistenceResult) -> LearningNo
 
 
 def _real_interview_record_response(
-    result: RealInterviewRecordPersistenceResult,
+    result: Any,
 ) -> RealInterviewRecordResponse:
     return RealInterviewRecordResponse(
         raw_artifact=_summary(result.raw_artifact),
@@ -431,13 +561,37 @@ def _real_interview_record_response(
 
 
 @router.post("/rebuild-index")
-def rebuild_index(request: Request) -> dict[str, str]:
+def rebuild_index(
+    request: Request,
+    scope: UserScope = Depends(get_user_scope),
+) -> dict[str, str]:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    workspace, _ = _workspace_services(scope)
     collection = IndexService().rebuild_index(
         request.app.state.session_factory,
-        request.app.state.workspace_service,
+        workspace,
         ArtifactRepository(),
+        user_id=scope.user_id,
+        qdrant_prefix=scope.qdrant_prefix,
     )
     return {"status": "ok", "collection": collection}
+
+
+def _workspace_services(scope: UserScope) -> tuple[WorkspaceService, ArtifactService]:
+    workspace = WorkspaceService(scope.workspace_root)
+    workspace.initialize()
+    return workspace, ArtifactService(workspace)
+
+
+def _active_collection(session: Session, scope: UserScope) -> str:
+    from app.db import models
+
+    user = session.get(models.User, scope.user_id)
+    if user is None:
+        return scope.qdrant_prefix
+    active_collection = (user.settings_json or {}).get("active_collection")
+    return active_collection if isinstance(active_collection, str) and active_collection else scope.qdrant_prefix
 
 
 def _summary(artifact) -> ArtifactSummaryResponse:
@@ -448,9 +602,9 @@ def _summary(artifact) -> ArtifactSummaryResponse:
         relative_path=artifact.relative_path,
         display_name=_display_name(artifact),
         revision=artifact.revision,
-        processing_status=artifact.processing_status,
-        index_status=artifact.index_status,
-        recovery_required=artifact.recovery_required,
+        processing_status=artifact_processing_status(artifact),
+        index_status=artifact_index_status(artifact),
+        recovery_required=artifact_recovery_required(artifact),
         allowed_operations=sorted(ALLOWED_OPERATIONS.get(artifact.kind, set())),
         created_at=artifact.created_at,
         updated_at=artifact.updated_at,
@@ -458,8 +612,9 @@ def _summary(artifact) -> ArtifactSummaryResponse:
 
 
 def _display_name(artifact) -> str:
-    if artifact.kind == "source" and artifact.source_filename:
-        return artifact.source_filename
+    source_filename = artifact_source_filename(artifact)
+    if artifact.kind == "source" and source_filename:
+        return source_filename
     return Path(artifact.relative_path).name
 
 

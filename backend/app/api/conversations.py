@@ -1,10 +1,11 @@
-from collections.abc import Iterator
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_session, get_user_scope
 from app.core.errors import not_found
-from app.db.session import session_scope
+from app.core.user_scope import UserScope
 from app.schemas.conversations import (
     ConversationDeleteResponse,
     ConversationDetailResponse,
@@ -12,21 +13,23 @@ from app.schemas.conversations import (
     ConversationListResponse,
     ConversationRenameRequest,
 )
-from app.services.conversation_service import ConversationService
 
 
 router = APIRouter(prefix="/api/conversations")
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    with session_scope(request.app.state.session_factory) as session:
-        yield session
-
-
 @router.get("", response_model=ConversationListResponse)
-def list_conversations(session: Session = Depends(get_session)) -> ConversationListResponse:
+def list_conversations(
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> ConversationListResponse:
+    from app.services.conversation_service import ConversationService
+
     return ConversationListResponse(
-        conversations=ConversationService().list_conversations(session)
+        conversations=ConversationService().list_conversations(
+            session,
+            user_id=scope.user_id,
+        )
     )
 
 
@@ -34,8 +37,15 @@ def list_conversations(session: Session = Depends(get_session)) -> ConversationL
 def get_conversation(
     conversation_id: str,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ConversationDetailResponse:
-    detail = ConversationService().get_conversation(session, conversation_id)
+    from app.services.conversation_service import ConversationService
+
+    detail = ConversationService().get_conversation(
+        session,
+        conversation_id,
+        user_id=scope.user_id,
+    )
     if detail is None:
         raise not_found("conversation_not_found", "Conversation not found.")
     return detail
@@ -46,8 +56,16 @@ def rename_conversation(
     conversation_id: str,
     payload: ConversationRenameRequest,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ConversationHistoryItemResponse:
-    renamed = ConversationService().rename_conversation(session, conversation_id, payload.title)
+    from app.services.conversation_service import ConversationService
+
+    renamed = ConversationService().rename_conversation(
+        session,
+        conversation_id,
+        payload.title,
+        user_id=scope.user_id,
+    )
     if renamed is None:
         raise not_found("conversation_not_found", "Conversation not found.")
     return renamed
@@ -57,8 +75,15 @@ def rename_conversation(
 def delete_conversation(
     conversation_id: str,
     session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
 ) -> ConversationDeleteResponse:
-    deleted = ConversationService().delete_conversation(session, conversation_id)
+    from app.services.conversation_service import ConversationService
+
+    deleted = ConversationService().delete_conversation(
+        session,
+        conversation_id,
+        user_id=scope.user_id,
+    )
     if not deleted:
         raise not_found("conversation_not_found", "Conversation not found.")
     return ConversationDeleteResponse(id=conversation_id, status="deleted")

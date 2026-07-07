@@ -1,5 +1,6 @@
 import type {
   AnswerFeedback,
+  AuthTokenResponse,
   ConversationDeleteResponse,
   ConversationDetailResponse,
   ConversationHistoryItem,
@@ -20,12 +21,14 @@ import type {
   ReportDetailResponse,
   ReportListResponse,
   UploadMaterialsResponse,
+  User,
   WorkspaceArtifactDetail,
   WorkspaceArtifactListResponse,
   WorkspaceArtifactSummary,
   WorkspaceStatusResponse,
 } from "./types";
 import { ApiError, throwApiError } from "./api-error";
+import { clearAuthToken, getAuthToken } from "./auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -34,8 +37,10 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body !== undefined) {
     headers.set("Content-Type", "application/json");
   }
+  addAuthHeader(headers);
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
+    handleUnauthorized(response);
     await throwApiError(response, `Request failed with ${response.status}`);
   }
   return response.json() as Promise<T>;
@@ -46,11 +51,15 @@ export async function uploadMaterials(files: File[]): Promise<UploadMaterialsRes
   for (const file of files) {
     body.append("files", file);
   }
+  const headers = new Headers();
+  addAuthHeader(headers);
   const response = await fetch(`${API_BASE_URL}/api/workspace/materials/upload`, {
     method: "POST",
+    headers,
     body,
   });
   if (!response.ok) {
+    handleUnauthorized(response);
     await throwApiError(response, `Upload failed with ${response.status}`);
   }
   return response.json() as Promise<UploadMaterialsResponse>;
@@ -175,12 +184,14 @@ async function apiStream<T>(
   if (body !== undefined) {
     headers.set("Content-Type", "application/json");
   }
+  addAuthHeader(headers);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
+    handleUnauthorized(response);
     await throwApiError(response, `Request failed with ${response.status}`);
   }
   if (!response.body) {
@@ -320,4 +331,57 @@ export function getReports(): Promise<ReportListResponse> {
 
 export function getReport(reportId: string): Promise<ReportDetailResponse> {
   return apiJson<ReportDetailResponse>(`/api/reports/${reportId}`);
+}
+
+export function registerUser(username: string, password: string): Promise<AuthTokenResponse> {
+  return apiJson<AuthTokenResponse>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function loginUser(username: string, password: string): Promise<AuthTokenResponse> {
+  return apiJson<AuthTokenResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function getCurrentUser(): Promise<User> {
+  return apiJson<User>("/api/auth/me");
+}
+
+function addAuthHeader(headers: Headers) {
+  const token = getAuthToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+}
+
+function handleUnauthorized(response: Response) {
+  if (response.status !== 401) {
+    return;
+  }
+  clearAuthToken();
+  redirectToLogin();
+}
+
+function redirectToLogin() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const currentPath = window.location.pathname;
+  if (currentPath === "/login" || currentPath === "/register") {
+    return;
+  }
+  const currentUrl = `${currentPath}${window.location.search}`;
+  const target = `/login?redirect=${encodeURIComponent(currentUrl || "/")}`;
+  try {
+    window.location.href = target;
+  } catch {
+    // JSDOM and some restricted browsers may reject programmatic navigation.
+  }
+  if (window.location.pathname !== "/login") {
+    window.history.replaceState(null, "", target);
+  }
 }

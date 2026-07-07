@@ -3,11 +3,11 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.db.models import InterviewConfig, InterviewSession, InterviewTurn
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.artifact_service import ArtifactService, ManagedMarkdown
 from app.services.markdown_utils import (
@@ -36,13 +36,17 @@ class InterviewArtifactService:
     def __init__(
         self,
         *,
+        user_id: int,
         settings: Settings | None = None,
         workspace_service: WorkspaceService | None = None,
         artifact_service: ArtifactService | None = None,
         artifact_repository: ArtifactRepository | None = None,
     ) -> None:
+        self.user_id = user_id
         self.settings = settings or get_settings()
-        self.workspace = workspace_service or WorkspaceService(self.settings.workspace_dir)
+        self.workspace = workspace_service or WorkspaceService(
+            self.settings.data_dir / "users" / str(user_id) / "workspace"
+        )
         self.workspace.initialize()
         self.artifacts = artifact_service or ArtifactService(self.workspace)
         self.repository = artifact_repository or ArtifactRepository()
@@ -50,8 +54,8 @@ class InterviewArtifactService:
     def record_answer_evaluation(
         self,
         session: Session,
-        config: InterviewConfig,
-        turn: InterviewTurn,
+        config: Any,
+        turn: Any,
         *,
         question: str,
         evaluation: AnswerEvaluationResult,
@@ -62,23 +66,28 @@ class InterviewArtifactService:
     def record_answer_progress(
         self,
         session: Session,
-        interview_session: InterviewSession,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
+        interview_session: Any,
+        config: Any,
+        turns: list[Any],
     ) -> None:
         if not any(turn.answer or turn.follow_up_answer for turn in turns):
             return
         evidence_ref = f"interview_session:{interview_session.id}"
         self.write_practice(interview_session, config, turns, evidence_ref=evidence_ref)
         self.upsert_review_status(config, turns, evidence_ref=evidence_ref)
-        self.workspace.rebuild_projection(session, self.repository, self.artifacts)
+        self.workspace.rebuild_projection(
+            session,
+            self.repository,
+            self.artifacts,
+            user_id=self.user_id,
+        )
 
     def archive_finished_session(
         self,
         session: Session,
-        interview_session: InterviewSession,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
+        interview_session: Any,
+        config: Any,
+        turns: list[Any],
         report_markdown: str,
     ) -> ArchivedInterviewArtifacts:
         evidence_ref = f"interview_session:{interview_session.id}"
@@ -92,14 +101,19 @@ class InterviewArtifactService:
             config.language or "zh-CN",
             practice_ref,
         )
-        self.workspace.rebuild_projection(session, self.repository, self.artifacts)
+        self.workspace.rebuild_projection(
+            session,
+            self.repository,
+            self.artifacts,
+            user_id=self.user_id,
+        )
         return ArchivedInterviewArtifacts(report_path=report_path, report=report)
 
     def write_practice(
         self,
-        interview_session: InterviewSession,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
+        interview_session: Any,
+        config: Any,
+        turns: list[Any],
         *,
         evidence_ref: str,
     ) -> ManagedMarkdown:
@@ -131,9 +145,9 @@ class InterviewArtifactService:
 
     def practice_session_body(
         self,
-        interview_session: InterviewSession,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
+        interview_session: Any,
+        config: Any,
+        turns: list[Any],
     ) -> str:
         body = [
             f"- 开始时间：{interview_session.started_at.astimezone(UTC).isoformat().replace('+00:00', 'Z')}",
@@ -208,8 +222,8 @@ class InterviewArtifactService:
 
     def upsert_review_status(
         self,
-        config: InterviewConfig,
-        turns: list[InterviewTurn],
+        config: Any,
+        turns: list[Any],
         *,
         evidence_ref: str,
     ) -> None:
@@ -276,7 +290,7 @@ class InterviewArtifactService:
 
     def upsert_high_frequency_question(
         self,
-        config: InterviewConfig,
+        config: Any,
         question: str | None,
         evaluation: AnswerEvaluationResult,
     ) -> None:
@@ -330,8 +344,8 @@ class InterviewArtifactService:
     def upsert_question_bank_entry(
         self,
         session: Session,
-        config: InterviewConfig,
-        turn: InterviewTurn,
+        config: Any,
+        turn: Any,
         *,
         question: str,
         evaluation: AnswerEvaluationResult,
@@ -345,7 +359,11 @@ class InterviewArtifactService:
 
         relative_path = self.question_bank_path(question)
         body = self.question_bank_body(session, config, question, evaluation)
-        existing = self.repository.get_by_relative_path(session, relative_path)
+        existing = self.repository.get_by_relative_path(
+            session,
+            user_id=self.user_id,
+            relative_path=relative_path,
+        )
         path_exists = self.workspace.resolve_path(relative_path).exists()
         if existing is not None or path_exists:
             current = self.artifacts.read_markdown(relative_path)
@@ -365,7 +383,12 @@ class InterviewArtifactService:
                 origin="llm",
                 edited_by="system",
             )
-        self.workspace.rebuild_projection(session, self.repository, self.artifacts)
+        self.workspace.rebuild_projection(
+            session,
+            self.repository,
+            self.artifacts,
+            user_id=self.user_id,
+        )
 
     def question_bank_path(self, question: str) -> str:
         digest = hashlib.sha1(question.strip().encode("utf-8")).hexdigest()[:10]
@@ -375,7 +398,7 @@ class InterviewArtifactService:
     def question_bank_body(
         self,
         session: Session,
-        config: InterviewConfig,
+        config: Any,
         question: str,
         evaluation: AnswerEvaluationResult,
     ) -> str:
@@ -413,7 +436,7 @@ class InterviewArtifactService:
             f"{review_status}\n"
         )
 
-    def write_mastery(self, turns: list[InterviewTurn], language: str, evidence_ref: str) -> None:
+    def write_mastery(self, turns: list[Any], language: str, evidence_ref: str) -> None:
         weaknesses = unique_items(
             [item for turn in turns for item in [*turn.weaknesses, *turn.follow_up_weaknesses]],
             limit=6,
@@ -430,7 +453,7 @@ class InterviewArtifactService:
 
     def write_report(
         self,
-        interview_session: InterviewSession,
+        interview_session: Any,
         report_markdown: str,
         language: str,
         evidence_ref: str,
@@ -476,7 +499,9 @@ class InterviewArtifactService:
     def project_context(self, session: Session) -> list[str]:
         context: list[str] = []
         project_artifacts = [
-            artifact for artifact in self.repository.list(session) if artifact.kind == "project"
+            artifact
+            for artifact in self.repository.list(session, user_id=self.user_id)
+            if artifact.kind == "project"
         ][:PROJECT_CONTEXT_LIMIT]
         for artifact in project_artifacts:
             try:

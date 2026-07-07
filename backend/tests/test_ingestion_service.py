@@ -5,9 +5,12 @@ import pytest
 
 from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
+from app.services.artifact_metadata import artifact_processing_status
 from app.services.artifact_service import ArtifactService
 from app.services.ingestion_service import IngestionService, UploadItem
 from app.services.workspace_service import WorkspaceService
+
+USER_ID = 1
 
 
 def _stack(tmp_path: Path):
@@ -18,6 +21,14 @@ def _stack(tmp_path: Path):
 
 def _session(client):
     return client.app.state.session_factory()
+
+
+def _create_user(session) -> models.User:
+    user = models.User(username="alice", password_hash="hash")
+    session.add(user)
+    session.flush()
+    assert user.id == USER_ID
+    return user
 
 
 def _docx_bytes(text: str) -> bytes:
@@ -40,8 +51,10 @@ def test_ingest_markdown_stores_source_and_generates_knowledge(client, tmp_path:
     service = IngestionService()
 
     with _session(client) as session:
+        _create_user(session)
         result = service.ingest_uploads(
             session,
+            USER_ID,
             workspace,
             artifacts,
             repository,
@@ -64,13 +77,11 @@ def test_ingest_markdown_stores_source_and_generates_knowledge(client, tmp_path:
     assert knowledge.front_matter.source_refs == [f"source:{result.sources[0].artifact_id}"]
     assert "Redis" in knowledge.body
     with _session(client) as session:
-        rows = repository.list(session)
+        rows = repository.list(session, user_id=USER_ID)
         assert {row.kind for row in rows} == {"source", "knowledge"}
-        jobs = session.query(models.ProcessingJob).all()
-        assert len(jobs) == 1
-        assert jobs[0].operation == "ingest"
-        assert jobs[0].status == "completed"
-        assert jobs[0].artifact_id == result.sources[0].artifact_id
+        source_row = next(row for row in rows if row.kind == "source")
+        assert source_row.id == result.sources[0].artifact_id
+        assert artifact_processing_status(source_row) == "completed"
 
 
 def test_ingest_duplicate_content_reuses_existing_source(client, tmp_path: Path) -> None:
@@ -79,8 +90,9 @@ def test_ingest_duplicate_content_reuses_existing_source(client, tmp_path: Path)
     item = UploadItem(filename="same.txt", media_type="text/plain", content=b"same content")
 
     with _session(client) as session:
-        first = service.ingest_uploads(session, workspace, artifacts, repository, [item])
-        second = service.ingest_uploads(session, workspace, artifacts, repository, [item])
+        _create_user(session)
+        first = service.ingest_uploads(session, USER_ID, workspace, artifacts, repository, [item])
+        second = service.ingest_uploads(session, USER_ID, workspace, artifacts, repository, [item])
         session.commit()
 
     assert second.sources[0].duplicate is True
@@ -97,8 +109,10 @@ def test_ingest_same_knowledge_slug_merges_without_overwriting(
     service = IngestionService()
 
     with _session(client) as session:
+        _create_user(session)
         first = service.ingest_uploads(
             session,
+            USER_ID,
             workspace,
             artifacts,
             repository,
@@ -112,6 +126,7 @@ def test_ingest_same_knowledge_slug_merges_without_overwriting(
         )
         second = service.ingest_uploads(
             session,
+            USER_ID,
             workspace,
             artifacts,
             repository,
@@ -141,8 +156,10 @@ def test_ingest_docx_writes_extracted_artifact(client, tmp_path: Path) -> None:
     service = IngestionService()
 
     with _session(client) as session:
+        _create_user(session)
         result = service.ingest_uploads(
             session,
+            USER_ID,
             workspace,
             artifacts,
             repository,
@@ -162,7 +179,10 @@ def test_ingest_docx_writes_extracted_artifact(client, tmp_path: Path) -> None:
     assert extracted.front_matter.source_refs == [f"source:{result.sources[0].artifact_id}"]
     assert "FastAPI" in extracted.body
     with _session(client) as session:
-        assert {row.kind for row in repository.list(session)} >= {"source", "extracted"}
+        assert {row.kind for row in repository.list(session, user_id=USER_ID)} >= {
+            "source",
+            "extracted",
+        }
 
 
 def test_ingest_rejects_oversized_file(client, tmp_path: Path) -> None:
@@ -170,8 +190,10 @@ def test_ingest_rejects_oversized_file(client, tmp_path: Path) -> None:
     service = IngestionService(max_upload_bytes=4)
 
     with _session(client) as session, pytest.raises(ValueError, match="20 MiB"):
+        _create_user(session)
         service.ingest_uploads(
             session,
+            USER_ID,
             workspace,
             artifacts,
             repository,
@@ -184,8 +206,10 @@ def test_ingest_routes_resume_and_job_description_to_profile_files(client, tmp_p
     service = IngestionService()
 
     with _session(client) as session:
+        _create_user(session)
         service.ingest_uploads(
             session,
+            USER_ID,
             workspace,
             artifacts,
             repository,

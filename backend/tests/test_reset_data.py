@@ -9,7 +9,14 @@ from scripts.reset_data import reset_data
 class FakeStore:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
-        self.collections = {"v1", "workspace__1", "workspace__2", "other"}
+        self.collections = {
+            "v1",
+            "workspace__1",
+            "workspace__2",
+            "auto_reign_user_1__active",
+            "auto_reign_user_2__active",
+            "other",
+        }
         self.deleted: list[str] = []
 
     def delete_collection(self, collection_name: str) -> None:
@@ -27,8 +34,13 @@ def test_reset_backs_up_data_drops_reflected_tables_and_deletes_workspace_collec
 ) -> None:
     data_dir = tmp_path / "data"
     (data_dir / "uploads").mkdir(parents=True)
+    (data_dir / "users" / "1" / "workspace" / "knowledge").mkdir(parents=True)
     (data_dir / "workspace" / "knowledge").mkdir(parents=True)
     (data_dir / "uploads" / "old.txt").write_text("old", encoding="utf-8")
+    (data_dir / "users" / "1" / "workspace" / "knowledge" / "new.md").write_text(
+        "new",
+        encoding="utf-8",
+    )
     (data_dir / "workspace" / "knowledge" / "old.md").write_text("old", encoding="utf-8")
     engine = create_engine(f"sqlite:///{tmp_path / 'app.db'}")
     with engine.begin() as connection:
@@ -53,11 +65,21 @@ def test_reset_backs_up_data_drops_reflected_tables_and_deletes_workspace_collec
 
     assert backup is not None
     assert (backup / "uploads" / "old.txt").read_text(encoding="utf-8") == "old"
+    assert (
+        backup / "users" / "1" / "workspace" / "knowledge" / "new.md"
+    ).read_text(encoding="utf-8") == "new"
     assert not (data_dir / "uploads" / "old.txt").exists()
-    assert (data_dir / "workspace" / "workspace.md").exists()
+    assert not (data_dir / "users").exists()
+    assert not (data_dir / "workspace").exists()
     assert inspect(engine).get_table_names() == []
     assert migrated is True
-    assert store.deleted == ["v1", "workspace__1", "workspace__2"]
+    assert store.deleted == [
+        "v1",
+        "auto_reign_user_1__active",
+        "auto_reign_user_2__active",
+        "workspace__1",
+        "workspace__2",
+    ]
 
 
 def test_reset_aborts_if_qdrant_delete_fails(tmp_path: Path) -> None:

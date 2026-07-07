@@ -6,8 +6,8 @@ from qdrant_client.http.models import FieldCondition, Filter, MatchAny
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.db import models
 from app.repositories.vector_store import VectorStoreUnavailable
-from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
 from app.services.retrieval_postprocessor import RetrievalPostProcessor
 from app.services.retrieval_query_planner import RetrievalQueryPlanner, RetrievalRequest
 from app.services.workspace_vector_store import WorkspaceVectorStore, get_workspace_vector_store
@@ -24,6 +24,7 @@ class WorkspaceRetrievalService:
         vector_store: WorkspaceVectorStore | None = None,
         query_planner: RetrievalQueryPlanner | None = None,
         postprocessor: RetrievalPostProcessor | None = None,
+        user_id: int,
     ) -> None:
         self.settings = settings or get_settings()
         self.vector_store = vector_store or (
@@ -33,11 +34,12 @@ class WorkspaceRetrievalService:
         )
         self.query_planner = query_planner or RetrievalQueryPlanner()
         self.postprocessor = postprocessor or RetrievalPostProcessor()
-        self.settings_repository = WorkspaceSettingsRepository()
+        self.user_id = user_id
 
     def search(self, session: Session, request: RetrievalRequest) -> list[dict[str, object]]:
-        workspace_settings = self.settings_repository.get_or_create(session)
-        collection = workspace_settings.active_collection or self.settings.qdrant_collection
+        collection = self._active_collection(session)
+        if not collection:
+            return []
         try:
             if not self.vector_store.has_searchable_content(collection):
                 return []
@@ -63,6 +65,13 @@ class WorkspaceRetrievalService:
             }
             for hit in hits
         ]
+
+    def _active_collection(self, session: Session) -> str:
+        user = session.get(models.User, self.user_id)
+        active_collection = (user.settings_json or {}).get("active_collection") if user is not None else None
+        if isinstance(active_collection, str) and active_collection:
+            return active_collection
+        return ""
 
     def _metadata_filter(self, artifact_kinds: tuple[str, ...]) -> Filter | None:
         if not artifact_kinds:

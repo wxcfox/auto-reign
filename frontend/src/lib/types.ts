@@ -8,6 +8,21 @@ export type InterviewMode =
 
 export type SessionStatus = "active" | "completed" | "cancelled";
 
+export interface User {
+  id: number;
+  username: string;
+  display_name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuthTokenResponse {
+  access_token: string;
+  token_type: "bearer";
+  user: User;
+}
+
 export interface ModelProvider {
   provider: ProviderName;
   models: string[];

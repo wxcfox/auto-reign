@@ -3,8 +3,78 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.core.config import get_settings
+from sqlalchemy import select
+
+from app.db import models
+from app.db.session import session_scope
 from app.repositories.vector_store import VectorStoreUnavailable
+from app.services.artifact_service import ArtifactService
+from app.services.index_service import IndexService
+from app.services.workspace_service import WorkspaceService
+
+
+def _register(client, username: str = "alice") -> str:
+    response = client.post(
+        "/api/auth/register",
+        json={"username": username, "password": "correct horse battery staple"},
+    )
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _workspace_artifacts(client, user_id: int = 1) -> ArtifactService:
+    workspace = WorkspaceService(client.app.state.settings.data_dir / "users" / str(user_id) / "workspace")
+    workspace.initialize()
+    return ArtifactService(workspace)
+
+
+def _workspace_service(client, user_id: int = 1) -> WorkspaceService:
+    workspace = WorkspaceService(client.app.state.settings.data_dir / "users" / str(user_id) / "workspace")
+    workspace.initialize()
+    return workspace
+
+
+def _disable_index_rebuild(monkeypatch) -> None:
+    class NoopVectorStore:
+        def delete_artifact_chunks(self, *args, **kwargs) -> None:
+            return None
+
+    class NoopIndexService:
+        settings = SimpleNamespace(qdrant_collection="auto_reign_test")
+        vector_store = NoopVectorStore()
+
+        def rebuild_index(self, *args, **kwargs) -> str:
+            return "noop"
+
+    monkeypatch.setattr("app.api.workspace.IndexService", NoopIndexService)
+
+
+class RecordingWorkspaceVectorStore:
+    def __init__(self) -> None:
+        self.upserts: list[tuple[str, list[object]]] = []
+        self.deleted_collections: list[str] = []
+        self.collections: set[str] = set()
+
+    def prepare_documents(self, documents: list[object]) -> None:
+        del documents
+
+    def upsert_documents(self, collection_name: str, documents: list[object]) -> None:
+        self.collections.add(collection_name)
+        self.upserts.append((collection_name, documents))
+
+    def delete_artifact_chunks(self, collection_name: str, artifact_id: str) -> None:
+        del collection_name, artifact_id
+
+    def delete_collection(self, collection_name: str) -> None:
+        self.deleted_collections.append(collection_name)
+        self.collections.discard(collection_name)
+
+    def list_collections(self) -> list[str]:
+        return sorted(self.collections)
 
 
 def _sse_result(body: str) -> dict[str, object]:
@@ -22,30 +92,34 @@ def _sse_result(body: str) -> dict[str, object]:
 
 
 def test_workspace_status_is_initialized_on_startup(client) -> None:
-    response = client.get("/api/workspace")
+    token = _register(client)
+
+    response = client.get("/api/workspace", headers=_auth(token))
 
     assert response.status_code == 200
     body = response.json()
     assert body["language"] == "zh-CN"
     assert body["schema_version"] == 1
     assert body["artifact_count"] == 0
-    settings = get_settings()
-    assert (settings.workspace_dir / "workspace.md").exists()
+    settings = client.app.state.settings
+    assert (settings.data_dir / "users" / "1" / "workspace" / "workspace.md").exists()
     assert not (settings.data_dir / "uploads").exists()
 
 
 def test_workspace_rebuild_projection_endpoint(client) -> None:
-    artifacts = client.app.state.artifact_service
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("knowledge/api.md", kind="knowledge", body="# API\n")
 
-    response = client.post("/api/workspace/rebuild-projection")
+    response = client.post("/api/workspace/rebuild-projection", headers=_auth(token))
 
     assert response.status_code == 200
     assert response.json()["artifact_count"] == 1
 
 
 def test_workspace_preparation_tasks_parse_review_status(client) -> None:
-    artifacts = client.app.state.artifact_service
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
     artifacts.create_markdown(
         "review/status.md",
         kind="review_status",
@@ -59,9 +133,9 @@ def test_workspace_preparation_tasks_parse_review_status(client) -> None:
         ),
         evidence_refs=["practice:abc"],
     )
-    client.post("/api/workspace/rebuild-projection")
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
 
-    response = client.get("/api/workspace/preparation-tasks")
+    response = client.get("/api/workspace/preparation-tasks", headers=_auth(token))
 
     assert response.status_code == 200
     body = response.json()
@@ -75,33 +149,39 @@ def test_workspace_preparation_tasks_parse_review_status(client) -> None:
     assert body["tasks"][0]["reason"] == "来自复习状态"
 
 
-def test_workspace_upload_materials_endpoint(client) -> None:
+def test_workspace_upload_materials_endpoint(client, monkeypatch) -> None:
+    _disable_index_rebuild(monkeypatch)
+    token = _register(client)
     response = client.post(
         "/api/workspace/materials/upload",
         files={"files": ("redis.md", b"# Redis\n\ncache", "text/markdown")},
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["sources"][0]["duplicate"] is False
-    status = client.get("/api/workspace").json()
+    status = client.get("/api/workspace", headers=_auth(token)).json()
     assert status["artifact_count"] == 2
 
 
-def test_workspace_artifacts_include_source_display_name(client) -> None:
-    client.app.state.artifact_service.create_markdown(
+def test_workspace_artifacts_include_source_display_name(client, monkeypatch) -> None:
+    _disable_index_rebuild(monkeypatch)
+    token = _register(client)
+    _workspace_artifacts(client).create_markdown(
         "knowledge/redis.md",
         kind="knowledge",
         body="# Redis\n",
     )
-    client.post("/api/workspace/rebuild-projection")
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
     upload = client.post(
         "/api/workspace/materials/upload",
         files={"files": ("resume-final.md", b"# Resume\n\nBackend work", "text/markdown")},
+        headers=_auth(token),
     )
     assert upload.status_code == 200
 
-    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     source = next(artifact for artifact in artifacts if artifact["kind"] == "source")
     knowledge = next(artifact for artifact in artifacts if artifact["kind"] == "knowledge")
 
@@ -115,11 +195,20 @@ def test_workspace_artifacts_include_source_display_name(client) -> None:
 
 
 def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch) -> None:
-    calls: list[tuple[object, object, object]] = []
+    token = _register(client)
+    calls: list[tuple[object, object, object, int, str]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
-            calls.append((session_factory, workspace, repository))
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            calls.append((session_factory, workspace, repository, user_id, qdrant_prefix))
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
@@ -127,19 +216,62 @@ def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch
     response = client.post(
         "/api/workspace/materials/upload",
         files={"files": ("redis.md", b"# Redis\n\ncache", "text/markdown")},
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
     assert len(calls) == 1
     assert calls[0][0] is client.app.state.session_factory
-    assert calls[0][1] is client.app.state.workspace_service
+    assert calls[0][1].root == _workspace_service(client).root
+    assert calls[0][3] == 1
+    assert calls[0][4] == "auto_reign_user_1"
+
+
+def test_workspace_rebuild_index_uses_user_active_collection(client, monkeypatch) -> None:
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
+    artifacts.create_markdown("knowledge/index-me.md", kind="knowledge", body="# Index\n\nbody")
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    store = RecordingWorkspaceVectorStore()
+    store.collections.update({"auto_reign_user_1__old", "auto_reign_user_1__orphan"})
+    with session_scope(client.app.state.session_factory) as session:
+        user = session.get(models.User, 1)
+        user.settings_json = {**user.settings_json, "active_collection": "auto_reign_user_1__old"}
+
+    monkeypatch.setattr(
+        "app.api.workspace.IndexService",
+        lambda: IndexService(vector_store=store),
+    )
+
+    response = client.post("/api/workspace/rebuild-index", headers=_auth(token))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["collection"].startswith("auto_reign_user_1__")
+    assert body["collection"] != "auto_reign_user_1__old"
+    assert store.upserts
+    assert "auto_reign_user_1__old" in store.deleted_collections
+    assert "auto_reign_user_1__orphan" in store.deleted_collections
+    with session_scope(client.app.state.session_factory) as session:
+        user = session.get(models.User, 1)
+        assert user.settings_json["active_collection"] == body["collection"]
 
 
 def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) -> None:
+    token = _register(client)
     calls: list[tuple[object, object, object]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del user_id, qdrant_prefix
             calls.append((session_factory, workspace, repository))
             return "rebuilt"
 
@@ -153,6 +285,7 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
             "provider": "qwen",
             "model": "qwen3.7-plus",
         },
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
@@ -168,11 +301,14 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert "我的理解" in body["card_markdown"]
     assert "原始记录已保存" not in body["card_markdown"]
 
-    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     kinds = {artifact["kind"] for artifact in artifacts}
     assert {"source", "knowledge", "review_status"}.issubset(kinds)
 
-    detail = client.get(f"/api/workspace/artifacts/{body['artifact']['id']}").json()
+    detail = client.get(
+        f"/api/workspace/artifacts/{body['artifact']['id']}",
+        headers=_auth(token),
+    ).json()
     assert "我的理解" in detail["body"]
     assert "修正/补充" in detail["body"]
     assert "30 秒面试说法" in detail["body"]
@@ -181,15 +317,29 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     assert "缓存穿透" in detail["body"]
     assert "原始记录已保存" not in detail["body"]
     status = next(artifact for artifact in artifacts if artifact["kind"] == "review_status")
-    status_detail = client.get(f"/api/workspace/artifacts/{status['id']}").json()
+    status_detail = client.get(
+        f"/api/workspace/artifacts/{status['id']}",
+        headers=_auth(token),
+    ).json()
     assert "## 最近整理" in status_detail["body"]
     assert body["summary"]["title"] in status_detail["body"]
     assert len(calls) == 1
 
 
 def test_learning_note_stream_creates_learning_conversation(client, monkeypatch) -> None:
+    token = _register(client)
+
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del session_factory, workspace, repository, user_id, qdrant_prefix
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
@@ -202,24 +352,44 @@ def test_learning_note_stream_creates_learning_conversation(client, monkeypatch)
             "provider": "qwen",
             "model": "qwen3.7-plus",
         },
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
     body = _sse_result(response.text)
     assert body["conversation_id"]
 
-    detail = client.get(f"/api/conversations/{body['conversation_id']}")
-    assert detail.status_code == 200
-    detail_body = detail.json()
-    assert detail_body["kind"] == "learning"
-    assert [message["role"] for message in detail_body["messages"]] == ["user", "assistant"]
-    assert "缓存穿透" in detail_body["messages"][0]["content"]
-    assert detail_body["messages"][1]["metadata"]["artifact_path"] == body["artifact"]["relative_path"]
+    with session_scope(client.app.state.session_factory) as session:
+        conversation = session.get(models.Conversation, body["conversation_id"])
+        assert conversation is not None
+        assert conversation.user_id == 1
+        assert conversation.kind == "learning"
+        messages = list(
+            session.scalars(
+                select(models.Message)
+                .where(models.Message.conversation_id == conversation.id)
+                .order_by(models.Message.sequence)
+            )
+        )
+        assert [message.role for message in messages] == ["user", "assistant"]
+        assert "缓存穿透" in messages[0].content
+        assert messages[1].metadata_json["artifact_path"] == body["artifact"]["relative_path"]
 
 
 def test_learning_note_stream_appends_to_existing_learning_conversation(client, monkeypatch) -> None:
+    token = _register(client)
+
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del session_factory, workspace, repository, user_id, qdrant_prefix
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.IndexService", RecordingIndexService)
@@ -227,6 +397,7 @@ def test_learning_note_stream_appends_to_existing_learning_conversation(client, 
     first = client.post(
         "/api/workspace/learning-notes/stream",
         json={"text": "第一次学习 Redis 缓存穿透。", "language": "zh-CN"},
+        headers=_auth(token),
     )
     first_body = _sse_result(first.text)
 
@@ -237,23 +408,33 @@ def test_learning_note_stream_appends_to_existing_learning_conversation(client, 
             "text": "第二次学习布隆过滤器。",
             "language": "zh-CN",
         },
+        headers=_auth(token),
     )
 
     assert second.status_code == 200
     second_body = _sse_result(second.text)
     assert second_body["conversation_id"] == first_body["conversation_id"]
 
-    detail = client.get(f"/api/conversations/{first_body['conversation_id']}").json()
-    assert [message["role"] for message in detail["messages"]] == [
-        "user",
-        "assistant",
-        "user",
-        "assistant",
-    ]
-    assert "第二次学习布隆过滤器" in detail["messages"][2]["content"]
+    with session_scope(client.app.state.session_factory) as session:
+        messages = list(
+            session.scalars(
+                select(models.Message)
+                .where(models.Message.conversation_id == first_body["conversation_id"])
+                .order_by(models.Message.sequence)
+            )
+        )
+        assert [message.role for message in messages] == [
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]
+        assert "第二次学习布隆过滤器" in messages[2].content
 
 
 def test_learning_note_stream_rejects_unknown_conversation_before_persisting(client, monkeypatch) -> None:
+    token = _register(client)
+
     class FailingModelService:
         def stream_learning_note_summary(self, *args, **kwargs):
             raise AssertionError("model should not be called when conversation is unknown")
@@ -267,14 +448,17 @@ def test_learning_note_stream_rejects_unknown_conversation_before_persisting(cli
             "text": "这条学习记录不应该落盘。",
             "language": "zh-CN",
         },
+        headers=_auth(token),
     )
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "learning_session_not_found"
-    assert client.get("/api/workspace").json()["artifact_count"] == 0
+    assert client.get("/api/workspace", headers=_auth(token)).json()["artifact_count"] == 0
 
 
 def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) -> None:
+    token = _register(client)
+
     class FixedModelService:
         def stream_learning_note_summary(
             self,
@@ -293,7 +477,16 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
             )
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del session_factory, workspace, repository, user_id, qdrant_prefix
             return "rebuilt"
 
     monkeypatch.setattr("app.api.workspace.ModelService", FixedModelService)
@@ -305,6 +498,7 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
             "text": "第一次：缓存穿透可以用布隆过滤器挡住不存在的 key。",
             "language": "zh-CN",
         },
+        headers=_auth(token),
     )
     second_response = client.post(
         "/api/workspace/learning-notes/stream",
@@ -312,11 +506,12 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
             "text": "第二次：空值缓存也可以降低数据库压力。",
             "language": "zh-CN",
         },
+        headers=_auth(token),
     )
     first = _sse_result(first_response.text)
     second = _sse_result(second_response.text)
 
-    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     knowledge_artifacts = [artifact for artifact in artifacts if artifact["kind"] == "knowledge"]
     source_artifacts = [artifact for artifact in artifacts if artifact["kind"] == "source"]
 
@@ -326,7 +521,10 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
     assert len(source_artifacts) == 1
     assert source_artifacts[0]["relative_path"].startswith("sources/notes/")
 
-    detail = client.get(f"/api/workspace/artifacts/{second['artifact']['id']}").json()
+    detail = client.get(
+        f"/api/workspace/artifacts/{second['artifact']['id']}",
+        headers=_auth(token),
+    ).json()
     assert detail["revision"] == 2
     assert "第一次：缓存穿透" in detail["body"]
     assert "第二次：空值缓存" in detail["body"]
@@ -335,10 +533,20 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
 
 
 def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch) -> None:
+    token = _register(client)
     calls: list[tuple[object, object, object]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del user_id, qdrant_prefix
             calls.append((session_factory, workspace, repository))
             return "rebuilt"
 
@@ -352,6 +560,7 @@ def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch
             "provider": "qwen",
             "model": "qwen3.7-plus",
         },
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
@@ -360,7 +569,7 @@ def test_record_learning_note_stream_emits_deltas_and_result(client, monkeypatch
     assert "event: result" in body
     assert "MySQL" in body
 
-    artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
+    artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     kinds = {artifact["kind"] for artifact in artifacts}
     assert {"source", "knowledge"}.issubset(kinds)
     assert len(calls) == 1
@@ -370,10 +579,20 @@ def test_record_real_interview_archives_extracts_and_updates_status(
     client,
     monkeypatch,
 ) -> None:
+    token = _register(client)
     calls: list[tuple[object, object, object]] = []
 
     class RecordingIndexService:
-        def rebuild_index(self, session_factory, workspace, repository) -> str:
+        def rebuild_index(
+            self,
+            session_factory,
+            workspace,
+            repository,
+            *,
+            user_id: int,
+            qdrant_prefix: str,
+        ) -> str:
+            del user_id, qdrant_prefix
             calls.append((session_factory, workspace, repository))
             return "rebuilt"
 
@@ -390,6 +609,7 @@ def test_record_real_interview_archives_extracts_and_updates_status(
             ),
             "language": "zh-CN",
         },
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
@@ -404,22 +624,29 @@ def test_record_real_interview_archives_extracts_and_updates_status(
     assert body["high_frequency_artifact"]["relative_path"] == "review/high-frequency.md"
     assert body["status_artifact"]["relative_path"] == "review/status.md"
 
-    raw_detail = client.get(f"/api/workspace/artifacts/{body['raw_artifact']['id']}").json()
+    raw_detail = client.get(
+        f"/api/workspace/artifacts/{body['raw_artifact']['id']}",
+        headers=_auth(token),
+    ).json()
     assert "## 原始记录" in raw_detail["body"]
     assert "Redis 缓存击穿怎么处理？" in raw_detail["body"]
 
     high_frequency_detail = client.get(
-        f"/api/workspace/artifacts/{body['high_frequency_artifact']['id']}"
+        f"/api/workspace/artifacts/{body['high_frequency_artifact']['id']}",
+        headers=_auth(token),
     ).json()
     assert "## 真实面试高频问题" in high_frequency_detail["body"]
     assert "Redis 缓存击穿怎么处理？" in high_frequency_detail["body"]
     assert "## 暴露问题" in high_frequency_detail["body"]
     assert "这个不会" in high_frequency_detail["body"]
-    status_detail = client.get(f"/api/workspace/artifacts/{body['status_artifact']['id']}").json()
+    status_detail = client.get(
+        f"/api/workspace/artifacts/{body['status_artifact']['id']}",
+        headers=_auth(token),
+    ).json()
     assert "## 当前重点" in status_detail["body"]
     assert "Redis 缓存击穿怎么处理？" in status_detail["body"]
 
-    tasks = client.get("/api/workspace/preparation-tasks").json()["tasks"]
+    tasks = client.get("/api/workspace/preparation-tasks", headers=_auth(token)).json()["tasks"]
     assert len(tasks) == 3
     assert "Redis 缓存击穿怎么处理？" in tasks[0]["title"]
     assert "降级预案" in tasks[1]["title"]
@@ -443,19 +670,21 @@ def test_learning_note_stream_prompt_uses_requested_language_headings() -> None:
 
 
 def test_workspace_artifact_read_and_replace_body(client) -> None:
-    artifacts = client.app.state.artifact_service
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("knowledge/edit.md", kind="knowledge", body="# Edit\n\nold")
-    client.post("/api/workspace/rebuild-projection")
-    listed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     artifact_id = listed[0]["id"]
     assert listed[0]["allowed_operations"] == ["replace_body"]
 
-    detail = client.get(f"/api/workspace/artifacts/{artifact_id}").json()
+    detail = client.get(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token)).json()
     assert detail["body"] == "# Edit\n\nold"
 
     response = client.put(
         f"/api/workspace/artifacts/{artifact_id}/body",
         json={"expected_revision": 1, "body": "# Edit\n\nnew"},
+        headers=_auth(token),
     )
 
     assert response.status_code == 200
@@ -465,43 +694,48 @@ def test_workspace_artifact_read_and_replace_body(client) -> None:
     conflict = client.put(
         f"/api/workspace/artifacts/{artifact_id}/body",
         json={"expected_revision": 1, "body": "# stale"},
+        headers=_auth(token),
     )
     assert conflict.status_code == 409
 
 
 def test_workspace_artifact_delete_removes_file_and_projection(client) -> None:
-    artifacts = client.app.state.artifact_service
-    workspace = client.app.state.workspace_service
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
+    workspace = _workspace_service(client)
     artifacts.create_markdown("knowledge/delete-me.md", kind="knowledge", body="# Delete\n")
-    client.post("/api/workspace/rebuild-projection")
-    listed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     artifact_id = listed[0]["id"]
     artifact_path = workspace.resolve_path("knowledge/delete-me.md")
 
-    response = client.delete(f"/api/workspace/artifacts/{artifact_id}")
+    response = client.delete(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token))
 
     assert response.status_code == 200
     assert response.json() == {"id": artifact_id, "status": "deleted"}
     assert not artifact_path.exists()
-    assert client.get(f"/api/workspace/artifacts/{artifact_id}").status_code == 404
-    assert client.get("/api/workspace/artifacts").json()["artifacts"] == []
+    assert client.get(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token)).status_code == 404
+    assert client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"] == []
 
 
-def test_workspace_source_delete_removes_original_and_sidecar(client) -> None:
+def test_workspace_source_delete_removes_original_and_sidecar(client, monkeypatch) -> None:
+    _disable_index_rebuild(monkeypatch)
+    token = _register(client)
     upload = client.post(
         "/api/workspace/materials/upload",
         files={"files": ("source.txt", b"source", "text/plain")},
+        headers=_auth(token),
     ).json()
     source_id = upload["sources"][0]["artifact_id"]
     source = next(
         artifact
-        for artifact in client.get("/api/workspace/artifacts").json()["artifacts"]
+        for artifact in client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
         if artifact["id"] == source_id
     )
-    source_path = client.app.state.workspace_service.resolve_path(source["relative_path"])
+    source_path = _workspace_service(client).resolve_path(source["relative_path"])
     sidecar_path = source_path.with_name(f"{source_path.name}.meta.json")
 
-    response = client.delete(f"/api/workspace/artifacts/{source_id}")
+    response = client.delete(f"/api/workspace/artifacts/{source_id}", headers=_auth(token))
 
     assert response.status_code == 200
     assert not source_path.exists()
@@ -511,11 +745,12 @@ def test_workspace_source_delete_removes_original_and_sidecar(client) -> None:
 def test_workspace_artifact_delete_keeps_file_when_vector_delete_fails(
     client, monkeypatch
 ) -> None:
-    artifacts = client.app.state.artifact_service
-    workspace = client.app.state.workspace_service
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
+    workspace = _workspace_service(client)
     artifacts.create_markdown("knowledge/keep-me.md", kind="knowledge", body="# Keep\n")
-    client.post("/api/workspace/rebuild-projection")
-    listed = client.get("/api/workspace/artifacts").json()["artifacts"]
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     artifact_id = listed[0]["id"]
     artifact_path = workspace.resolve_path("knowledge/keep-me.md")
 
@@ -529,38 +764,44 @@ def test_workspace_artifact_delete_keeps_file_when_vector_delete_fails(
 
     monkeypatch.setattr("app.api.workspace.IndexService", FailingIndexService)
 
-    response = client.delete(f"/api/workspace/artifacts/{artifact_id}")
+    response = client.delete(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token))
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "vector_delete_failed"
     assert artifact_path.exists()
-    assert client.get(f"/api/workspace/artifacts/{artifact_id}").status_code == 200
+    assert client.get(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token)).status_code == 200
 
 
-def test_workspace_artifact_permissions_are_enforced(client) -> None:
+def test_workspace_artifact_permissions_are_enforced(client, monkeypatch) -> None:
+    _disable_index_rebuild(monkeypatch)
+    token = _register(client)
     upload = client.post(
         "/api/workspace/materials/upload",
         files={"files": ("source.txt", b"source", "text/plain")},
+        headers=_auth(token),
     ).json()
     source_id = upload["sources"][0]["artifact_id"]
 
     response = client.put(
         f"/api/workspace/artifacts/{source_id}/body",
         json={"expected_revision": 1, "body": "changed"},
+        headers=_auth(token),
     )
 
     assert response.status_code == 403
 
 
 def test_workspace_legacy_plan_artifact_is_not_editable(client) -> None:
-    artifacts = client.app.state.artifact_service
+    token = _register(client)
+    artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("state/plan.md", kind="plan", body="# Plan\n\n- a\n")
-    client.post("/api/workspace/rebuild-projection")
-    plan = client.get("/api/workspace/artifacts").json()["artifacts"][0]
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    plan = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"][0]
 
     response = client.put(
         f"/api/workspace/artifacts/{plan['id']}/body",
         json={"expected_revision": 1, "body": "# Plan\n\n- a\n- b\n- c\n- d\n"},
+        headers=_auth(token),
     )
 
     assert response.status_code == 400
@@ -571,5 +812,5 @@ def test_health_includes_workspace_without_exposing_paths(client) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["workspace"]["initialized"] is True
+    assert body["workspace"]["initialized"] is False
     assert "path" not in body["workspace"]

@@ -5,13 +5,21 @@ from sqlalchemy import create_engine, inspect
 
 
 EXPECTED_TABLES = {
+    "users",
+    "artifacts",
+    "conversations",
+    "messages",
+}
+
+REMOVED_TABLES = {
     "interview_configs",
     "interview_sessions",
     "interview_turns",
+    "learning_sessions",
+    "learning_messages",
+    "processing_jobs",
     "reports",
     "workspace_settings",
-    "artifacts",
-    "processing_jobs",
 }
 
 
@@ -28,3 +36,4 @@ def test_mysql_schema_matches_expected_tables() -> None:
         engine.dispose()
 
     assert EXPECTED_TABLES.issubset(tables)
+    assert tables.isdisjoint(REMOVED_TABLES)

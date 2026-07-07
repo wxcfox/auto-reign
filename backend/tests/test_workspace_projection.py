@@ -4,8 +4,20 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
+from app.services.artifact_metadata import (
+    artifact_edited_by,
+    artifact_index_status,
+    artifact_media_type,
+    artifact_origin,
+    artifact_processing_status,
+    artifact_recovery_required,
+    artifact_source_filename,
+    artifact_source_refs,
+)
 from app.services.artifact_service import ArtifactService
 from app.services.workspace_service import WorkspaceService
+
+USER_ID = 1
 
 
 def _session(client) -> Session:
@@ -16,6 +28,25 @@ def _services(tmp_path: Path) -> tuple[WorkspaceService, ArtifactService, Artifa
     workspace = WorkspaceService(tmp_path / "workspace")
     workspace.initialize()
     return workspace, ArtifactService(workspace), ArtifactRepository()
+
+
+def _create_user(session: Session) -> models.User:
+    existing = session.get(models.User, USER_ID)
+    if existing is not None:
+        return existing
+    user = models.User(
+        username="alice",
+        password_hash="hash",
+        settings_json={
+            "schema_version": 1,
+            "language": "zh-CN",
+            "active_collection": "auto_reign_user_1",
+        },
+    )
+    session.add(user)
+    session.flush()
+    assert user.id == USER_ID
+    return user
 
 
 def test_rebuild_projection_upserts_sources_and_managed_markdown(client, tmp_path: Path) -> None:
@@ -34,39 +65,44 @@ def test_rebuild_projection_upserts_sources_and_managed_markdown(client, tmp_pat
     )
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        rows = {artifact.relative_path: artifact for artifact in repository.list(session)}
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        rows = {
+            artifact.relative_path: artifact
+            for artifact in repository.list(session, user_id=USER_ID)
+        }
 
     assert rows[source.relative_path].id == source.artifact_id
+    assert rows[source.relative_path].user_id == USER_ID
     assert rows[source.relative_path].kind == "source"
-    assert rows[source.relative_path].source_filename == "resume.md"
-    assert rows[source.relative_path].media_type == "text/markdown"
-    assert rows[source.relative_path].origin == "human"
+    assert artifact_source_filename(rows[source.relative_path]) == "resume.md"
+    assert artifact_media_type(rows[source.relative_path]) == "text/markdown"
+    assert artifact_origin(rows[source.relative_path]) == "human"
     assert rows["knowledge/python.md"].id == knowledge.front_matter.id
-    assert rows["knowledge/python.md"].source_refs == [f"source:{source.artifact_id}"]
-    assert rows["knowledge/python.md"].processing_status == "completed"
+    assert rows["knowledge/python.md"].user_id == USER_ID
+    assert artifact_source_refs(rows["knowledge/python.md"]) == [f"source:{source.artifact_id}"]
+    assert artifact_processing_status(rows["knowledge/python.md"]) == "completed"
 
 
-def test_rebuild_projection_removes_ghost_artifact_and_jobs(client, tmp_path: Path) -> None:
+def test_rebuild_projection_removes_ghost_artifact(client, tmp_path: Path) -> None:
     workspace, artifacts, repository = _services(tmp_path)
     with _session(client) as session:
+        _create_user(session)
         artifact = models.Artifact(
             id="ghost",
+            user_id=USER_ID,
             kind="knowledge",
             relative_path="knowledge/missing.md",
             content_hash="old",
         )
         session.add(artifact)
         session.flush()
-        session.add(
-            models.ProcessingJob(operation="reindex", artifact_id=artifact.id, status="pending")
-        )
         session.commit()
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        assert repository.get(session, "ghost") is None
-        assert session.query(models.ProcessingJob).count() == 0
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        assert repository.get(session, user_id=USER_ID, artifact_id="ghost") is None
 
 
 def test_rebuild_projection_repairs_invalid_front_matter_from_existing_projection(
@@ -79,20 +115,21 @@ def test_rebuild_projection_repairs_invalid_front_matter_from_existing_projectio
         body="# Broken\n\nBody stays.\n",
     )
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
         session.commit()
 
     broken_path = workspace.resolve_path("knowledge/broken.md")
     broken_path.write_text("---\nkind: [not-valid\n---\n# Broken\n\nBody stays.\n", encoding="utf-8")
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        row = repository.get(session, created.front_matter.id)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        row = repository.get(session, user_id=USER_ID, artifact_id=created.front_matter.id)
 
     assert row is not None
-    assert row.processing_status == "needs_recovery"
-    assert row.recovery_required is True
-    assert row.edited_by == "user"
+    assert artifact_processing_status(row) == "needs_recovery"
+    assert artifact_recovery_required(row) is True
+    assert artifact_edited_by(row) == "user"
     repaired = artifacts.read_markdown("knowledge/broken.md")
     assert repaired.front_matter.id == created.front_matter.id
     assert repaired.front_matter.recovery_required is True
@@ -110,28 +147,29 @@ def test_rebuild_projection_marks_unmatched_plain_markdown_for_recovery(
     path.write_text("# Manual note\n\nNo metadata yet.\n", encoding="utf-8")
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        first_rows = repository.list(session)
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        first_rows = repository.list(session, user_id=USER_ID)
 
     assert len(first_rows) == 1
     row = first_rows[0]
     assert row.kind == "knowledge"
-    assert row.processing_status == "needs_recovery"
-    assert row.index_status == "stale"
-    assert row.recovery_required is True
-    assert row.origin == "human"
-    assert row.edited_by == "user"
+    assert artifact_processing_status(row) == "needs_recovery"
+    assert artifact_index_status(row) == "stale"
+    assert artifact_recovery_required(row) is True
+    assert artifact_origin(row) == "human"
+    assert artifact_edited_by(row) == "user"
     repaired = artifacts.read_markdown("knowledge/manual-note.md")
     assert repaired.front_matter.id == row.id
     assert repaired.body == "# Manual note\n\nNo metadata yet.\n"
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        repeated_rows = repository.list(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        repeated_rows = repository.list(session, user_id=USER_ID)
 
     assert len(repeated_rows) == 1
     assert repeated_rows[0].id == row.id
-    assert repeated_rows[0].processing_status == "needs_recovery"
+    assert artifact_processing_status(repeated_rows[0]) == "needs_recovery"
 
 
 def test_rebuild_projection_ignores_workspace_manifest_and_revisions(client, tmp_path: Path) -> None:
@@ -144,7 +182,8 @@ def test_rebuild_projection_ignores_workspace_manifest_and_revisions(client, tmp
     )
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        rows = repository.list(session)
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        rows = repository.list(session, user_id=USER_ID)
 
     assert [row.relative_path for row in rows] == ["knowledge/topic.md"]

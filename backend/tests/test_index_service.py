@@ -3,12 +3,16 @@ from pathlib import Path
 import pytest
 from langchain_core.documents import Document
 
+from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.vector_store import VectorStoreUnavailable
-from app.repositories.workspace_settings_repository import WorkspaceSettingsRepository
+from app.services.artifact_metadata import artifact_index_status
 from app.services.artifact_service import ArtifactService
 from app.services.index_service import IndexService
 from app.services.workspace_service import WorkspaceService
+
+USER_ID = 1
+QDRANT_PREFIX = "auto_reign_user_1"
 
 
 class RecordingWorkspaceVectorStore:
@@ -81,6 +85,22 @@ def _session(client):
     return client.app.state.session_factory()
 
 
+def _create_user(session) -> models.User:
+    user = models.User(
+        username="alice",
+        password_hash="hash",
+        settings_json={
+            "schema_version": 1,
+            "language": "zh-CN",
+            "active_collection": QDRANT_PREFIX,
+        },
+    )
+    session.add(user)
+    session.flush()
+    assert user.id == USER_ID
+    return user
+
+
 def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) -> None:
     workspace, artifacts, repository = workspace_stack
     text_source = artifacts.store_source(
@@ -145,10 +165,11 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
     service = IndexService(vector_store=store)
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        rows = repository.list(session)
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        rows = repository.list(session, user_id=USER_ID)
         for row in rows:
-            service.index_artifact(session, row, workspace)
+            service.index_artifact(session, row, workspace, collection_name=QDRANT_PREFIX)
         session.commit()
 
     indexed_ids = {
@@ -188,13 +209,13 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
     assert knowledge_document.metadata["source_refs"] == [f"source:{text_source.artifact_id}"]
     assert knowledge_document.metadata["chunk_index"] == 0
 
-    statuses = {row.id: row.index_status for row in rows}
+    statuses = {row.id: artifact_index_status(row) for row in rows}
     assert statuses[report.front_matter.id] == "completed"
     assert statuses[binary_source.artifact_id] == "completed"
     assert statuses[recovery.front_matter.id] == "stale"
-    assert ("auto_reign_test", report.front_matter.id) in store.deleted_artifacts
-    assert ("auto_reign_test", binary_source.artifact_id) in store.deleted_artifacts
-    assert ("auto_reign_test", recovery.front_matter.id) not in store.deleted_artifacts
+    assert (QDRANT_PREFIX, report.front_matter.id) in store.deleted_artifacts
+    assert (QDRANT_PREFIX, binary_source.artifact_id) in store.deleted_artifacts
+    assert (QDRANT_PREFIX, recovery.front_matter.id) not in store.deleted_artifacts
 
 
 def test_index_artifact_marks_stale_when_build_fails_without_deleting_live_vectors(
@@ -206,15 +227,17 @@ def test_index_artifact_marks_stale_when_build_fails_without_deleting_live_vecto
     service = IndexService(vector_store=store, text_splitter=FailingTextSplitter())
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        row = repository.get(session, created.front_matter.id)
-        service.index_artifact(session, row, workspace)
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        row = repository.get(session, user_id=USER_ID, artifact_id=created.front_matter.id)
+        service.index_artifact(session, row, workspace, collection_name=QDRANT_PREFIX)
         session.commit()
 
     assert store.deleted_artifacts == []
     assert store.upserts == []
     with _session(client) as session:
-        assert repository.get(session, created.front_matter.id).index_status == "stale"
+        row = repository.get(session, user_id=USER_ID, artifact_id=created.front_matter.id)
+        assert artifact_index_status(row) == "stale"
 
 
 def test_index_artifact_marks_stale_when_embedding_prepare_fails_without_deleting_vectors(
@@ -226,48 +249,50 @@ def test_index_artifact_marks_stale_when_embedding_prepare_fails_without_deletin
     service = IndexService(vector_store=store)
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        row = repository.get(session, created.front_matter.id)
-        service.index_artifact(session, row, workspace)
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        row = repository.get(session, user_id=USER_ID, artifact_id=created.front_matter.id)
+        service.index_artifact(session, row, workspace, collection_name=QDRANT_PREFIX)
         session.commit()
 
     assert store.deleted_artifacts == []
     assert store.upserts == []
     with _session(client) as session:
-        assert repository.get(session, created.front_matter.id).index_status == "stale"
+        row = repository.get(session, user_id=USER_ID, artifact_id=created.front_matter.id)
+        assert artifact_index_status(row) == "stale"
 
 
 def test_rebuild_index_builds_new_collection_and_swaps_pointer(client, workspace_stack) -> None:
     workspace, artifacts, repository = workspace_stack
     created = artifacts.create_markdown("knowledge/swap.md", kind="knowledge", body="# Swap\n")
     store = RecordingWorkspaceVectorStore()
-    store.collections.update({"auto_reign_test__old", "auto_reign_test__orphan"})
+    store.collections.update({f"{QDRANT_PREFIX}__old", f"{QDRANT_PREFIX}__orphan"})
     service = IndexService(vector_store=store)
-    settings_repository = WorkspaceSettingsRepository()
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        settings = settings_repository.get_or_create(session)
-        settings.active_collection = "auto_reign_test__old"
+        user = _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        user.settings_json = {**user.settings_json, "active_collection": f"{QDRANT_PREFIX}__old"}
         session.commit()
 
     service.rebuild_index(
         client.app.state.session_factory,
         workspace,
         repository,
-        settings_repository=settings_repository,
+        user_id=USER_ID,
+        qdrant_prefix=QDRANT_PREFIX,
     )
 
     with _session(client) as session:
-        settings = settings_repository.get_or_create(session)
-        row = repository.get(session, created.front_matter.id)
-        assert settings.active_collection.startswith("auto_reign_test__")
-        assert settings.active_collection != "auto_reign_test__old"
-        assert row.index_status == "completed"
+        user = session.get(models.User, USER_ID)
+        row = repository.get(session, user_id=USER_ID, artifact_id=created.front_matter.id)
+        assert str(user.settings_json["active_collection"]).startswith(f"{QDRANT_PREFIX}__")
+        assert user.settings_json["active_collection"] != f"{QDRANT_PREFIX}__old"
+        assert artifact_index_status(row) == "completed"
     assert store.upserts
     assert all(isinstance(document, Document) for _, documents in store.upserts for document in documents)
-    assert "auto_reign_test__old" in store.deleted_collections
-    assert "auto_reign_test__orphan" in store.deleted_collections
+    assert f"{QDRANT_PREFIX}__old" in store.deleted_collections
+    assert f"{QDRANT_PREFIX}__orphan" in store.deleted_collections
 
 
 def test_rebuild_index_marks_failed_artifacts_stale_and_keeps_indexing_others(
@@ -279,31 +304,31 @@ def test_rebuild_index_marks_failed_artifacts_stale_and_keeps_indexing_others(
     store = RecordingWorkspaceVectorStore(
         fail_upsert_artifact_ids={failed.front_matter.id}
     )
-    store.collections.add("auto_reign_test__old")
+    store.collections.add(f"{QDRANT_PREFIX}__old")
     service = IndexService(vector_store=store)
-    settings_repository = WorkspaceSettingsRepository()
 
     with _session(client) as session:
-        workspace.rebuild_projection(session, repository, artifacts)
-        settings = settings_repository.get_or_create(session)
-        settings.active_collection = "auto_reign_test__old"
+        user = _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        user.settings_json = {**user.settings_json, "active_collection": f"{QDRANT_PREFIX}__old"}
         session.commit()
 
     service.rebuild_index(
         client.app.state.session_factory,
         workspace,
         repository,
-        settings_repository=settings_repository,
+        user_id=USER_ID,
+        qdrant_prefix=QDRANT_PREFIX,
     )
 
     with _session(client) as session:
-        settings = settings_repository.get_or_create(session)
+        user = session.get(models.User, USER_ID)
         statuses = {
-            row.id: row.index_status
-            for row in repository.list(session)
+            row.id: artifact_index_status(row)
+            for row in repository.list(session, user_id=USER_ID)
         }
-        assert settings.active_collection.startswith("auto_reign_test__")
-        assert settings.active_collection != "auto_reign_test__old"
+        assert str(user.settings_json["active_collection"]).startswith(f"{QDRANT_PREFIX}__")
+        assert user.settings_json["active_collection"] != f"{QDRANT_PREFIX}__old"
         assert statuses[failed.front_matter.id] == "stale"
         assert statuses[healthy.front_matter.id] == "completed"
     indexed_ids = {
@@ -313,4 +338,4 @@ def test_rebuild_index_marks_failed_artifacts_stale_and_keeps_indexing_others(
     }
     assert failed.front_matter.id not in indexed_ids
     assert healthy.front_matter.id in indexed_ids
-    assert "auto_reign_test__old" in store.deleted_collections
+    assert f"{QDRANT_PREFIX}__old" in store.deleted_collections
