@@ -4,6 +4,7 @@
     "language": "语言",
     "settings": "设置",
     "user": "本地用户",
+    "user_id": "用户 #{{id}}",
     "dark_mode": "深色模式",
     "light_mode": "浅色模式",
     "logout": "退出登录",

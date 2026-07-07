@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
 import i18next from "@/i18n/setup";
-import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
+import { deleteConversation, getCurrentUser, listConversations, renameConversation } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 
 const navigationMocks = vi.hoisted(() => ({
@@ -20,6 +20,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   deleteConversation: vi.fn(),
+  getCurrentUser: vi.fn(),
   listConversations: vi.fn(),
   renameConversation: vi.fn(),
 }));
@@ -74,6 +75,14 @@ describe("AppShell", () => {
         last_message: "Renamed latest message",
       }),
     );
+    vi.mocked(getCurrentUser).mockResolvedValue({
+      id: 7,
+      username: "alice",
+      display_name: "Alice",
+      is_active: true,
+      created_at: "2026-07-07T00:00:00Z",
+      updated_at: "2026-07-07T00:00:00Z",
+    });
     vi.mocked(listConversations).mockResolvedValue({
       conversations: [
         ...conversationResponse("Active backend interview", "interview", "active-session").conversations,
@@ -120,7 +129,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: /Workbench/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Review/i })).not.toBeInTheDocument();
 
-    const userButton = screen.getByRole("button", { name: /Local user/i });
+    const userButton = await screen.findByRole("button", { name: /User #7/i });
     expect(userButton.querySelector(".lucide-chevron-up")).toBeInTheDocument();
     fireEvent.click(userButton);
     expect(userButton.querySelector(".lucide-chevron-down")).toBeInTheDocument();
@@ -130,6 +139,19 @@ describe("AppShell", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
+  it("shows the current user id in the sidebar footer", async () => {
+    render(
+      <AppShell>
+        <div>Current page</div>
+      </AppShell>,
+    );
+
+    const userButton = await screen.findByRole("button", { name: /User #7/i });
+
+    expect(userButton).toHaveTextContent("User #7");
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+  });
+
   it("uses target-state buttons for language and theme settings", async () => {
     render(
       <AppShell>
@@ -137,12 +159,12 @@ describe("AppShell", () => {
       </AppShell>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /User #7/i }));
     const languageButton = await screen.findByRole("button", { name: /简体中文/i });
     fireEvent.click(languageButton);
 
     expect(await screen.findByRole("button", { name: /English/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /本地用户/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /用户 #7/i })).toBeInTheDocument();
 
     const themeButton = screen.getByRole("button", { name: /深色模式/i });
     fireEvent.click(themeButton);
@@ -158,7 +180,7 @@ describe("AppShell", () => {
       </AppShell>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Local user/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /User #7/i }));
     fireEvent.click(await screen.findByRole("button", { name: /Log out/i }));
 
     expect(clearAuthToken).toHaveBeenCalled();
