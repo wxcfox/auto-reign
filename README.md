@@ -15,7 +15,7 @@
 
 Auto Reign 可以把 Markdown、TXT、PDF、DOCX、自由文本学习笔记和真实面试记录写入本地工作区，在 Qdrant 中索引可检索 chunk，以聊天式流程进行书面模拟面试，并在本地保存历史对话、题库、高频问题、复习状态和复盘报告。自由文本学习笔记会追加到每日 `sources/notes/YYYY-MM-DD.md`，再整理为面试短卡片；真实面试记录会保存到 `sources/interviews/`，并更新高频问题和复习状态。
 
-当前版本默认必须登录。用户通过本地用户名和密码注册账号；密码只保存哈希，不保存明文。每个账号拥有独立的本地工作区、MySQL 投影和 Qdrant collection。用户文件位于 `DATA_DIR/users/{user_id}/workspace`。
+当前版本默认必须登录。用户通过本地用户名和密码注册账号；密码只保存哈希，不保存明文。每个账号拥有独立的本地工作区、MySQL 投影和 Qdrant collection。用户文件位于 `DATA_DIR/users/{user_id}/workspace`。JWT 签名密钥优先读取 `JWT_SECRET_KEY`；未配置时，后端会在 `DATA_DIR/.secrets/jwt_secret` 生成并复用当前安装的本地密钥。
 
 旧版单用户 `DATA_DIR/workspace` 数据不会自动迁移或自动删除。切换到多账号版本前，如需清理本地数据，请显式运行：
 
@@ -146,6 +146,7 @@ docker compose config
 | `QDRANT_URL` | 后端访问 Qdrant 的 URL。 |
 | `QDRANT_COLLECTION` | 诊断和兼容路径使用的默认 Qdrant collection 名称；用户级索引使用 `auto_reign_user_{user_id}` 前缀。 |
 | `DATA_DIR` | 用户目录、工作区来源文件、提取文本、生成报告、修订版本和本地文件的根目录。 |
+| `JWT_SECRET_KEY` | 可选 JWT 签名密钥。留空时会在 `DATA_DIR/.secrets/jwt_secret` 自动生成本机密钥。 |
 | `EMBEDDING_PROVIDER` | Embedding provider 标识，默认是 `qwen`。 |
 | `EMBEDDING_MODEL` | Embedding 模型标识，默认是 `text-embedding-v4`。 |
 | `OPENAI_API_KEY` | 启用 OpenAI 模型目录，仅后端读取。 |

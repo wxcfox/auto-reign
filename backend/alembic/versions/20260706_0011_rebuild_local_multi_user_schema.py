@@ -114,6 +114,7 @@ def _create_target_tables() -> None:
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("conversation_id", sa.String(length=36), nullable=False),
+        sa.Column("sequence", sa.Integer(), nullable=False),
         sa.Column("role", sa.String(length=16), nullable=False),
         sa.Column("message_type", sa.String(length=64), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
@@ -126,6 +127,11 @@ def _create_target_tables() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "conversation_id",
+            "sequence",
+            name="uq_messages_conversation_sequence",
+        ),
     )
     op.create_index("ix_messages_conversation_id", "messages", ["conversation_id"])
     op.create_index("ix_messages_user_id", "messages", ["user_id"])

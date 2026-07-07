@@ -217,3 +217,48 @@ def test_conversation_repository_add_message_updates_conversation_timestamp(clie
         )
 
         assert conversation.updated_at > original_updated_at
+
+
+def test_conversation_repository_lists_messages_by_insertion_sequence_when_timestamps_tie(
+    client,
+) -> None:
+    _register(client, "alice")
+    repository = ConversationRepository()
+
+    with session_scope(client.app.state.session_factory) as session:
+        conversation = repository.create(
+            session,
+            user_id=1,
+            kind="learning",
+            title="Redis",
+        )
+        first = repository.add_message(
+            session,
+            user_id=1,
+            conversation_id=conversation.id,
+            role="user",
+            message_type="learning_input",
+            content="first",
+        )
+        second = repository.add_message(
+            session,
+            user_id=1,
+            conversation_id=conversation.id,
+            role="assistant",
+            message_type="learning_summary",
+            content="second",
+        )
+        fixed_created_at = conversation.created_at
+        first.created_at = fixed_created_at
+        second.created_at = fixed_created_at
+        first.id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        second.id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        session.flush()
+
+        messages = repository.list_messages(
+            session,
+            user_id=1,
+            conversation_id=conversation.id,
+        )
+
+    assert [message.content for message in messages] == ["first", "second"]

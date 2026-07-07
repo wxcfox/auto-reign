@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import models
@@ -86,9 +86,19 @@ class ConversationRepository:
         )
         if conversation is None:
             raise ValueError("conversation_not_found")
+        next_sequence = (
+            session.scalar(
+                select(func.max(models.Message.sequence)).where(
+                    models.Message.user_id == user_id,
+                    models.Message.conversation_id == conversation_id,
+                )
+            )
+            or 0
+        ) + 1
         message = models.Message(
             user_id=user_id,
             conversation_id=conversation_id,
+            sequence=next_sequence,
             role=role,
             message_type=message_type,
             content=content,
@@ -113,7 +123,7 @@ class ConversationRepository:
                     models.Message.user_id == user_id,
                     models.Message.conversation_id == conversation_id,
                 )
-                .order_by(models.Message.created_at, models.Message.id)
+                .order_by(models.Message.sequence)
             )
         )
 

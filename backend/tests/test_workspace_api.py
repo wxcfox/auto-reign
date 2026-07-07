@@ -368,7 +368,7 @@ def test_learning_note_stream_creates_learning_conversation(client, monkeypatch)
             session.scalars(
                 select(models.Message)
                 .where(models.Message.conversation_id == conversation.id)
-                .order_by(models.Message.created_at)
+                .order_by(models.Message.sequence)
             )
         )
         assert [message.role for message in messages] == ["user", "assistant"]
@@ -420,7 +420,7 @@ def test_learning_note_stream_appends_to_existing_learning_conversation(client, 
             session.scalars(
                 select(models.Message)
                 .where(models.Message.conversation_id == first_body["conversation_id"])
-                .order_by(models.Message.created_at)
+                .order_by(models.Message.sequence)
             )
         )
         assert [message.role for message in messages] == [

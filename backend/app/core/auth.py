@@ -79,7 +79,7 @@ def create_access_token(
         }
     )
     signing_input = f"{header}.{payload}"
-    signature = _sign(signing_input, settings.jwt_secret_key)
+    signature = _sign(signing_input, settings.resolve_jwt_secret_key())
     return f"{signing_input}.{signature}"
 
 
@@ -95,7 +95,9 @@ def decode_access_token(token: str) -> AccessTokenPayload:
     except UnicodeEncodeError as exc:
         raise TokenInvalidError("JWT section is malformed.") from exc
 
-    expected_signature = _sign(f"{header}.{payload}", settings.jwt_secret_key)
+    expected_signature = _sign(
+        f"{header}.{payload}", settings.resolve_jwt_secret_key()
+    )
     if not hmac.compare_digest(signature, expected_signature):
         raise TokenInvalidError("JWT signature is invalid.")
 

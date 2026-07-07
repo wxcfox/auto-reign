@@ -97,12 +97,13 @@ def test_messages_must_belong_to_conversation_owner() -> None:
         session.flush()
 
         session.add(
-            Message(
-                user_id=alice.id,
-                conversation_id=conversation.id,
-                role="user",
-                message_type="answer",
-            )
+                Message(
+                    user_id=alice.id,
+                    conversation_id=conversation.id,
+                    sequence=1,
+                    role="user",
+                    message_type="answer",
+                )
         )
         session.commit()
 
@@ -111,12 +112,13 @@ def test_messages_must_belong_to_conversation_owner() -> None:
 
     with Session(engine) as session:
         session.add(
-            Message(
-                user_id=bob_id,
-                conversation_id=conversation_id,
-                role="user",
-                message_type="answer",
-            )
+                Message(
+                    user_id=bob_id,
+                    conversation_id=conversation_id,
+                    sequence=1,
+                    role="user",
+                    message_type="answer",
+                )
         )
         with pytest.raises(IntegrityError):
             session.commit()
@@ -161,6 +163,12 @@ def test_migration_on_empty_database_creates_target_tables_without_data_dir(
             ("users", ("user_id",)),
             ("conversations", ("conversation_id", "user_id")),
         }
+        message_columns = {column["name"] for column in inspector.get_columns("messages")}
+        assert "sequence" in message_columns
+        message_unique_constraints = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("messages")
+        }
+        assert "uq_messages_conversation_sequence" in message_unique_constraints
     finally:
         engine.dispose()
         get_settings.cache_clear()
@@ -222,6 +230,8 @@ def test_mysql_offline_migration_creates_target_schema_without_json_defaults(
     assert "CREATE TABLE messages" in stdout
     assert "CONSTRAINT uq_artifacts_user_path UNIQUE (user_id, relative_path)" in stdout
     assert "CONSTRAINT uq_conversations_id_user UNIQUE (id, user_id)" in stdout
+    assert "sequence INTEGER NOT NULL" in stdout
+    assert "CONSTRAINT uq_messages_conversation_sequence UNIQUE (conversation_id, sequence)" in stdout
     assert "FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE" in stdout
     assert (
         "FOREIGN KEY(conversation_id, user_id) REFERENCES conversations (id, user_id) "

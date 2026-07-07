@@ -53,6 +53,7 @@ def test_workspace_models_store_user_scoped_workspace_state(client) -> None:
         message = Message(
             user_id=user.id,
             conversation_id=conversation.id,
+            sequence=1,
             role="user",
             message_type="learning_note",
             content="缓存击穿",
