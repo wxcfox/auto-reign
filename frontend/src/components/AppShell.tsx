@@ -31,7 +31,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
+import { deleteConversation, getCurrentUser, listConversations, renameConversation } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 import { CONVERSATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import type { ConversationHistoryItem } from "@/lib/types";
@@ -116,6 +116,7 @@ export function AppShell({ children }: AppShellProps) {
     useState<ConversationHistoryItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const conversationRefreshId = useRef(0);
@@ -156,6 +157,7 @@ export function AppShell({ children }: AppShellProps) {
 
     if (isAuthPage) {
       setConversations([]);
+      setCurrentUserId(null);
       return () => {
         mountedRef.current = false;
       };
@@ -172,6 +174,28 @@ export function AppShell({ children }: AppShellProps) {
       window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
     };
   }, [isAuthPage, refreshConversations]);
+
+  useEffect(() => {
+    if (isAuthPage) {
+      setCurrentUserId(null);
+      return;
+    }
+    let cancelled = false;
+    getCurrentUser()
+      .then((user) => {
+        if (!cancelled) {
+          setCurrentUserId(user.id);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCurrentUserId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthPage]);
 
   useEffect(() => {
     if (historyMenuKey === null) {
@@ -202,6 +226,8 @@ export function AppShell({ children }: AppShellProps) {
   const ThemeIcon = darkMode ? Sun : Moon;
   const SidebarIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   const UserMenuIcon = settingsOpen ? ChevronDown : ChevronUp;
+  const userLabel =
+    currentUserId === null ? t("app.user") : t("app.user_id", { id: currentUserId });
 
   function conversationKey(item: ConversationHistoryItem) {
     return `${item.kind}:${item.id}`;
@@ -413,13 +439,13 @@ export function AppShell({ children }: AppShellProps) {
         <div className="app-sidebar-footer">
           <button
             aria-expanded={settingsOpen}
-            aria-label={t("app.user")}
+            aria-label={userLabel}
             className="sidebar-user"
             onClick={() => setSettingsOpen((current) => !current)}
             type="button"
           >
             <UserCircle size={18} aria-hidden="true" />
-            <span className="sidebar-label">{t("app.user")}</span>
+            <span className="sidebar-label">{userLabel}</span>
             <UserMenuIcon className="sidebar-user-chevron sidebar-label" size={16} aria-hidden="true" />
           </button>
           {settingsOpen ? (

@@ -4,6 +4,7 @@
     "language": "Language",
     "settings": "Settings",
     "user": "Local user",
+    "user_id": "User #{{id}}",
     "dark_mode": "Dark mode",
     "light_mode": "Light mode",
     "logout": "Log out",
