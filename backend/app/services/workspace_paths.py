@@ -1,18 +1,12 @@
-DOCUMENT_SOURCE_DIR = "sources/documents"
-EXTRACTED_SOURCE_DIR = "sources/extracted"
-NOTE_SOURCE_DIR = "sources/notes"
-INTERVIEW_SOURCE_DIR = "sources/interviews"
+MANIFEST_PATH = "manifest.md"
+RAW_SOURCE_DIR = "raw"
+EXTRACTED_SOURCE_DIR = "extracted"
 
-SOURCE_SIDE_CAR_DIRECTORIES = (
-    NOTE_SOURCE_DIR,
-    DOCUMENT_SOURCE_DIR,
-)
+SOURCE_SIDE_CAR_DIRECTORIES = (RAW_SOURCE_DIR,)
 
 WORKSPACE_DIRECTORIES = (
-    NOTE_SOURCE_DIR,
-    DOCUMENT_SOURCE_DIR,
+    RAW_SOURCE_DIR,
     EXTRACTED_SOURCE_DIR,
-    INTERVIEW_SOURCE_DIR,
     "profile",
     "knowledge",
     "questions",
@@ -21,7 +15,6 @@ WORKSPACE_DIRECTORIES = (
     "review",
     "state",
     "reports",
-    "archive",
     ".revisions",
 )
 

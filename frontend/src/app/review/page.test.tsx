@@ -15,7 +15,7 @@ const artifact = {
   id: "artifact-1",
   kind: "interview_record",
   owner: "sources",
-  relative_path: "sources/interviews/20260624-120000.md",
+  relative_path: "raw/20260624-120000-real-interview.md",
   display_name: "20260624-120000.md",
   revision: 1,
   processing_status: "completed",
@@ -81,7 +81,7 @@ describe("ReviewPage", () => {
     );
     expect(await screen.findByText("Redis 缓存击穿怎么处理？")).toBeInTheDocument();
     expect(screen.getByText(/没答好降级预案/)).toBeInTheDocument();
-    expect(screen.getByText("sources/interviews/20260624-120000.md")).toBeInTheDocument();
+    expect(screen.getByText("raw/20260624-120000-real-interview.md")).toBeInTheDocument();
     expect(screen.getByText("review/high-frequency.md")).toBeInTheDocument();
     expect(screen.getByText("review/status.md")).toBeInTheDocument();
   });

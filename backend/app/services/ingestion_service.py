@@ -80,6 +80,7 @@ class IngestionService:
                 source_filename=upload.filename,
                 media_type=upload.media_type,
                 content=upload.content,
+                source_type="upload",
             )
             extracted = self.extraction_service.extract(upload.filename, upload.media_type, upload.content)
             source_ref = f"source:{source.artifact_id}"

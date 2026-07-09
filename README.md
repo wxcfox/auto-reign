@@ -13,7 +13,7 @@
 
 文档地图和生命周期规则见 [docs/README.md](docs/README.md)。已完成的一次性实施计划不应继续留在仓库中，除非其中长期有效的决策已经沉淀到权威文档。
 
-Auto Reign 可以把 Markdown、TXT、PDF、DOCX、自由文本学习笔记和真实面试记录写入本地工作区，在 Qdrant 中索引可检索 chunk，以聊天式流程进行书面模拟面试，并在本地保存历史对话、题库、高频问题、复习状态和复盘报告。自由文本学习笔记会追加到每日 `sources/notes/YYYY-MM-DD.md`，再整理为面试短卡片；真实面试记录会保存到 `sources/interviews/`，并更新高频问题和复习状态。
+Auto Reign 可以把 Markdown、TXT、PDF、DOCX、自由文本学习笔记和真实面试记录写入本地工作区，在 Qdrant 中索引可检索 chunk，以聊天式流程进行书面模拟面试，并在本地保存历史对话、题库、高频问题、复习状态和复盘报告。自由文本学习笔记会追加到 `raw/YYYY-MM-DD-learning-notes.md`，再整理为面试短卡片；真实面试记录会保存到 `raw/`，并更新高频问题和复习状态。
 
 当前版本默认必须登录。用户通过本地用户名和密码注册账号；密码只保存哈希，不保存明文。每个账号拥有独立的本地工作区、MySQL 投影和 Qdrant collection。用户文件位于 `DATA_DIR/users/{user_id}/workspace`。JWT 签名密钥优先读取 `JWT_SECRET_KEY`；未配置时，后端会在 `DATA_DIR/.secrets/jwt_secret` 生成并复用当前安装的本地密钥。
 
@@ -165,7 +165,7 @@ OpenAI 使用标准 API endpoint。DeepSeek 和 Qwen 使用各自的 OpenAI-comp
 
 ## 资料库
 
-上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。上传原始文件保存到 `DATA_DIR/users/{user_id}/workspace/sources/documents`；“新学习”自由文本原文追加到 `DATA_DIR/users/{user_id}/workspace/sources/notes/YYYY-MM-DD.md`，并按主题合并生成使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」格式的 `knowledge` 短卡片，同时把用户输入和整理结果写入学习对话。继续学习时，前端会把历史会话的 `conversation_id` 传给 `POST /api/workspace/learning-notes/stream` 追加消息；侧边栏历史列表通过 `GET /api/conversations` 合并面试和学习，并通过 `PATCH /api/conversations/{id}` 和 `DELETE /api/conversations/{id}` 重命名或隐藏会话。PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/users/{user_id}/workspace/sources/extracted`。真实面试粘贴记录保存到 `DATA_DIR/users/{user_id}/workspace/sources/interviews`，并更新 `review/high-frequency.md` 和 `review/status.md`。资料入库统一通过 workspace API 完成：上传资料使用 `POST /api/workspace/materials/upload`，学习笔记使用 `POST /api/workspace/learning-notes/stream`，真实面试记录使用 `POST /api/workspace/real-interview-records`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识、题库、项目、真实面试、高频复盘和练习内容会被切块并以向量形式保存到当前用户的 Qdrant collection。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
+上传支持 `.md`、`.txt`、`.pdf` 和 `.docx` 文件。工作区会生成用户可编辑的 `manifest.md`，用于说明推荐阅读顺序、文件职责和上下文偏好；它不是权限或安全策略。默认清单采用类似 `.env.example -> .env` 的初始化方式：仓库随包提供 `backend/app/templates/default_manifest.example.md`，服务首次启动时把它种子写入 `DATA_DIR/default_manifest.md`；管理员后续修改运行时默认值后，尚未自定义 `manifest.md` 的用户会在下次工作区初始化时同步，已经通过应用编辑过清单的用户不会被覆盖。上传原始文件保存到 `DATA_DIR/users/{user_id}/workspace/raw`；“新学习”自由文本原文追加到 `raw/YYYY-MM-DD-learning-notes.md`，并按主题合并生成使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」格式的 `knowledge` 短卡片，同时把用户输入和整理结果写入学习对话。继续学习时，前端会把历史会话的 `conversation_id` 传给 `POST /api/workspace/learning-notes/stream` 追加消息；侧边栏历史列表通过 `GET /api/conversations` 合并面试和学习，并通过 `PATCH /api/conversations/{id}` 和 `DELETE /api/conversations/{id}` 重命名或隐藏会话。PDF 和 DOCX 可解析文本会保存到 `DATA_DIR/users/{user_id}/workspace/extracted`。真实面试粘贴记录保存到 `raw/`，并更新 `review/high-frequency.md` 和 `review/status.md`。资料入库统一通过 workspace API 完成：上传资料使用 `POST /api/workspace/materials/upload`，学习笔记使用 `POST /api/workspace/learning-notes/stream`，真实面试记录使用 `POST /api/workspace/real-interview-records`。工作区投影保存到 MySQL，可索引的来源、提取文本、知识、题库、项目、真实面试、高频复盘和练习内容会被切块并以向量形式保存到当前用户的 Qdrant collection。当前数据路径见 [资料库数据流](docs/knowledge-data-flow.md)。
 
 索引和检索只读取当前登录用户 workspace artifact 的 active collection。Markdown/递归切块、embedding、Qdrant vectorstore 和 retriever 由 LangChain 组件处理；workspace 协议、provenance、可索引规则、active collection 发布、检索后处理、上下文预算和 prompt 安全边界由 Auto Reign 应用代码控制。
 

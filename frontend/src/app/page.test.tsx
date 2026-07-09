@@ -48,7 +48,7 @@ describe("DashboardPage", () => {
         {
           id: "source-1",
           kind: "source",
-          relative_path: "sources/documents/resume.md",
+          relative_path: "raw/resume.md",
           display_name: "resume.md",
           revision: 1,
           processing_status: "completed",

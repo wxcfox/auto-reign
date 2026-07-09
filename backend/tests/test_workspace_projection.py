@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
+from app.schemas.workspace import SourceMeta
 from app.services.artifact_metadata import (
     artifact_edited_by,
     artifact_index_status,
@@ -151,8 +153,11 @@ def test_rebuild_projection_marks_unmatched_plain_markdown_for_recovery(
         workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
         first_rows = repository.list(session, user_id=USER_ID)
 
-    assert len(first_rows) == 1
-    row = first_rows[0]
+    assert {row.relative_path for row in first_rows} == {
+        "knowledge/manual-note.md",
+        "manifest.md",
+    }
+    row = next(row for row in first_rows if row.relative_path == "knowledge/manual-note.md")
     assert row.kind == "knowledge"
     assert artifact_processing_status(row) == "needs_recovery"
     assert artifact_index_status(row) == "stale"
@@ -167,12 +172,55 @@ def test_rebuild_projection_marks_unmatched_plain_markdown_for_recovery(
         workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
         repeated_rows = repository.list(session, user_id=USER_ID)
 
-    assert len(repeated_rows) == 1
-    assert repeated_rows[0].id == row.id
-    assert artifact_processing_status(repeated_rows[0]) == "needs_recovery"
+    repeated_row = next(
+        repeated for repeated in repeated_rows if repeated.relative_path == "knowledge/manual-note.md"
+    )
+    assert repeated_row.id == row.id
+    assert artifact_processing_status(repeated_row) == "needs_recovery"
 
 
-def test_rebuild_projection_ignores_workspace_manifest_and_revisions(client, tmp_path: Path) -> None:
+def test_rebuild_projection_ignores_legacy_sources_paths(client, tmp_path: Path) -> None:
+    workspace, artifacts, repository = _services(tmp_path)
+    legacy_document = workspace.resolve_path("sources/documents/legacy-resume.md")
+    legacy_document.parent.mkdir(parents=True)
+    legacy_document.write_text("# Legacy Resume\n", encoding="utf-8")
+    legacy_meta = SourceMeta(
+        artifact_id="legacy-source",
+        source_filename="legacy-resume.md",
+        media_type="text/markdown",
+        size_bytes=legacy_document.stat().st_size,
+        content_hash="legacy-hash",
+        uploaded_at=datetime(2026, 7, 9, tzinfo=UTC),
+        relative_path="sources/documents/legacy-resume.md",
+        source_type="upload",
+    )
+    legacy_document.with_name("legacy-resume.md.meta.json").write_text(
+        legacy_meta.model_dump_json(), encoding="utf-8"
+    )
+    workspace.resolve_path("sources/interviews").mkdir(parents=True)
+    artifacts.create_markdown(
+        "sources/interviews/legacy-interview.md",
+        kind="interview_record",
+        body="# Legacy Interview\n",
+    )
+    workspace.resolve_path("sources/extracted").mkdir(parents=True)
+    artifacts.create_markdown(
+        "sources/extracted/legacy-extracted.md",
+        kind="extracted",
+        body="# Legacy Extracted\n",
+    )
+
+    with _session(client) as session:
+        _create_user(session)
+        workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
+        rows = repository.list(session, user_id=USER_ID)
+
+    assert [row.relative_path for row in rows] == ["manifest.md"]
+
+
+def test_rebuild_projection_tracks_manifest_and_ignores_workspace_manifest_and_revisions(
+    client, tmp_path: Path
+) -> None:
     workspace, artifacts, repository = _services(tmp_path)
     created = artifacts.create_markdown("knowledge/topic.md", kind="knowledge", body="# Topic\n")
     artifacts.update_sections(
@@ -186,4 +234,6 @@ def test_rebuild_projection_ignores_workspace_manifest_and_revisions(client, tmp
         workspace.rebuild_projection(session, repository, artifacts, user_id=USER_ID)
         rows = repository.list(session, user_id=USER_ID)
 
-    assert [row.relative_path for row in rows] == ["knowledge/topic.md"]
+    assert [row.relative_path for row in rows] == ["knowledge/topic.md", "manifest.md"]
+    manifest = next(row for row in rows if row.relative_path == "manifest.md")
+    assert manifest.kind == "manifest"

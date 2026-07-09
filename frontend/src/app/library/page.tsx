@@ -25,6 +25,7 @@ import { getErrorMessage } from "@/lib/error-messages";
 import type { WorkspaceArtifactSummary } from "@/lib/types";
 
 const CATEGORY_ORDER = [
+  "manifest",
   "knowledge",
   "question_bank",
   "project",

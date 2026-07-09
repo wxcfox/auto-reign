@@ -11,6 +11,7 @@ from app.db.models import User
 class UserScope:
     user_id: int
     workspace_root: Path
+    default_manifest_path: Path
     tmp_root: Path
     exports_root: Path
     qdrant_prefix: str
@@ -27,6 +28,7 @@ def build_user_scope(settings: Settings, user: User) -> UserScope:
     return UserScope(
         user_id=user.id,
         workspace_root=workspace_root,
+        default_manifest_path=settings.default_manifest_path,
         tmp_root=tmp_root,
         exports_root=exports_root,
         qdrant_prefix=f"auto_reign_user_{user.id}",

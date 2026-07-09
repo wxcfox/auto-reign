@@ -45,7 +45,8 @@ class InterviewArtifactService:
         self.user_id = user_id
         self.settings = settings or get_settings()
         self.workspace = workspace_service or WorkspaceService(
-            self.settings.data_dir / "users" / str(user_id) / "workspace"
+            self.settings.data_dir / "users" / str(user_id) / "workspace",
+            default_manifest_path=self.settings.default_manifest_path,
         )
         self.workspace.initialize()
         self.artifacts = artifact_service or ArtifactService(self.workspace)

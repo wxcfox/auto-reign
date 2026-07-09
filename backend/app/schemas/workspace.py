@@ -7,6 +7,7 @@ from app.schemas.modeling import LearningNoteSummaryResult
 
 
 ArtifactKind = Literal[
+    "manifest",
     "source",
     "extracted",
     "candidate_profile",
@@ -79,6 +80,7 @@ class SourceMeta(BaseModel):
     uploaded_at: datetime
     relative_path: str
     language: str = "zh-CN"
+    source_type: str = "upload"
 
 
 class WorkspaceStatusResponse(BaseModel):

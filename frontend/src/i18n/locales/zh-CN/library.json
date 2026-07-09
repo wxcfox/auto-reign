@@ -60,6 +60,7 @@
     "expand": "展开文档分类"
   },
   "owners": {
+    "workspace": "工作区",
     "sources": "原始资料",
     "knowledge": "知识库",
     "profile": "画像",
@@ -71,6 +72,7 @@
     "reports": "报告"
   },
   "kinds": {
+    "manifest": "工作区清单",
     "source": "原始资料",
     "extracted": "提取文本",
     "candidate_profile": "候选人画像",

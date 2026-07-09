@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
+import yaml
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.core.default_manifest import read_default_manifest_body
 from app.db import models
 from app.schemas.workspace import ArtifactFrontMatter, SourceMeta
 from app.services.artifact_metadata import (
@@ -22,8 +27,9 @@ from app.services.workspace_paths import (
     CANDIDATE_PROFILE_PATH,
     EXTRACTED_SOURCE_DIR,
     HIGH_FREQUENCY_PATH,
-    INTERVIEW_SOURCE_DIR,
+    MANIFEST_PATH,
     MASTERY_PATH,
+    RAW_SOURCE_DIR,
     REVIEW_STATUS_PATH,
     SOURCE_SIDE_CAR_DIRECTORIES,
     TARGET_PROFILE_PATH,
@@ -36,8 +42,13 @@ class UnsafeWorkspacePath(ValueError):
 
 
 class WorkspaceService:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, default_manifest_path: Path | None = None) -> None:
         self.root = root.resolve()
+        self.default_manifest_path = (
+            default_manifest_path.resolve(strict=False)
+            if default_manifest_path is not None
+            else None
+        )
 
     def initialize(self, *, language: str = "zh-CN") -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -57,7 +68,91 @@ class WorkspaceService:
                 "Markdown learning files, but do not store secrets here.\n",
                 encoding="utf-8",
             )
+        self._initialize_manifest(language=language)
         return self.root
+
+    def _initialize_manifest(self, *, language: str) -> None:
+        manifest_path = self.resolve_path(MANIFEST_PATH)
+        default_body = read_default_manifest_body(self.default_manifest_path)
+        timestamp = datetime.now(UTC)
+        if not manifest_path.exists():
+            front_matter = ArtifactFrontMatter(
+                id=str(uuid4()),
+                kind="manifest",
+                language=language,
+                revision=1,
+                created_at=timestamp,
+                updated_at=timestamp,
+                source_refs=[],
+                evidence_refs=[],
+                origin="human",
+                edited_by="system",
+                recovery_required=False,
+                recovery_reason=None,
+            )
+            manifest_path.write_text(
+                self._serialize_markdown(front_matter, default_body),
+                encoding="utf-8",
+            )
+            return
+
+        raw = manifest_path.read_text(encoding="utf-8")
+        try:
+            front_matter, body = self._parse_markdown(raw)
+        except ValueError:
+            return
+        if front_matter.kind != "manifest" or front_matter.edited_by != "system":
+            return
+        if body == default_body:
+            return
+
+        self._save_raw_revision(front_matter.id, front_matter.revision, raw)
+        updated_front_matter = front_matter.model_copy(
+            update={
+                "revision": front_matter.revision + 1,
+                "updated_at": timestamp,
+                "edited_by": "system",
+            }
+        )
+        manifest_path.write_text(
+            self._serialize_markdown(updated_front_matter, default_body),
+            encoding="utf-8",
+        )
+
+    def _parse_markdown(self, raw: str) -> tuple[ArtifactFrontMatter, str]:
+        if not raw.startswith("---\n"):
+            raise ValueError("managed Markdown must start with YAML front matter")
+        marker = "\n---\n"
+        end = raw.find(marker, 4)
+        if end == -1:
+            raise ValueError("front matter closing marker is missing")
+        front_matter_text = raw[4:end]
+        body = raw[end + len(marker) :]
+        try:
+            data = yaml.safe_load(front_matter_text) or {}
+            front_matter = ArtifactFrontMatter.model_validate(data)
+        except (TypeError, ValueError, ValidationError, yaml.YAMLError) as exc:
+            raise ValueError("front matter is not valid workspace metadata") from exc
+        return front_matter, body
+
+    def _serialize_markdown(self, front_matter: ArtifactFrontMatter, body: str) -> str:
+        data = front_matter.model_dump(mode="python")
+        data["created_at"] = self._format_datetime(front_matter.created_at)
+        data["updated_at"] = self._format_datetime(front_matter.updated_at)
+        yaml_text = yaml.safe_dump(data, allow_unicode=True, sort_keys=False).strip()
+        return f"---\n{yaml_text}\n---\n{body}"
+
+    def _save_raw_revision(self, artifact_id: str, revision: int, raw: str) -> Path:
+        revision_dir = self.resolve_path(f".revisions/{artifact_id}")
+        revision_dir.mkdir(parents=True, exist_ok=True)
+        revision_path = revision_dir / f"{time.time_ns()}-r{revision}.md"
+        revision_path.write_text(raw, encoding="utf-8")
+        return revision_path
+
+    def _format_datetime(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
     def resolve_path(self, relative_path: str | Path) -> Path:
         path = Path(relative_path)
@@ -87,6 +182,7 @@ class WorkspaceService:
             artifact.relative_path: artifact for artifact in repository.list(session, user_id=user_id)
         }
         scanned_paths: set[str] = set()
+        source_relative_paths: set[str] = set()
 
         for source_dir in (self.root / relative for relative in SOURCE_SIDE_CAR_DIRECTORIES):
             for sidecar_path in sorted(source_dir.glob("*.meta.json")):
@@ -95,6 +191,7 @@ class WorkspaceService:
                 if not source_path.exists():
                     continue
                 scanned_paths.add(source.relative_path)
+                source_relative_paths.add(source.relative_path)
                 repository.upsert(
                     session,
                     user_id=user_id,
@@ -111,6 +208,7 @@ class WorkspaceService:
                     source_filename=source.source_filename,
                     media_type=source.media_type,
                     size_bytes=source.size_bytes,
+                    source_type=source.source_type,
                     origin="human",
                     edited_by="user",
                     uploaded_at=source.uploaded_at,
@@ -120,12 +218,23 @@ class WorkspaceService:
 
         for markdown_path in sorted(self.root.rglob("*.md")):
             relative_path = self.to_relative_path(markdown_path)
+            if relative_path in source_relative_paths:
+                continue
             kind = self._kind_for_markdown(relative_path)
+            parsed_document = None
+            if kind is None and self._is_raw_managed_markdown(relative_path):
+                try:
+                    parsed_document = artifact_service.parse_markdown(
+                        markdown_path.read_text(encoding="utf-8")
+                    )
+                except Exception:
+                    continue
+                kind = parsed_document.front_matter.kind
             if kind is None:
                 continue
             existing = existing_by_path.get(relative_path)
             try:
-                document = artifact_service.parse_markdown(
+                document = parsed_document or artifact_service.parse_markdown(
                     markdown_path.read_text(encoding="utf-8")
                 )
             except Exception:
@@ -174,6 +283,8 @@ class WorkspaceService:
         parts = Path(relative_path).parts
         if relative_path == "workspace.md" or not parts or parts[0] == ".revisions":
             return None
+        if relative_path == MANIFEST_PATH:
+            return "manifest"
         if relative_path == CANDIDATE_PROFILE_PATH:
             return "candidate_profile"
         if relative_path == TARGET_PROFILE_PATH:
@@ -188,8 +299,6 @@ class WorkspaceService:
             return "question_bank"
         if parts[0] == "projects":
             return "project"
-        if parts[:2] == tuple(INTERVIEW_SOURCE_DIR.split("/")):
-            return "interview_record"
         if relative_path == HIGH_FREQUENCY_PATH:
             return "high_frequency"
         if relative_path == REVIEW_STATUS_PATH:
@@ -198,9 +307,13 @@ class WorkspaceService:
             return "practice"
         if parts[0] == "reports":
             return "report"
-        if parts[:2] == tuple(EXTRACTED_SOURCE_DIR.split("/")):
+        if parts[0] == EXTRACTED_SOURCE_DIR:
             return "extracted"
         return None
+
+    def _is_raw_managed_markdown(self, relative_path: str) -> bool:
+        parts = Path(relative_path).parts
+        return len(parts) == 2 and parts[0] == RAW_SOURCE_DIR
 
     def _next_index_status(self, existing: models.Artifact | None, content_hash: str) -> str:
         if existing is None:

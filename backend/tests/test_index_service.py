@@ -114,7 +114,7 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         content=b"%PDF",
     )
     extracted = artifacts.create_markdown(
-        "sources/extracted/resume.md",
+        "extracted/resume.md",
         kind="extracted",
         body="# Extracted resume\n\npdf text",
     )
@@ -135,7 +135,7 @@ def test_index_artifact_indexes_only_allowed_content(client, workspace_stack) ->
         body="# Order cache\n\nhot key mitigation project",
     )
     interview_record = artifacts.create_markdown(
-        "sources/interviews/20260625.md",
+        "raw/20260625-real-interview.md",
         kind="interview_record",
         body="# Interview\n\nRedis cache breakdown question",
     )

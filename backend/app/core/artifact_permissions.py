@@ -5,6 +5,7 @@ class ArtifactPermissionError(ValueError):
 
 
 ALLOWED_OPERATIONS: dict[str, set[str]] = {
+    "manifest": {"replace_body"},
     "source": set(),
     "extracted": set(),
     "candidate_profile": {"replace_body"},

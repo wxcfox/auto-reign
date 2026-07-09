@@ -28,6 +28,7 @@ from app.services.retrieval_query_planner import RetrievalPurpose, RetrievalRequ
 from app.services.workspace_paths import (
     CANDIDATE_PROFILE_PATH,
     HIGH_FREQUENCY_PATH,
+    MANIFEST_PATH,
     MASTERY_PATH,
     REVIEW_STATUS_PATH,
     TARGET_PROFILE_PATH,
@@ -37,6 +38,7 @@ from app.services.workspace_service import WorkspaceService
 
 
 DIRECT_WORKSPACE_CONTEXT_FILES = (
+    (MANIFEST_PATH, "工作区清单"),
     (CANDIDATE_PROFILE_PATH, "候选人画像"),
     (TARGET_PROFILE_PATH, "目标画像"),
     (MASTERY_PATH, "掌握状态"),
