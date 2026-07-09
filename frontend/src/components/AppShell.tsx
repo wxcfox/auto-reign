@@ -116,7 +116,7 @@ export function AppShell({ children }: AppShellProps) {
     useState<ConversationHistoryItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const conversationRefreshId = useRef(0);
@@ -157,7 +157,7 @@ export function AppShell({ children }: AppShellProps) {
 
     if (isAuthPage) {
       setConversations([]);
-      setCurrentUserId(null);
+      setCurrentUsername(null);
       return () => {
         mountedRef.current = false;
       };
@@ -177,19 +177,19 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     if (isAuthPage) {
-      setCurrentUserId(null);
+      setCurrentUsername(null);
       return;
     }
     let cancelled = false;
     getCurrentUser()
       .then((user) => {
         if (!cancelled) {
-          setCurrentUserId(user.id);
+          setCurrentUsername(user.username);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setCurrentUserId(null);
+          setCurrentUsername(null);
         }
       });
     return () => {
@@ -226,8 +226,7 @@ export function AppShell({ children }: AppShellProps) {
   const ThemeIcon = darkMode ? Sun : Moon;
   const SidebarIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   const UserMenuIcon = settingsOpen ? ChevronDown : ChevronUp;
-  const userLabel =
-    currentUserId === null ? t("app.user") : t("app.user_id", { id: currentUserId });
+  const userLabel = currentUsername ?? t("app.user");
 
   function conversationKey(item: ConversationHistoryItem) {
     return `${item.kind}:${item.id}`;

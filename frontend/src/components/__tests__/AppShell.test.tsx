@@ -129,7 +129,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: /Workbench/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Review/i })).not.toBeInTheDocument();
 
-    const userButton = await screen.findByRole("button", { name: /User #7/i });
+    const userButton = await screen.findByRole("button", { name: /^alice$/i });
     expect(userButton.querySelector(".lucide-chevron-up")).toBeInTheDocument();
     fireEvent.click(userButton);
     expect(userButton.querySelector(".lucide-chevron-down")).toBeInTheDocument();
@@ -139,16 +139,17 @@ describe("AppShell", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("shows the current user id in the sidebar footer", async () => {
+  it("shows the current username in the sidebar footer", async () => {
     render(
       <AppShell>
         <div>Current page</div>
       </AppShell>,
     );
 
-    const userButton = await screen.findByRole("button", { name: /User #7/i });
+    const userButton = await screen.findByRole("button", { name: /^alice$/i });
 
-    expect(userButton).toHaveTextContent("User #7");
+    expect(userButton).toHaveTextContent("alice");
+    expect(userButton).not.toHaveTextContent("User #7");
     expect(getCurrentUser).toHaveBeenCalledTimes(1);
   });
 
@@ -159,12 +160,12 @@ describe("AppShell", () => {
       </AppShell>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /User #7/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^alice$/i }));
     const languageButton = await screen.findByRole("button", { name: /简体中文/i });
     fireEvent.click(languageButton);
 
     expect(await screen.findByRole("button", { name: /English/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /用户 #7/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^alice$/i })).toBeInTheDocument();
 
     const themeButton = screen.getByRole("button", { name: /深色模式/i });
     fireEvent.click(themeButton);
@@ -180,7 +181,7 @@ describe("AppShell", () => {
       </AppShell>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /User #7/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^alice$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /Log out/i }));
 
     expect(clearAuthToken).toHaveBeenCalled();

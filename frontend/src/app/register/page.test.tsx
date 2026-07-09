@@ -47,26 +47,22 @@ describe("RegisterPage", () => {
 
     render(<RegisterPage />);
     fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: "alice" } });
-    fireEvent.change(screen.getByLabelText(/Password/i), {
-      target: { value: "correct horse battery staple" },
-    });
+    fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: "secret" } });
     fireEvent.click(screen.getByRole("button", { name: /^Create account$/i }));
 
-    await waitFor(() =>
-      expect(registerUser).toHaveBeenCalledWith("alice", "correct horse battery staple"),
-    );
+    await waitFor(() => expect(registerUser).toHaveBeenCalledWith("alice", "secret"));
     expect(setAuthToken).toHaveBeenCalledWith("token-1");
     expect(navigationMocks.replace).toHaveBeenCalledWith("/");
   });
 
-  it("requires a 12 character password", async () => {
+  it("requires a 6 character password", async () => {
     render(<RegisterPage />);
     fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: "alice" } });
     fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: "short" } });
     fireEvent.click(screen.getByRole("button", { name: /^Create account$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Password must be at least 12 characters.",
+      "Password must be at least 6 characters.",
     );
     expect(registerUser).not.toHaveBeenCalled();
   });

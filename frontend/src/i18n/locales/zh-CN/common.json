@@ -4,7 +4,6 @@
     "language": "语言",
     "settings": "设置",
     "user": "本地用户",
-    "user_id": "用户 #{{id}}",
     "dark_mode": "深色模式",
     "light_mode": "浅色模式",
     "logout": "退出登录",
@@ -24,7 +23,7 @@
     "create_account_link": "创建一个",
     "login_link": "登录",
     "invalid_credentials": "用户名或密码不正确。",
-    "password_too_short": "密码至少需要 12 个字符。",
+    "password_too_short": "密码至少需要 6 个字符。",
     "register_failed": "账号创建失败。"
   },
   "nav": {
