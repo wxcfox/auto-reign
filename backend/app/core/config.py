@@ -4,6 +4,8 @@ import secrets
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.default_manifest import DEFAULT_MANIFEST_FILENAME, seed_default_manifest
+
 
 _LEGACY_DEFAULT_JWT_SECRET = "auto-reign-local-dev-secret-change-me"
 
@@ -34,8 +36,13 @@ class Settings(BaseSettings):
     def workspace_dir(self) -> Path:
         return self.data_dir / "workspace"
 
+    @property
+    def default_manifest_path(self) -> Path:
+        return self.data_dir / DEFAULT_MANIFEST_FILENAME
+
     def ensure_data_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        seed_default_manifest(self.default_manifest_path)
 
     def resolve_jwt_secret_key(self) -> str:
         configured = (self.jwt_secret_key or "").strip()

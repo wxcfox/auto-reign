@@ -32,7 +32,7 @@ const artifacts = [
     id: "source-1",
     kind: "source",
     owner: "sources",
-    relative_path: "sources/documents/229ca53a-resume.md",
+    relative_path: "raw/229ca53a-resume.md",
     display_name: "resume.md",
     revision: 1,
     processing_status: "completed",

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -71,6 +72,9 @@ def test_ingest_markdown_stores_source_and_generates_knowledge(client, tmp_path:
     assert len(result.sources) == 1
     assert result.sources[0].duplicate is False
     assert workspace.resolve_path(result.sources[0].relative_path).read_bytes().startswith(b"# Redis")
+    assert result.sources[0].relative_path.startswith("raw/")
+    sidecar = workspace.resolve_path(f"{result.sources[0].relative_path}.meta.json")
+    assert json.loads(sidecar.read_text(encoding="utf-8"))["source_type"] == "upload"
     knowledge_files = list((workspace.root / "knowledge").glob("*.md"))
     assert len(knowledge_files) == 1
     knowledge = artifacts.read_markdown(f"knowledge/{knowledge_files[0].name}")
@@ -78,7 +82,7 @@ def test_ingest_markdown_stores_source_and_generates_knowledge(client, tmp_path:
     assert "Redis" in knowledge.body
     with _session(client) as session:
         rows = repository.list(session, user_id=USER_ID)
-        assert {row.kind for row in rows} == {"source", "knowledge"}
+        assert {row.kind for row in rows} == {"manifest", "source", "knowledge"}
         source_row = next(row for row in rows if row.kind == "source")
         assert source_row.id == result.sources[0].artifact_id
         assert artifact_processing_status(source_row) == "completed"
@@ -97,8 +101,8 @@ def test_ingest_duplicate_content_reuses_existing_source(client, tmp_path: Path)
 
     assert second.sources[0].duplicate is True
     assert second.sources[0].artifact_id == first.sources[0].artifact_id
-    assert len(list((workspace.root / "sources" / "documents").glob("same*"))) == 0
-    assert len(list((workspace.root / "sources" / "documents").glob("*same.txt"))) == 1
+    assert len(list((workspace.root / "raw").glob("same*"))) == 0
+    assert len(list((workspace.root / "raw").glob("*same.txt"))) == 1
 
 
 def test_ingest_same_knowledge_slug_merges_without_overwriting(
@@ -173,7 +177,7 @@ def test_ingest_docx_writes_extracted_artifact(client, tmp_path: Path) -> None:
         )
         session.commit()
 
-    extracted_path = f"sources/extracted/{result.sources[0].artifact_id}.md"
+    extracted_path = f"extracted/{result.sources[0].artifact_id}.md"
     extracted = artifacts.read_markdown(extracted_path)
     assert extracted.front_matter.kind == "extracted"
     assert extracted.front_matter.source_refs == [f"source:{result.sources[0].artifact_id}"]

@@ -23,8 +23,7 @@ from app.schemas.modeling import LearningNoteSummaryResult
 from app.services.workspace_service import WorkspaceService
 from app.services.workspace_paths import (
     HIGH_FREQUENCY_PATH,
-    INTERVIEW_SOURCE_DIR,
-    NOTE_SOURCE_DIR,
+    RAW_SOURCE_DIR,
     REVIEW_STATUS_PATH,
 )
 
@@ -84,12 +83,13 @@ class WorkspaceContentService:
     ) -> LearningNotePersistenceResult:
         timestamp = datetime.now(UTC)
         source = self.artifact_service.append_source(
-            f"{NOTE_SOURCE_DIR}/{timestamp.strftime('%Y-%m-%d')}.md",
+            f"{RAW_SOURCE_DIR}/{timestamp.strftime('%Y-%m-%d')}-learning-notes.md",
             source_filename=f"{timestamp.strftime('%Y-%m-%d')}.md",
             media_type="text/markdown",
             content=self.learning_note_inbox_entry(note, timestamp).encode("utf-8"),
             language=language,
             uploaded_at=timestamp,
+            source_type="learning_note",
         )
         source_ref = f"source:{source.artifact_id}"
         knowledge_path = (
@@ -153,7 +153,7 @@ class WorkspaceContentService:
         timestamp = datetime.now(UTC)
         questions = self.extract_real_interview_questions(record)
         weak_points = self.extract_real_interview_weak_points(record)
-        raw_path = f"{INTERVIEW_SOURCE_DIR}/{timestamp.strftime('%Y%m%d-%H%M%S-%f')}.md"
+        raw_path = f"{RAW_SOURCE_DIR}/{timestamp.strftime('%Y%m%d-%H%M%S-%f')}-real-interview.md"
         raw_document = self.artifact_service.create_markdown(
             raw_path,
             kind="interview_record",

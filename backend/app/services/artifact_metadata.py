@@ -46,6 +46,10 @@ def artifact_size_bytes(artifact: Any) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def artifact_source_type(artifact: Any) -> str:
+    return _str_metadata(artifact, "source_type", "upload")
+
+
 def artifact_origin(artifact: Any) -> str:
     return _str_metadata(artifact, "origin", "llm")
 
@@ -81,6 +85,7 @@ def artifact_metadata_json(
     source_filename: str | None = None,
     media_type: str | None = None,
     size_bytes: int | None = None,
+    source_type: str | None = None,
     origin: str = "llm",
     edited_by: str = "system",
     uploaded_at: datetime | None = None,
@@ -92,6 +97,7 @@ def artifact_metadata_json(
         "source_filename": source_filename,
         "media_type": media_type,
         "size_bytes": size_bytes,
+        "source_type": source_type,
         "origin": origin,
         "edited_by": edited_by,
         "uploaded_at": _datetime_json(uploaded_at),

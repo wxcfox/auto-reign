@@ -127,11 +127,12 @@ def test_source_bytes_are_immutable_and_have_a_json_sidecar(
 
     source_path = workspace.resolve_path(meta.relative_path)
     assert source_path.read_bytes() == content
-    assert source_path.parent == workspace.root / "sources" / "documents"
+    assert source_path.parent == workspace.root / "raw"
     assert ".." not in source_path.name
     sidecar = json.loads(source_path.with_name(f"{source_path.name}.meta.json").read_text())
     assert sidecar["artifact_id"] == meta.artifact_id
     assert sidecar["source_filename"] == "../resume final.pdf"
+    assert sidecar["source_type"] == "upload"
     assert sidecar["content_hash"] == meta.content_hash
     assert sidecar["uploaded_at"].endswith("Z")
 
@@ -145,29 +146,45 @@ def test_source_bytes_are_immutable_and_have_a_json_sidecar(
     assert source_path.read_bytes() == content
 
 
-def test_append_source_writes_learning_notes_under_sources_notes(
+def test_append_source_writes_learning_notes_under_raw_only(
     services: tuple[WorkspaceService, ArtifactService],
 ) -> None:
     workspace, artifacts = services
 
     meta = artifacts.append_source(
-        "sources/notes/2026-06-28.md",
+        "raw/2026-06-28-learning-notes.md",
         source_filename="2026-06-28.md",
         media_type="text/markdown",
         content=b"## 12:00:00 learning\n\nRedis note\n",
     )
 
-    assert meta.relative_path == "sources/notes/2026-06-28.md"
+    assert meta.relative_path == "raw/2026-06-28-learning-notes.md"
     assert workspace.resolve_path(meta.relative_path).read_text(encoding="utf-8").endswith(
         "Redis note\n"
     )
 
-    with pytest.raises(ValueError, match="sources/notes"):
+    with pytest.raises(ValueError, match="raw"):
+        artifacts.append_source(
+            "sources/notes/2026-06-28.md",
+            source_filename="2026-06-28.md",
+            media_type="text/markdown",
+            content=b"old path",
+        )
+
+    with pytest.raises(ValueError, match="raw"):
         artifacts.append_source(
             "inbox/2026-06-28.md",
             source_filename="2026-06-28.md",
             media_type="text/markdown",
             content=b"old path",
+        )
+
+    with pytest.raises(ValueError, match="unsupported source directory"):
+        artifacts.store_source(
+            source_filename="resume.md",
+            media_type="text/markdown",
+            content=b"# Resume\n",
+            directory="sources/documents",  # type: ignore[arg-type]
         )
 
 

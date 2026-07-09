@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
+from app.core.password_policy import MIN_PASSWORD_LENGTH, password_length_message
 from app.core.passwords import hash_password
 from app.db import models
 from app.db.session import create_engine_for_settings, make_session_factory, session_scope
@@ -26,8 +27,8 @@ def reset_user_password(
         confirmation = getpass.getpass("Confirm new password: ")
         if password != confirmation:
             raise SystemExit("Passwords do not match.")
-        if len(password) < 12:
-            raise SystemExit("Password must contain at least 12 characters.")
+        if len(password) < MIN_PASSWORD_LENGTH:
+            raise SystemExit(password_length_message())
 
         user.password_hash = hash_password(password)
         user.token_version += 1

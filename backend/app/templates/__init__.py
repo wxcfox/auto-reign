@@ -1,0 +1,1 @@
+"""Packaged workspace templates."""

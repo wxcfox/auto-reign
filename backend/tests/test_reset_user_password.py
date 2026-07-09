@@ -80,7 +80,7 @@ def test_reset_user_password_rejects_short_password(client, monkeypatch):
             )
         )
 
-    monkeypatch.setattr("getpass.getpass", lambda _prompt: "too short")
+    monkeypatch.setattr("getpass.getpass", lambda _prompt: "short")
 
     with pytest.raises(SystemExit) as error:
         reset_user_password(
@@ -88,7 +88,7 @@ def test_reset_user_password_rejects_short_password(client, monkeypatch):
             username="alice",
         )
 
-    assert str(error.value) == "Password must contain at least 12 characters."
+    assert str(error.value) == "Password must contain at least 6 characters."
     with session_scope(client.app.state.session_factory) as session:
         user = session.query(models.User).filter_by(username="alice").one()
         assert user.token_version == 1

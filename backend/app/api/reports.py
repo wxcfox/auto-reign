@@ -44,7 +44,10 @@ def get_report(
     report = _report_for_artifact(session, scope.user_id, artifact)
     if report is None:
         raise not_found("report_not_found", "Report not found.")
-    workspace = WorkspaceService(scope.workspace_root)
+    workspace = WorkspaceService(
+        scope.workspace_root,
+        default_manifest_path=scope.default_manifest_path,
+    )
     workspace.initialize()
     try:
         content = ArtifactService(workspace).read_markdown(artifact.relative_path).body

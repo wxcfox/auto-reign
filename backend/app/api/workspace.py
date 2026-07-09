@@ -579,7 +579,10 @@ def rebuild_index(
 
 
 def _workspace_services(scope: UserScope) -> tuple[WorkspaceService, ArtifactService]:
-    workspace = WorkspaceService(scope.workspace_root)
+    workspace = WorkspaceService(
+        scope.workspace_root,
+        default_manifest_path=scope.default_manifest_path,
+    )
     workspace.initialize()
     return workspace, ArtifactService(workspace)
 
@@ -619,6 +622,10 @@ def _display_name(artifact) -> str:
 
 
 def _owner(artifact) -> str:
+    if artifact.kind == "manifest":
+        return "workspace"
+    if artifact.kind == "source":
+        return "sources"
     if artifact.kind in {"candidate_profile", "target_profile"}:
         return "profile"
     if artifact.kind in {"mastery", "plan"}:

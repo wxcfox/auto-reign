@@ -8,7 +8,7 @@ def test_register_returns_token_and_user(client):
         "/api/auth/register",
         json={
             "username": "alice",
-            "password": "correct horse battery staple",
+            "password": "secret",
             "display_name": "Alice",
         },
     )
@@ -24,12 +24,21 @@ def test_register_returns_token_and_user(client):
 
     with session_scope(client.app.state.session_factory) as session:
         user = session.query(models.User).filter_by(username="alice").one()
-        assert verify_password("correct horse battery staple", user.password_hash)
+        assert verify_password("secret", user.password_hash)
         assert user.settings_json == {
             "schema_version": 1,
             "language": "zh-CN",
             "active_collection": "auto_reign_user_1",
         }
+
+
+def test_register_rejects_password_shorter_than_6_characters(client):
+    response = client.post(
+        "/api/auth/register",
+        json={"username": "alice", "password": "short"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_register_rejects_duplicate_username(client):
@@ -76,7 +85,7 @@ def test_change_password_revokes_old_token(client):
         headers={"Authorization": f"Bearer {old_token}"},
         json={
             "old_password": "correct horse battery staple",
-            "new_password": "new correct horse battery staple",
+            "new_password": "secret",
         },
     )
 
@@ -90,9 +99,28 @@ def test_change_password_revokes_old_token(client):
 
     login_response = client.post(
         "/api/auth/login",
-        json={"username": "alice", "password": "new correct horse battery staple"},
+        json={"username": "alice", "password": "secret"},
     )
     assert login_response.status_code == 200
+
+
+def test_change_password_rejects_password_shorter_than_6_characters(client):
+    register_response = client.post(
+        "/api/auth/register",
+        json={"username": "alice", "password": "correct horse battery staple"},
+    )
+    token = register_response.json()["access_token"]
+
+    response = client.post(
+        "/api/auth/change-password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "old_password": "correct horse battery staple",
+            "new_password": "short",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_me_requires_bearer_token(client):

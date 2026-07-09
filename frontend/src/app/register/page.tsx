@@ -9,6 +9,8 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { registerUser } from "@/lib/api";
 import { setAuthToken } from "@/lib/auth";
 
+const MIN_PASSWORD_LENGTH = 6;
+
 export default function RegisterPage() {
   const router = useRouter();
   const { t } = useTranslation("common");
@@ -21,7 +23,7 @@ export default function RegisterPage() {
     event.preventDefault();
     setError(null);
     const trimmedUsername = username.trim();
-    if (password.length < 12) {
+    if (password.length < MIN_PASSWORD_LENGTH) {
       setError(t("auth.password_too_short"));
       return;
     }

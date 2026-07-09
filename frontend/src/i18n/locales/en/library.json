@@ -60,6 +60,7 @@
     "expand": "Expand document categories"
   },
   "owners": {
+    "workspace": "Workspace",
     "sources": "Sources",
     "knowledge": "Knowledge",
     "profile": "Profile",
@@ -71,6 +72,7 @@
     "reports": "Reports"
   },
   "kinds": {
+    "manifest": "Workspace manifest",
     "source": "Sources",
     "extracted": "Extracted text",
     "candidate_profile": "Candidate profile",

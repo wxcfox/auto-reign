@@ -5,11 +5,11 @@
 ```mermaid
 flowchart TD
   A["用户上传资料、记录学习笔记或粘贴真实面试"] --> B{"输入类型"}
-  B -->|Markdown 或 TXT| C["原始文件保存到 DATA_DIR/users/{user_id}/workspace/sources/documents"]
-  B -->|PDF 或 DOCX| D["原始文件保存到 DATA_DIR/users/{user_id}/workspace/sources/documents"]
-  D --> E["可解析时提取文本到 sources/extracted"]
-  B -->|学习笔记| F["把原始笔记保存到 DATA_DIR/users/{user_id}/workspace/sources/notes"]
-  B -->|真实面试记录| V["保存到 sources/interviews 并抽取问题和薄弱线索"]
+  B -->|Markdown 或 TXT| C["原始文件保存到 DATA_DIR/users/{user_id}/workspace/raw"]
+  B -->|PDF 或 DOCX| D["原始文件保存到 DATA_DIR/users/{user_id}/workspace/raw"]
+  D --> E["可解析时提取文本到 extracted"]
+  B -->|学习笔记| F["把原始笔记追加到 DATA_DIR/users/{user_id}/workspace/raw"]
+  B -->|真实面试记录| V["保存到 raw 并抽取问题和薄弱线索"]
   F --> G["整理为 knowledge 短卡片"]
   V --> W["更新 review/high-frequency 和 review/status"]
   C --> H["整理到候选人画像、目标画像或知识分类"]
@@ -35,10 +35,11 @@ flowchart TD
 
 ## 当前存储职责
 
-- `DATA_DIR/users/{user_id}/workspace/sources/notes/` 保存“新学习”自由文本输入的原始记录。它作为 source provenance 使用，不由 AI 覆盖。
-- `DATA_DIR/users/{user_id}/workspace/sources/documents/` 保存用户上传的原始文件。来源文件会在元数据中保留用户的原始文件名，并在资料库中展示该名称。
-- `DATA_DIR/users/{user_id}/workspace/sources/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。
-- `DATA_DIR/users/{user_id}/workspace/sources/interviews/` 保存真实面试原始记录和确定性抽取结果，不由 AI 改写原文。
+- `backend/app/templates/default_manifest.example.md` 是随包提供的默认清单种子，语义类似 `.env.example`。
+- `DATA_DIR/default_manifest.md` 保存运行时全局默认清单正文，首次启动时由 `default_manifest.example.md` 种子创建。后续 admin 接口可以修改该运行时默认值。
+- `DATA_DIR/users/{user_id}/workspace/manifest.md` 保存用户可编辑的工作区清单，用来描述推荐阅读顺序、文件职责和上下文偏好。它帮助用户和 LLM 理解工作区，但不作为权限、安全或删除策略。尚未自定义清单的用户会同步全局默认值；已经编辑过清单的用户不会被覆盖。
+- `DATA_DIR/users/{user_id}/workspace/raw/` 保存用户原始输入，包括上传资料、“新学习”自由文本输入和真实面试原始记录。上传来源文件会在 sidecar 元数据中保留用户原始文件名、MIME、大小、hash 和 `source_type`；真实面试记录使用 Markdown front matter 保留 artifact 身份。原文不由 AI 覆盖。
+- `DATA_DIR/users/{user_id}/workspace/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。它是派生文本，可以从 `raw/` 原始资料重新生成。
 - `DATA_DIR/users/{user_id}/workspace/knowledge/`、`DATA_DIR/users/{user_id}/workspace/questions/`、`DATA_DIR/users/{user_id}/workspace/projects/`、`DATA_DIR/users/{user_id}/workspace/review/`、`DATA_DIR/users/{user_id}/workspace/profile/`、`DATA_DIR/users/{user_id}/workspace/practice/`、`DATA_DIR/users/{user_id}/workspace/state/` 和 `DATA_DIR/users/{user_id}/workspace/reports/` 保存系统管理的 Markdown 资产。
 - MySQL 保存本地用户、用户级 artifact 投影、处理状态、索引状态、修订版本、学习和面试统一会话、消息与报告摘要。
 - Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 保存在当前用户的 `settings_json.active_collection`，可以从该用户的文件工作区和 MySQL artifact 投影重新构建。LangChain 负责 Markdown/递归切块、embedding、QdrantVectorStore 写入和 retriever 查询，Auto Reign 负责 workspace 协议、provenance、可索引规则、active collection 发布、检索后处理和上下文预算。
@@ -47,12 +48,13 @@ flowchart TD
 
 ## 索引规则
 
-- Markdown 和 TXT 上传来源文件直接从原始文件索引。
-- `sources/notes/` 中的新学习原始记录直接索引。
-- PDF 和 DOCX 来源文件不直接索引；解析成功后索引对应的提取文本 Markdown artifact。
+- `manifest.md` 不进入向量索引；面试前它可以作为体积受控的小文件直接读取，帮助解释工作区阅读顺序和上下文偏好。
+- Markdown 和 TXT 上传来源文件直接从 `raw/` 原始文件索引。
+- `raw/` 中的新学习原始记录直接索引。
+- PDF 和 DOCX 来源文件不直接索引；解析成功后索引对应的 `extracted/` Markdown artifact。
 - 知识、题库、项目、真实面试、高频复盘和练习 Markdown artifact 从正文内容索引。新学习生成的知识文件使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」短卡片格式，并按标题 slug 合并到同一个 `knowledge/<主题>.md`。学习对话本身用于侧边栏历史和继续追加，不作为长期知识资产，也不直接进入向量索引。
 - 答差或缺失点会沉淀为 `questions/<题目>.md`，结构包含「考察点 / 标准回答 / 结合项目 / 常见追问 / 易错点 / 复习状态」。
-- 真实面试粘贴记录会保存到 `sources/interviews/`，并更新 `review/high-frequency.md` 与 `review/status.md`。
+- 真实面试粘贴记录会保存到 `raw/`，并更新 `review/high-frequency.md` 与 `review/status.md`。
 - 候选人画像、目标画像、复习状态、报告和掌握状态会展示在资料库中，但报告和掌握状态当前不进入向量索引。报告是展示产物，不作为事实来源进入检索。
 - 删除资料库 artifact 时，系统删除对应工作区文件并重建投影。随后索引重建会发布新的活跃 collection，从而移除陈旧向量内容。
 

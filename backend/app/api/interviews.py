@@ -129,7 +129,10 @@ def _workspace_services(scope: UserScope) -> tuple[Any, Any]:
     from app.services.artifact_service import ArtifactService
     from app.services.workspace_service import WorkspaceService
 
-    workspace = WorkspaceService(scope.workspace_root)
+    workspace = WorkspaceService(
+        scope.workspace_root,
+        default_manifest_path=scope.default_manifest_path,
+    )
     workspace.initialize()
     return workspace, ArtifactService(workspace)
 

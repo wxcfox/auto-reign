@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from app.schemas.workspace import ArtifactFrontMatter, ArtifactKind, EditedBy, Origin, SourceMeta
 from app.services.workspace_service import WorkspaceService
-from app.services.workspace_paths import DOCUMENT_SOURCE_DIR, NOTE_SOURCE_DIR
+from app.services.workspace_paths import RAW_SOURCE_DIR
 
 
 class ArtifactConflict(ValueError):
@@ -274,11 +274,12 @@ class ArtifactService:
         media_type: str,
         content: bytes,
         language: str = "zh-CN",
-        directory: Literal["sources/documents", "sources/notes"] = DOCUMENT_SOURCE_DIR,
+        directory: Literal["raw"] = RAW_SOURCE_DIR,
         artifact_id: str | None = None,
         uploaded_at: datetime | None = None,
+        source_type: str = "upload",
     ) -> SourceMeta:
-        if directory not in {DOCUMENT_SOURCE_DIR, NOTE_SOURCE_DIR}:
+        if directory != RAW_SOURCE_DIR:
             raise ValueError(f"unsupported source directory: {directory}")
         source_id = artifact_id or str(uuid4())
         actual_name = f"{source_id}-{self._sanitize_filename(source_filename)}"
@@ -300,6 +301,7 @@ class ArtifactService:
             uploaded_at=timestamp,
             relative_path=self.workspace.to_relative_path(path),
             language=language,
+            source_type=source_type,
         )
         self.atomic_write_bytes(path, content)
         sidecar_path = path.with_name(f"{path.name}.meta.json")
@@ -319,12 +321,14 @@ class ArtifactService:
         content: bytes,
         language: str = "zh-CN",
         uploaded_at: datetime | None = None,
+        source_type: str = "learning_note",
     ) -> SourceMeta:
         path = self.workspace.resolve_path(relative_path)
         if path.suffix.lower() not in {".md", ".txt"}:
             raise ValueError("appendable sources must be Markdown or plain text")
-        if not path.is_relative_to(self.workspace.resolve_path(NOTE_SOURCE_DIR)):
-            raise ValueError(f"appendable sources must live under {NOTE_SOURCE_DIR}")
+        raw_root = self.workspace.resolve_path(RAW_SOURCE_DIR)
+        if not path.is_relative_to(raw_root):
+            raise ValueError(f"appendable sources must live under {RAW_SOURCE_DIR}")
 
         sidecar_path = path.with_name(f"{path.name}.meta.json")
         timestamp = self._coerce_utc(uploaded_at or datetime.now(UTC))
@@ -349,6 +353,7 @@ class ArtifactService:
             uploaded_at=timestamp,
             relative_path=self.workspace.to_relative_path(path),
             language=language,
+            source_type=source_type,
         )
         self.atomic_write_bytes(path, combined)
         self.atomic_write_bytes(

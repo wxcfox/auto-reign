@@ -103,6 +103,10 @@ def test_workspace_status_is_initialized_on_startup(client) -> None:
     assert body["artifact_count"] == 0
     settings = client.app.state.settings
     assert (settings.data_dir / "users" / "1" / "workspace" / "workspace.md").exists()
+    assert (settings.data_dir / "users" / "1" / "workspace" / "manifest.md").exists()
+    assert (settings.data_dir / "users" / "1" / "workspace" / "raw").exists()
+    assert (settings.data_dir / "users" / "1" / "workspace" / "extracted").exists()
+    assert not (settings.data_dir / "users" / "1" / "workspace" / "sources").exists()
     assert not (settings.data_dir / "uploads").exists()
 
 
@@ -114,7 +118,7 @@ def test_workspace_rebuild_projection_endpoint(client) -> None:
     response = client.post("/api/workspace/rebuild-projection", headers=_auth(token))
 
     assert response.status_code == 200
-    assert response.json()["artifact_count"] == 1
+    assert response.json()["artifact_count"] == 2
 
 
 def test_workspace_preparation_tasks_parse_review_status(client) -> None:
@@ -162,7 +166,7 @@ def test_workspace_upload_materials_endpoint(client, monkeypatch) -> None:
     body = response.json()
     assert body["sources"][0]["duplicate"] is False
     status = client.get("/api/workspace", headers=_auth(token)).json()
-    assert status["artifact_count"] == 2
+    assert status["artifact_count"] == 3
 
 
 def test_workspace_artifacts_include_source_display_name(client, monkeypatch) -> None:
@@ -184,14 +188,17 @@ def test_workspace_artifacts_include_source_display_name(client, monkeypatch) ->
     artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     source = next(artifact for artifact in artifacts if artifact["kind"] == "source")
     knowledge = next(artifact for artifact in artifacts if artifact["kind"] == "knowledge")
+    manifest = next(artifact for artifact in artifacts if artifact["kind"] == "manifest")
 
     assert source["display_name"] == "resume-final.md"
     assert source["owner"] == "sources"
     assert source["created_at"]
     assert source["updated_at"]
-    assert source["relative_path"].startswith(f"sources/documents/{source['id']}-")
+    assert source["relative_path"].startswith(f"raw/{source['id']}-")
     assert knowledge["display_name"] == knowledge["relative_path"].split("/")[-1]
     assert knowledge["owner"] == "knowledge"
+    assert manifest["relative_path"] == "manifest.md"
+    assert manifest["allowed_operations"] == ["replace_body"]
 
 
 def test_workspace_upload_schedules_background_index_rebuild(client, monkeypatch) -> None:
@@ -292,7 +299,7 @@ def test_record_learning_note_creates_knowledge_artifact(client, monkeypatch) ->
     body = _sse_result(response.text)
     assert body["source"]["duplicate"] is False
     assert re.match(
-        r"sources/notes/\d{4}-\d{2}-\d{2}\.md",
+        r"raw/\d{4}-\d{2}-\d{2}-learning-notes\.md",
         body["source"]["relative_path"],
     )
     assert body["artifact"]["kind"] == "knowledge"
@@ -519,7 +526,10 @@ def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) 
     assert first["artifact"]["relative_path"] == "knowledge/redis-缓存穿透.md"
     assert len(knowledge_artifacts) == 1
     assert len(source_artifacts) == 1
-    assert source_artifacts[0]["relative_path"].startswith("sources/notes/")
+    assert re.match(
+        r"raw/\d{4}-\d{2}-\d{2}-learning-notes\.md",
+        source_artifacts[0]["relative_path"],
+    )
 
     detail = client.get(
         f"/api/workspace/artifacts/{second['artifact']['id']}",
@@ -615,7 +625,10 @@ def test_record_real_interview_archives_extracts_and_updates_status(
     assert response.status_code == 200
     body = response.json()
     assert body["raw_artifact"]["kind"] == "interview_record"
-    assert body["raw_artifact"]["relative_path"].startswith("sources/interviews/")
+    assert re.match(
+        r"raw/\d{8}-\d{6}-\d{6}-real-interview\.md",
+        body["raw_artifact"]["relative_path"],
+    )
     assert body["questions"] == [
         "Redis 缓存击穿怎么处理？",
         "MySQL redo log 和 binlog 为什么要两阶段提交？",
@@ -706,7 +719,7 @@ def test_workspace_artifact_delete_removes_file_and_projection(client) -> None:
     artifacts.create_markdown("knowledge/delete-me.md", kind="knowledge", body="# Delete\n")
     client.post("/api/workspace/rebuild-projection", headers=_auth(token))
     listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
-    artifact_id = listed[0]["id"]
+    artifact_id = next(artifact for artifact in listed if artifact["kind"] == "knowledge")["id"]
     artifact_path = workspace.resolve_path("knowledge/delete-me.md")
 
     response = client.delete(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token))
@@ -715,7 +728,8 @@ def test_workspace_artifact_delete_removes_file_and_projection(client) -> None:
     assert response.json() == {"id": artifact_id, "status": "deleted"}
     assert not artifact_path.exists()
     assert client.get(f"/api/workspace/artifacts/{artifact_id}", headers=_auth(token)).status_code == 404
-    assert client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"] == []
+    remaining = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
+    assert [artifact["kind"] for artifact in remaining] == ["manifest"]
 
 
 def test_workspace_source_delete_removes_original_and_sidecar(client, monkeypatch) -> None:
@@ -796,7 +810,13 @@ def test_workspace_legacy_plan_artifact_is_not_editable(client) -> None:
     artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("state/plan.md", kind="plan", body="# Plan\n\n- a\n")
     client.post("/api/workspace/rebuild-projection", headers=_auth(token))
-    plan = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"][0]
+    plan = next(
+        artifact
+        for artifact in client.get("/api/workspace/artifacts", headers=_auth(token)).json()[
+            "artifacts"
+        ]
+        if artifact["kind"] == "plan"
+    )
 
     response = client.put(
         f"/api/workspace/artifacts/{plan['id']}/body",
