@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,10 @@ from app.schemas.workspace import (
     ReplaceBodyRequest,
     UploadedSourceResponse,
     UploadMaterialsResponse,
+    WorkspaceDirectoryResponse,
+    WorkspaceFileContentResponse,
+    WorkspaceFileResponse,
+    WorkspaceFilesResponse,
     WorkspaceStatusResponse,
 )
 from app.services.markdown_utils import (
@@ -50,11 +55,12 @@ from app.services.artifact_metadata import (
 from app.services.artifact_service import ArtifactService
 from app.services.index_service import IndexService
 from app.services.model_service import ModelService
-from app.services.workspace_service import WorkspaceService
-from app.services.workspace_paths import REVIEW_STATUS_PATH
+from app.services.workspace_service import UnsafeWorkspacePath, WorkspaceService
+from app.services.workspace_paths import REVIEW_STATUS_PATH, WORKSPACE_DIRECTORIES
 
 
 router = APIRouter(prefix="/api/workspace")
+MAX_WORKSPACE_FILE_PREVIEW_BYTES = 1_000_000
 
 
 @router.get("", response_model=WorkspaceStatusResponse)
@@ -84,6 +90,57 @@ def list_artifacts(
     _workspace_services(scope)
     artifacts = ArtifactRepository().list(session, user_id=scope.user_id)
     return ArtifactListResponse(artifacts=[_summary(artifact) for artifact in artifacts])
+
+
+@router.get("/files", response_model=WorkspaceFilesResponse)
+def list_files(
+    session: Session = Depends(get_session),
+    scope: UserScope = Depends(get_user_scope),
+) -> WorkspaceFilesResponse:
+    from app.repositories.artifact_repository import ArtifactRepository
+
+    workspace, _ = _workspace_services(scope)
+    artifacts_by_path = {
+        artifact.relative_path: artifact
+        for artifact in ArtifactRepository().list(session, user_id=scope.user_id)
+    }
+    return WorkspaceFilesResponse(
+        root="workspace",
+        directories=_workspace_directories(workspace.root, artifacts_by_path),
+    )
+
+
+@router.get("/files/content", response_model=WorkspaceFileContentResponse)
+def get_file_content(
+    relative_path: str,
+    scope: UserScope = Depends(get_user_scope),
+) -> WorkspaceFileContentResponse:
+    workspace, _ = _workspace_services(scope)
+    try:
+        path = workspace.resolve_path(relative_path)
+    except UnsafeWorkspacePath as exc:
+        raise bad_request("workspace_file_path_invalid", "Workspace file path is invalid.") from exc
+    if not path.exists() or not path.is_file():
+        raise not_found("workspace_file_not_found", "Workspace file not found.")
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        raise bad_request("workspace_file_unreadable", "Workspace file could not be read.") from exc
+    if stat.st_size > MAX_WORKSPACE_FILE_PREVIEW_BYTES:
+        raise bad_request("workspace_file_too_large", "Workspace file is too large to preview.")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise bad_request("workspace_file_not_text", "Workspace file is not UTF-8 text.") from exc
+    except OSError as exc:
+        raise bad_request("workspace_file_unreadable", "Workspace file could not be read.") from exc
+    return WorkspaceFileContentResponse(
+        name=path.name,
+        relative_path=workspace.to_relative_path(path),
+        size_bytes=stat.st_size,
+        updated_at=datetime.fromtimestamp(stat.st_mtime, UTC),
+        content=content,
+    )
 
 
 @router.get("/preparation-tasks", response_model=PreparationTasksResponse)
@@ -595,6 +652,113 @@ def _active_collection(session: Session, scope: UserScope) -> str:
         return scope.qdrant_prefix
     active_collection = (user.settings_json or {}).get("active_collection")
     return active_collection if isinstance(active_collection, str) and active_collection else scope.qdrant_prefix
+
+
+def _workspace_directories(
+    root: Path,
+    artifacts_by_path: dict[str, Any],
+) -> list[WorkspaceDirectoryResponse]:
+    directory_paths = [root]
+    for path in root.rglob("*"):
+        try:
+            if path.is_symlink() or not path.is_dir():
+                continue
+        except OSError:
+            continue
+        directory_paths.append(path)
+
+    return [
+        _workspace_directory_response(directory, root, artifacts_by_path)
+        for directory in sorted(
+            directory_paths,
+            key=lambda directory: _directory_sort_key(_relative_directory(directory, root)),
+        )
+    ]
+
+
+def _workspace_directory_response(
+    directory: Path,
+    root: Path,
+    artifacts_by_path: dict[str, Any],
+) -> WorkspaceDirectoryResponse:
+    relative_path = _relative_directory(directory, root)
+    files: list[WorkspaceFileResponse] = []
+    child_directory_count = 0
+    try:
+        directory_stat = directory.stat()
+        directory_updated_at = datetime.fromtimestamp(directory_stat.st_mtime, UTC)
+    except OSError:
+        directory_updated_at = datetime.now(UTC)
+    try:
+        entries = sorted(directory.iterdir(), key=lambda entry: entry.name)
+    except OSError:
+        entries = []
+    for entry in entries:
+        try:
+            if entry.is_symlink():
+                continue
+            if entry.is_dir():
+                child_directory_count += 1
+                continue
+            if not entry.is_file():
+                continue
+            stat = entry.stat()
+        except OSError:
+            continue
+        file_relative_path = entry.relative_to(root).as_posix()
+        artifact = artifacts_by_path.get(file_relative_path)
+        file_updated_at = datetime.fromtimestamp(stat.st_mtime, UTC)
+        files.append(
+            WorkspaceFileResponse(
+                name=entry.name,
+                relative_path=file_relative_path,
+                directory=relative_path,
+                size_bytes=stat.st_size,
+                created_at=artifact.created_at if artifact is not None else file_updated_at,
+                updated_at=artifact.updated_at if artifact is not None else file_updated_at,
+                owner=_owner(artifact) if artifact is not None else "workspace",
+                kind=artifact.kind if artifact is not None else "file",
+                processing_status=artifact_processing_status(artifact)
+                if artifact is not None
+                else "completed",
+                index_status=artifact_index_status(artifact)
+                if artifact is not None
+                else "completed",
+                recovery_required=artifact_recovery_required(artifact)
+                if artifact is not None
+                else False,
+                allowed_operations=sorted(ALLOWED_OPERATIONS.get(artifact.kind, set()))
+                if artifact is not None
+                else [],
+                artifact_id=artifact.id if artifact is not None else None,
+                artifact_kind=artifact.kind if artifact is not None else None,
+            )
+        )
+    return WorkspaceDirectoryResponse(
+        name="workspace" if not relative_path else directory.name,
+        relative_path=relative_path,
+        depth=0 if not relative_path else len(Path(relative_path).parts),
+        file_count=len(files),
+        child_directory_count=child_directory_count,
+        created_at=directory_updated_at,
+        updated_at=directory_updated_at,
+        files=files,
+    )
+
+
+def _relative_directory(directory: Path, root: Path) -> str:
+    if directory == root:
+        return ""
+    return directory.relative_to(root).as_posix()
+
+
+def _directory_sort_key(relative_path: str) -> tuple[int, tuple[str, ...]]:
+    if not relative_path:
+        return (-1, ())
+    parts = Path(relative_path).parts
+    top_level_order = {directory: index for index, directory in enumerate(WORKSPACE_DIRECTORIES)}
+    first = parts[0]
+    return (top_level_order.get(first, len(top_level_order)), parts)
 
 
 def _summary(artifact) -> ArtifactSummaryResponse:

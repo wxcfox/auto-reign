@@ -25,6 +25,8 @@ import type {
   WorkspaceArtifactDetail,
   WorkspaceArtifactListResponse,
   WorkspaceArtifactSummary,
+  WorkspaceFileContentResponse,
+  WorkspaceFilesResponse,
   WorkspaceStatusResponse,
 } from "./types";
 import { ApiError, throwApiError } from "./api-error";
@@ -71,6 +73,16 @@ export function getWorkspaceStatus(): Promise<WorkspaceStatusResponse> {
 
 export function getWorkspaceArtifacts(): Promise<WorkspaceArtifactListResponse> {
   return apiJson<WorkspaceArtifactListResponse>("/api/workspace/artifacts");
+}
+
+export function getWorkspaceFiles(): Promise<WorkspaceFilesResponse> {
+  return apiJson<WorkspaceFilesResponse>("/api/workspace/files");
+}
+
+export function getWorkspaceFileContent(relativePath: string): Promise<WorkspaceFileContentResponse> {
+  return apiJson<WorkspaceFileContentResponse>(
+    `/api/workspace/files/content?relative_path=${encodeURIComponent(relativePath)}`,
+  );
 }
 
 export function getPreparationTasks(): Promise<PreparationTasksResponse> {

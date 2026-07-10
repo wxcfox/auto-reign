@@ -121,6 +121,75 @@ def test_workspace_rebuild_projection_endpoint(client) -> None:
     assert response.json()["artifact_count"] == 2
 
 
+def test_workspace_files_lists_real_workspace_directories(client) -> None:
+    token = _register(client)
+    workspace = _workspace_service(client)
+    artifact = ArtifactService(workspace).create_markdown(
+        "knowledge/redis.md",
+        kind="knowledge",
+        body="# Redis\n",
+    )
+    (workspace.root / "raw" / "resume.txt").write_text("resume", encoding="utf-8")
+    nested_dir = workspace.root / "practice" / "2026" / "07"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "session.md").write_text("# Session\n", encoding="utf-8")
+    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+
+    response = client.get("/api/workspace/files", headers=_auth(token))
+
+    assert response.status_code == 200
+    body = response.json()
+    directories = {directory["relative_path"]: directory for directory in body["directories"]}
+    assert body["root"] == "workspace"
+    assert "" in directories
+    assert "raw" in directories
+    assert "knowledge" in directories
+    assert "practice/2026/07" in directories
+    assert directories[""]["depth"] == 0
+    assert directories["raw"]["depth"] == 1
+    assert directories["practice/2026/07"]["depth"] == 3
+    assert directories["practice"]["created_at"]
+    assert directories["practice"]["updated_at"]
+
+    root_files = {file["relative_path"]: file for file in directories[""]["files"]}
+    assert {"workspace.md", "manifest.md"}.issubset(root_files)
+
+    raw_files = {file["relative_path"]: file for file in directories["raw"]["files"]}
+    assert raw_files["raw/resume.txt"]["name"] == "resume.txt"
+    assert raw_files["raw/resume.txt"]["artifact_id"] is None
+    assert raw_files["raw/resume.txt"]["owner"] == "workspace"
+    assert raw_files["raw/resume.txt"]["kind"] == "file"
+    assert raw_files["raw/resume.txt"]["processing_status"] == "completed"
+    assert raw_files["raw/resume.txt"]["index_status"] == "completed"
+    assert raw_files["raw/resume.txt"]["allowed_operations"] == []
+    assert raw_files["raw/resume.txt"]["size_bytes"] == 6
+
+    knowledge_files = {
+        file["relative_path"]: file for file in directories["knowledge"]["files"]
+    }
+    assert knowledge_files["knowledge/redis.md"]["artifact_id"] == artifact.front_matter.id
+    assert knowledge_files["knowledge/redis.md"]["artifact_kind"] == "knowledge"
+    assert knowledge_files["knowledge/redis.md"]["owner"] == "knowledge"
+    assert knowledge_files["knowledge/redis.md"]["kind"] == "knowledge"
+    assert knowledge_files["knowledge/redis.md"]["allowed_operations"] == ["replace_body"]
+
+    content = client.get(
+        "/api/workspace/files/content",
+        params={"relative_path": "raw/resume.txt"},
+        headers=_auth(token),
+    )
+    assert content.status_code == 200
+    assert content.json()["relative_path"] == "raw/resume.txt"
+    assert content.json()["content"] == "resume"
+
+    escaped = client.get(
+        "/api/workspace/files/content",
+        params={"relative_path": "../default_manifest.md"},
+        headers=_auth(token),
+    )
+    assert escaped.status_code == 400
+
+
 def test_workspace_preparation_tasks_parse_review_status(client) -> None:
     token = _register(client)
     artifacts = _workspace_artifacts(client)

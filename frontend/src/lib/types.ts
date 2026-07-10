@@ -152,6 +152,47 @@ export interface WorkspaceArtifactListResponse {
   artifacts: WorkspaceArtifactSummary[];
 }
 
+export interface WorkspaceFileEntry {
+  name: string;
+  relative_path: string;
+  directory: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+  owner: string;
+  kind: string;
+  processing_status: string;
+  index_status: string;
+  recovery_required: boolean;
+  allowed_operations: string[];
+  artifact_id: string | null;
+  artifact_kind: string | null;
+}
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  relative_path: string;
+  depth: number;
+  file_count: number;
+  child_directory_count: number;
+  created_at: string;
+  updated_at: string;
+  files: WorkspaceFileEntry[];
+}
+
+export interface WorkspaceFilesResponse {
+  root: string;
+  directories: WorkspaceDirectoryEntry[];
+}
+
+export interface WorkspaceFileContentResponse {
+  name: string;
+  relative_path: string;
+  size_bytes: number;
+  updated_at: string;
+  content: string;
+}
+
 export interface WorkspaceArtifactDetail extends WorkspaceArtifactSummary {
   body: string | null;
 }
