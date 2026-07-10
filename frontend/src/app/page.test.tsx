@@ -206,7 +206,7 @@ describe("DashboardPage", () => {
   });
 
   it("mirrors the library layout for workspace child folders and files", async () => {
-    render(<DashboardPage />);
+    const { container } = render(<DashboardPage />);
 
     expect(await screen.findByText("Interview learning workbench")).toBeInTheDocument();
     expect(getWorkspaceFiles).toHaveBeenCalledTimes(1);
@@ -227,6 +227,9 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("button", { name: "workspace.md" })).toBeInTheDocument();
 
     const fileTable = screen.getByRole("table", { name: "Workspace files" });
+    const browser = container.querySelector(".workspace-browser");
+    expect(screen.getByRole("button", { name: "Collapse folders" })).toBeInTheDocument();
+    expect(browser).toHaveAttribute("data-categories-collapsed", "false");
     expect(within(fileTable).getByRole("columnheader", { name: "Name" })).toBeInTheDocument();
     expect(within(fileTable).getByRole("columnheader", { name: "Owner" })).toBeInTheDocument();
     expect(within(fileTable).getByRole("columnheader", { name: "Created" })).toBeInTheDocument();
@@ -269,6 +272,13 @@ describe("DashboardPage", () => {
 
     await waitFor(() => expect(getWorkspaceFileContent).toHaveBeenCalledWith("workspace.md"));
     expect(screen.getByText("This directory is managed by Auto Reign.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse folders" }));
+
+    expect(browser).toHaveAttribute("data-categories-collapsed", "true");
+    expect(screen.getByRole("button", { name: "Expand folders" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "raw 2" })).not.toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Workspace files" })).toBeInTheDocument();
   });
 
   it("deletes workspace artifact files through the same action pattern as the library", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Folder, Pencil, Trash2 } from "lucide-react";
+import { FileText, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -143,6 +143,7 @@ export default function DashboardPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [foldersCollapsed, setFoldersCollapsed] = useState(false);
   const [preview, setPreview] = useState<WorkspaceFileContentResponse | null>(null);
   const [previewLoadingPath, setPreviewLoadingPath] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -288,44 +289,68 @@ export default function DashboardPage() {
 
       <section
         className="library-browser workspace-browser"
+        data-categories-collapsed={foldersCollapsed}
         aria-labelledby="workspace-file-heading"
       >
-        <aside className="library-sidebar" aria-label={t("files.folders_title")}>
+        <aside
+          className="library-sidebar"
+          data-collapsed={foldersCollapsed}
+          aria-label={t("files.folders_title")}
+        >
           <div className="library-sidebar-header">
-            <p className="eyebrow">{t("files.folders_title")}</p>
+            {foldersCollapsed ? null : <p className="eyebrow">{t("files.folders_title")}</p>}
+            <button
+              aria-label={
+                foldersCollapsed ? t("files.expand_folders") : t("files.collapse_folders")
+              }
+              className="library-sidebar-toggle"
+              onClick={() => setFoldersCollapsed((current) => !current)}
+              title={foldersCollapsed ? t("files.expand_folders") : t("files.collapse_folders")}
+              type="button"
+            >
+              {foldersCollapsed ? (
+                <PanelLeftOpen size={16} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={16} aria-hidden="true" />
+              )}
+            </button>
           </div>
-          {loading ? <p className="empty-state">{t("files.loading")}</p> : null}
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {!loading && !error && sidebarEntries.length === 0 ? (
-            <p className="empty-state">{t("files.empty")}</p>
-          ) : null}
-          {!loading && !error && sidebarEntries.length > 0 ? (
-            <div className="library-category-list workspace-folder-list">
-              {sidebarEntries.map((entry) => {
-                const active = isSidebarEntryActive(entry);
-                return (
-                  <button
-                    aria-label={
-                      entry.count === null ? entry.label : `${entry.label} ${entry.count}`
-                    }
-                    aria-pressed={active}
-                    data-active={active}
-                    key={entry.key}
-                    onClick={() => handleSelectEntry(entry)}
-                    style={{ paddingLeft: `${10 + entry.depth * 14}px` }}
-                    type="button"
-                  >
-                    <span>{entry.label}</span>
-                    <strong>{entry.count ?? ""}</strong>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
+          {foldersCollapsed ? null : (
+            <>
+              {loading ? <p className="empty-state">{t("files.loading")}</p> : null}
+              {error ? (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {!loading && !error && sidebarEntries.length === 0 ? (
+                <p className="empty-state">{t("files.empty")}</p>
+              ) : null}
+              {!loading && !error && sidebarEntries.length > 0 ? (
+                <div className="library-category-list workspace-folder-list">
+                  {sidebarEntries.map((entry) => {
+                    const active = isSidebarEntryActive(entry);
+                    return (
+                      <button
+                        aria-label={
+                          entry.count === null ? entry.label : `${entry.label} ${entry.count}`
+                        }
+                        aria-pressed={active}
+                        data-active={active}
+                        key={entry.key}
+                        onClick={() => handleSelectEntry(entry)}
+                        style={{ paddingLeft: `${10 + entry.depth * 14}px` }}
+                        type="button"
+                      >
+                        <span>{entry.label}</span>
+                        <strong>{entry.count ?? ""}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </>
+          )}
         </aside>
 
         <div className="library-files">

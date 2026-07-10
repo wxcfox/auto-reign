@@ -6,6 +6,8 @@
     "eyebrow": "用户工作区",
     "title": "工作区文件",
     "folders_title": "文件夹",
+    "collapse_folders": "收起文件夹",
+    "expand_folders": "展开文件夹",
     "folder": "文件夹",
     "loading": "工作区文件加载中...",
     "empty": "初始化或上传资料后，工作区文件会展示在这里。",
