@@ -60,9 +60,9 @@ flowchart TD
 
 `POST /api/workspace/rebuild-index` 保留为诊断 API，用于手工重建 Qdrant collection。资料库主界面不展示该能力，普通学习流程不要求用户理解索引或 collection。
 
-## 当前重点展示
+## 工作台文件展示
 
-工作台首页读取 `review/status.md` 中的“当前重点”，最多展示 3 个抽检重点。重点来自模拟练习或真实面试记录暴露出的薄弱点；单纯上传、阅读或编辑资料只会更新“最近整理”，不会直接证明掌握状态。
+工作台首页读取当前 JWT 用户的只读 workspace 文件树，展示 `DATA_DIR/users/{user_id}/workspace` 下的真实目录和直接文件。文件树接口不接受用户 id；后端从当前用户 scope 派生根目录，并为能匹配到 MySQL artifact 投影的文件附带 artifact id、归属、状态和可用操作，便于前端复用资料库式表格、编辑和删除入口。前端左侧不展示 workspace 根节点，而是直接列出 workspace 下的一级文件夹和根目录文件，不默认展开子目录；点击文件夹后，右侧表格展示该目录的直接子文件夹和文件，子文件夹可继续点击进入。普通 UTF-8 文本文件通过只读内容接口预览；该接口只接受当前 workspace 内的相对路径，并拒绝越界路径、目录、非文本文件和过大文件。首页不展示健康检查、Qdrant collection、embedding 或抽检任务。`review/status.md` 中的“当前重点”仍来自模拟练习或真实面试记录暴露出的薄弱点，但它主要用于面试出题前上下文，而不是首页卡片。
 
 ## 面试点评检索
 

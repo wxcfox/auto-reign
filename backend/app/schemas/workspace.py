@@ -148,6 +148,47 @@ class ArtifactListResponse(BaseModel):
     artifacts: list[ArtifactSummaryResponse]
 
 
+class WorkspaceFileResponse(BaseModel):
+    name: str
+    relative_path: str
+    directory: str
+    size_bytes: int
+    created_at: datetime
+    updated_at: datetime
+    owner: str
+    kind: str
+    processing_status: str
+    index_status: str
+    recovery_required: bool
+    allowed_operations: list[str]
+    artifact_id: str | None = None
+    artifact_kind: str | None = None
+
+
+class WorkspaceDirectoryResponse(BaseModel):
+    name: str
+    relative_path: str
+    depth: int
+    file_count: int
+    child_directory_count: int
+    created_at: datetime
+    updated_at: datetime
+    files: list[WorkspaceFileResponse]
+
+
+class WorkspaceFilesResponse(BaseModel):
+    root: str
+    directories: list[WorkspaceDirectoryResponse]
+
+
+class WorkspaceFileContentResponse(BaseModel):
+    name: str
+    relative_path: str
+    size_bytes: int
+    updated_at: datetime
+    content: str
+
+
 class PreparationTaskResponse(BaseModel):
     title: str
     reason: str

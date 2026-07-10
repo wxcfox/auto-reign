@@ -2,40 +2,17 @@
   "eyebrow": "Local interview workbench",
   "title": "Dashboard",
   "workbench_title": "Interview learning workbench",
-  "status_ready": "Backend ready",
-  "status_error": "Some dashboard data could not be loaded.",
-  "status": {
-    "ready": "Ready",
-    "checking": "Checking",
-    "unavailable": "Unavailable"
-  },
-  "metrics": {
-    "documents": "Indexed documents",
-    "providers": "Available providers",
-    "reports": "Interview reports",
-    "summary_label": "Workspace summary",
-    "total": "Total materials",
-    "source": "Source materials",
-    "knowledge": "Knowledge cards",
-    "practice": "Practice records",
-    "stale": "Pending index"
-  },
-  "report": {
-    "eyebrow": "Latest output",
-    "title": "Interview report",
-    "empty": "No interview reports yet."
-  },
-  "prep": {
-    "eyebrow": "Current prep",
-    "title": "Current focus",
-    "empty": "After practice or review, Auto Reign keeps the most useful drill focus here.",
-    "start_drill": "Start drill",
-    "view_status": "View status"
-  },
-  "actions": {
-    "upload_title": "Upload documents",
-    "upload_desc": "Add Markdown or TXT knowledge sources.",
-    "interview_title": "Start interview",
-    "interview_desc": "Configure a role and begin a mock session."
+  "files": {
+    "eyebrow": "User workspace",
+    "title": "Workspace files",
+    "folders_title": "Folders",
+    "folder": "Folder",
+    "loading": "Loading workspace files...",
+    "empty": "Workspace files will appear here after initialization or uploads.",
+    "empty_folder": "This folder has no direct files.",
+    "preview_title": "File preview",
+    "preview_loading": "Loading file preview...",
+    "total_count_one": "{{count}} file",
+    "total_count_other": "{{count}} files"
   }
 }

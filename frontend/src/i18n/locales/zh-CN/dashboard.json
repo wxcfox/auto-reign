@@ -2,40 +2,17 @@
   "eyebrow": "本地面试工作台",
   "title": "总览",
   "workbench_title": "面试学习工作台",
-  "status_ready": "后端已就绪",
-  "status_error": "部分总览数据加载失败。",
-  "status": {
-    "ready": "就绪",
-    "checking": "检查中",
-    "unavailable": "不可用"
-  },
-  "metrics": {
-    "documents": "已索引文档",
-    "providers": "可用模型提供方",
-    "reports": "面试报告",
-    "summary_label": "工作区概览",
-    "total": "资料总数",
-    "source": "原始资料",
-    "knowledge": "知识卡片",
-    "practice": "练习记录",
-    "stale": "待索引"
-  },
-  "report": {
-    "eyebrow": "最新产出",
-    "title": "面试报告",
-    "empty": "还没有面试报告。"
-  },
-  "prep": {
-    "eyebrow": "当前准备",
-    "title": "当前重点",
-    "empty": "完成练习或复盘后，Auto Reign 会把当前最值得抽检的重点放在这里。",
-    "start_drill": "开始抽检",
-    "view_status": "查看状态"
-  },
-  "actions": {
-    "upload_title": "上传资料",
-    "upload_desc": "添加 Markdown 或 TXT 知识素材。",
-    "interview_title": "开始面试",
-    "interview_desc": "配置岗位信息并开始模拟面试。"
+  "files": {
+    "eyebrow": "用户工作区",
+    "title": "工作区文件",
+    "folders_title": "文件夹",
+    "folder": "文件夹",
+    "loading": "工作区文件加载中...",
+    "empty": "初始化或上传资料后，工作区文件会展示在这里。",
+    "empty_folder": "这个文件夹下没有直接文件。",
+    "preview_title": "文件预览",
+    "preview_loading": "文件内容加载中...",
+    "total_count_one": "共 {{count}} 个文件",
+    "total_count_other": "共 {{count}} 个文件"
   }
 }

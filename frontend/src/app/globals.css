@@ -781,113 +781,71 @@ a:focus-visible {
   font-weight: 700;
 }
 
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+.workspace-browser {
+  grid-template-columns: 300px minmax(0, 1fr);
 }
 
-.metric {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 78px;
-  padding: 14px;
+.workspace-folder-list button {
+  min-height: 34px;
 }
 
-.metric + .metric {
-  border-left: 1px solid var(--border);
-}
-
-.metric svg {
-  color: var(--accent);
-}
-
-.metric div {
-  display: grid;
-  gap: 3px;
-}
-
-.metric strong {
-  font-size: 20px;
-  line-height: 1.2;
-}
-
-.metric span {
-  color: var(--text-muted);
+.workspace-folder-list button span {
+  font-family: var(--font-geist-mono), monospace;
   font-size: 12px;
 }
 
-.prep-panel {
+.workspace-file-name-text {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  font-weight: 620;
+}
+
+.workspace-file-link-button {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.workspace-file-link-button:hover {
+  color: var(--accent-strong);
+}
+
+.workspace-file-preview {
   display: grid;
   gap: 14px;
-  border: 1px solid var(--border);
+  margin-top: 14px;
+}
+
+.workspace-file-preview h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.workspace-file-preview-pre {
+  overflow: auto;
+  max-height: 520px;
+  margin: 0;
   border-radius: 8px;
-  background: var(--surface);
-  padding: 14px;
-}
-
-.prep-task-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.prep-task {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-}
-
-.prep-task:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.prep-task-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-weight: 800;
-}
-
-.prep-task-copy {
-  min-width: 0;
-}
-
-.prep-task-copy p {
-  margin: 0;
-  font-weight: 650;
-}
-
-.prep-task-copy small {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.prep-task-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  background: var(--surface-muted);
+  padding: 12px;
+  color: var(--text);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.82rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .content-surface {
@@ -896,54 +854,6 @@ a:focus-visible {
   border-radius: 8px;
   background: var(--surface);
   padding: 14px;
-}
-
-.latest-report {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.latest-report h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-}
-
-.latest-report time {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.quick-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.action-link {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 14px;
-}
-
-.action-link:hover {
-  border-color: var(--accent);
-}
-
-.action-link div {
-  display: grid;
-  gap: 4px;
-}
-
-.action-link span {
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .review-layout {
@@ -2091,21 +2001,8 @@ a:focus-visible {
   .interview-layout,
   .library-browser,
   .real-interview-result-grid,
-  .metric-grid,
-  .dashboard-grid,
-  .quick-actions,
   .review-layout {
     grid-template-columns: 1fr;
-  }
-
-  .metric + .metric {
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-
-  .latest-report {
-    align-items: stretch;
-    flex-direction: column;
   }
 
   .report-list {
