@@ -167,7 +167,7 @@ auto-reign-backend:sha-<commit>
 auto-reign-frontend:sha-<commit>
 ```
 
-全部镜像成功后，Workflow 才创建 `v0.1.0` annotated Tag 和 GitHub Release。版本号和 Tag 不允许覆盖，生产环境不使用 `latest`。
+全部镜像成功后，Workflow 才创建 `v0.1.0` annotated Tag 和 GitHub Release。版本号和 Tag 不允许覆盖，生产环境不使用 `latest`。如果 Tag 已创建但 GitHub Release 因临时故障失败，可以重跑同一版本；只有 Tag 仍指向本次 `main` 提交时才允许补建 Release。
 
 ## 手工部署
 

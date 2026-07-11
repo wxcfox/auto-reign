@@ -27,8 +27,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - id: version
         env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
@@ -36,14 +40,20 @@ jobs:
             echo "Version must match MAJOR.MINOR.PATCH" >&2
             exit 1
           fi
-          if git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
-            echo "Tag v$VERSION already exists" >&2
+          if gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "GitHub Release v$VERSION already exists" >&2
             exit 1
+          fi
+          if git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            tag_commit="$(git rev-list -n 1 "refs/tags/v$VERSION")"
+            if [[ "$tag_commit" != "$SOURCE_SHA" ]]; then
+              echo "Tag v$VERSION points to $tag_commit instead of $SOURCE_SHA" >&2
+              exit 1
+            fi
+            echo "Reusing existing tag v$VERSION after an incomplete release."
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-      - id: source
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Validate ACR configuration
         env:
           ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
@@ -147,8 +157,17 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag --annotate "$RELEASE_TAG" "$SOURCE_SHA" --message "Auto Reign $RELEASE_TAG"
-          git push origin "$RELEASE_TAG"
+          if git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            tag_commit="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+            if [[ "$tag_commit" != "$SOURCE_SHA" ]]; then
+              echo "Tag $RELEASE_TAG points to $tag_commit instead of $SOURCE_SHA" >&2
+              exit 1
+            fi
+            echo "Reusing existing tag $RELEASE_TAG."
+          else
+            git tag --annotate "$RELEASE_TAG" "$SOURCE_SHA" --message "Auto Reign $RELEASE_TAG"
+            git push origin "$RELEASE_TAG"
+          fi
 
           cat > release-notes.md <<EOF
           ## 生产镜像

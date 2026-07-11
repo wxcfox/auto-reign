@@ -59,6 +59,9 @@ def test_release_workflow_publishes_main_as_an_explicit_version() -> None:
     )
     assert "auto-reign-${{ matrix.component }}:latest" not in workflow
     assert workflow.index("docker/build-push-action") < workflow.index("git tag --annotate")
+    assert workflow.count("git rev-list -n 1") == 2
+    assert "Reusing existing tag v$VERSION after an incomplete release." in workflow
+    assert 'if [[ "$tag_commit" != "$SOURCE_SHA" ]]' in workflow
 
 
 def test_repository_does_not_deploy_production_from_github_actions() -> None:
