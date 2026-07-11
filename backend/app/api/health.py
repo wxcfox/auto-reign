@@ -10,6 +10,7 @@ def health() -> dict[str, object]:
     settings = get_settings()
     return {
         "status": "ok",
+        "version": settings.app_version,
         "storage": {
             "mysql": "configured",
             "qdrant": "configured",

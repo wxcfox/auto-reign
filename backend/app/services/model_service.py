@@ -14,7 +14,6 @@ from app.core.errors import bad_gateway, service_unavailable
 from app.schemas.modeling import (
     AnswerEvaluationRequest,
     AnswerEvaluationResult,
-    LearningNoteSummaryResult,
     QuestionGenerationRequest,
     ReportGenerationRequest,
 )
@@ -32,22 +31,6 @@ class ModelService:
         self.client_factory = client_factory or OpenAI
         self.prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
 
-    def summarize_learning_note(
-        self,
-        text: str,
-        *,
-        language: str = "zh-CN",
-        provider: str | None = None,
-        model: str | None = None,
-    ) -> LearningNoteSummaryResult:
-        return self._structured_chat(
-            "learning_note_summary.md",
-            {"text": text, "language": language},
-            LearningNoteSummaryResult,
-            provider,
-            model,
-        )
-
     def stream_learning_note_summary(
         self,
         text: str,
@@ -56,40 +39,23 @@ class ModelService:
         provider: str | None = None,
         model: str | None = None,
     ) -> Iterator[str]:
-        yield from self.stream_chat(
+        yield from self._stream_chat(
             "learning_note_summary_stream.md",
             {"text": text, "language": language},
             provider,
             model,
         )
 
-    def generate_question(self, request: QuestionGenerationRequest) -> str:
-        return self._chat(
-            "question_generation.md",
-            request.model_dump(exclude={"provider", "model"}),
-            request.provider,
-            request.model,
-        ).strip()
-
     def stream_question(self, request: QuestionGenerationRequest) -> Iterator[str]:
-        yield from self.stream_chat(
+        yield from self._stream_chat(
             "question_generation.md",
             request.model_dump(exclude={"provider", "model"}),
-            request.provider,
-            request.model,
-        )
-
-    def evaluate_answer(self, request: AnswerEvaluationRequest) -> AnswerEvaluationResult:
-        return self._structured_chat(
-            "answer_feedback.md",
-            request.model_dump(exclude={"provider", "model"}),
-            AnswerEvaluationResult,
             request.provider,
             request.model,
         )
 
     def stream_answer_evaluation(self, request: AnswerEvaluationRequest) -> Iterator[str]:
-        yield from self.stream_chat(
+        yield from self._stream_chat(
             "answer_feedback.md",
             request.model_dump(exclude={"provider", "model"}),
             request.provider,
@@ -107,15 +73,6 @@ class ModelService:
             request.model,
         ).strip()
 
-    def stream_chat(
-        self,
-        prompt_filename: str,
-        payload: dict[str, object],
-        provider: str | None,
-        model: str | None,
-    ) -> Iterator[str]:
-        yield from self._stream_chat(prompt_filename, payload, provider, model)
-
     def parse_structured_response(
         self,
         content: str,
@@ -129,17 +86,6 @@ class ModelService:
                 "provider_invalid_response",
                 "The selected model returned an invalid structured response.",
             ) from error
-
-    def _structured_chat(
-        self,
-        prompt_filename: str,
-        payload: dict[str, object],
-        result_type: type[BaseModel],
-        provider: str | None = None,
-        model: str | None = None,
-    ):
-        content = self._chat(prompt_filename, payload, provider, model)
-        return self.parse_structured_response(content, result_type)
 
     def _chat(
         self,

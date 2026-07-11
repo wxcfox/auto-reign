@@ -1,0 +1,118 @@
+name: auto-reign-production
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-backend-environment: &backend-environment
+  APP_VERSION: ${AUTO_REIGN_VERSION:?Set AUTO_REIGN_VERSION}
+  DATA_DIR: /app/data
+  DATABASE_URL: mysql+pymysql://${MYSQL_USER:?Set MYSQL_USER}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+  QDRANT_URL: http://qdrant:6333
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+  REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4}
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ${AUTO_REIGN_MYSQL_DIR:?Set AUTO_REIGN_MYSQL_DIR}:/var/lib/mysql
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging: *default-logging
+
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.17.0}
+    restart: unless-stopped
+    volumes:
+      - ${AUTO_REIGN_QDRANT_DIR:?Set AUTO_REIGN_QDRANT_DIR}:/qdrant/storage
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6333/readyz', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: *default-logging
+
+  migrate:
+    image: ${ACR_REGISTRY:?Set ACR_REGISTRY}/${ACR_NAMESPACE:?Set ACR_NAMESPACE}/auto-reign-backend:${AUTO_REIGN_VERSION:?Set AUTO_REIGN_VERSION}
+    profiles: ["tools"]
+    env_file:
+      - path: ${AUTO_REIGN_ENV_FILE:-/etc/auto-reign/auto-reign.env}
+        required: true
+    environment: *backend-environment
+    command: ["alembic", "upgrade", "head"]
+    volumes:
+      - ${AUTO_REIGN_DATA_DIR:?Set AUTO_REIGN_DATA_DIR}:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - data
+    logging: *default-logging
+
+  backend:
+    image: ${ACR_REGISTRY:?Set ACR_REGISTRY}/${ACR_NAMESPACE:?Set ACR_NAMESPACE}/auto-reign-backend:${AUTO_REIGN_VERSION:?Set AUTO_REIGN_VERSION}
+    restart: unless-stopped
+    env_file:
+      - path: ${AUTO_REIGN_ENV_FILE:-/etc/auto-reign/auto-reign.env}
+        required: true
+    environment: *backend-environment
+    volumes:
+      - ${AUTO_REIGN_DATA_DIR:?Set AUTO_REIGN_DATA_DIR}:/app/data
+    ports:
+      - "127.0.0.1:${AUTO_REIGN_BACKEND_PORT:-18300}:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - app
+      - data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: *default-logging
+
+  frontend:
+    image: ${ACR_REGISTRY:?Set ACR_REGISTRY}/${ACR_NAMESPACE:?Set ACR_NAMESPACE}/auto-reign-frontend:${AUTO_REIGN_VERSION:?Set AUTO_REIGN_VERSION}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AUTO_REIGN_FRONTEND_PORT:-13100}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: *default-logging
+
+networks:
+  app:
+  data:
+    internal: true

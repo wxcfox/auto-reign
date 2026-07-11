@@ -6,6 +6,7 @@ def test_health_reports_local_dependencies(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+    assert body["version"] == "development"
     assert body["storage"]["mysql"] == "configured"
     assert body["storage"]["qdrant"] == "configured"
     assert "providers" in body

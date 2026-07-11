@@ -6,7 +6,6 @@ import type {
   ConversationHistoryItem,
   ConversationListResponse,
   FollowUpFeedback,
-  HealthResponse,
   InterviewConfig,
   InterviewConfigResponse,
   InterviewSessionCreatedResponse,
@@ -15,7 +14,6 @@ import type {
   LearningNoteRequest,
   LearningNoteResponse,
   ModelListResponse,
-  PreparationTasksResponse,
   RealInterviewRecordRequest,
   RealInterviewRecordResponse,
   ReportDetailResponse,
@@ -27,14 +25,13 @@ import type {
   WorkspaceArtifactSummary,
   WorkspaceFileContentResponse,
   WorkspaceFilesResponse,
-  WorkspaceStatusResponse,
 } from "./types";
 import { ApiError, throwApiError } from "./api-error";
 import { clearAuthToken, getAuthToken } from "./auth";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 
-export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined) {
     headers.set("Content-Type", "application/json");
@@ -67,10 +64,6 @@ export async function uploadMaterials(files: File[]): Promise<UploadMaterialsRes
   return response.json() as Promise<UploadMaterialsResponse>;
 }
 
-export function getWorkspaceStatus(): Promise<WorkspaceStatusResponse> {
-  return apiJson<WorkspaceStatusResponse>("/api/workspace");
-}
-
 export function getWorkspaceArtifacts(): Promise<WorkspaceArtifactListResponse> {
   return apiJson<WorkspaceArtifactListResponse>("/api/workspace/artifacts");
 }
@@ -83,10 +76,6 @@ export function getWorkspaceFileContent(relativePath: string): Promise<Workspace
   return apiJson<WorkspaceFileContentResponse>(
     `/api/workspace/files/content?relative_path=${encodeURIComponent(relativePath)}`,
   );
-}
-
-export function getPreparationTasks(): Promise<PreparationTasksResponse> {
-  return apiJson<PreparationTasksResponse>("/api/workspace/preparation-tasks");
 }
 
 export function listConversations(): Promise<ConversationListResponse> {
@@ -331,10 +320,6 @@ export function finishInterviewSessionStream(
     undefined,
     callbacks,
   );
-}
-
-export function getHealth(): Promise<HealthResponse> {
-  return apiJson<HealthResponse>("/api/health");
 }
 
 export function getReports(): Promise<ReportListResponse> {

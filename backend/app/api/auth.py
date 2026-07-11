@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, get_session
 from app.core.auth import create_access_token
+from app.core.config import Settings, get_settings
 from app.core.passwords import hash_password, verify_password
 from app.db import models
 from app.schemas.auth import (
@@ -46,7 +47,16 @@ def _invalid_credentials() -> HTTPException:
 def register(
     request: RegisterRequest,
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> TokenResponse:
+    if not settings.registration_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "registration_disabled",
+                "message": "Public registration is disabled.",
+            },
+        )
     user = models.User(
         username=request.username,
         password_hash=hash_password(request.password),

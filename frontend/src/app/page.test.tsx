@@ -4,22 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardPage from "./page";
 import {
   deleteWorkspaceArtifact,
-  getHealth,
-  getPreparationTasks,
   getWorkspaceFileContent,
   getWorkspaceFiles,
-  getWorkspaceStatus,
 } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
   deleteWorkspaceArtifact: vi.fn(),
-  getHealth: vi.fn(),
-  getPreparationTasks: vi.fn(),
   getWorkspaceArtifact: vi.fn(),
   getWorkspaceArtifacts: vi.fn(),
   getWorkspaceFileContent: vi.fn(),
   getWorkspaceFiles: vi.fn(),
-  getWorkspaceStatus: vi.fn(),
 }));
 
 describe("DashboardPage", () => {
@@ -176,21 +170,6 @@ describe("DashboardPage", () => {
     vi.clearAllMocks();
     vi.stubGlobal("confirm", vi.fn(() => true));
     vi.mocked(deleteWorkspaceArtifact).mockResolvedValue({ id: "source-1", status: "deleted" });
-    vi.mocked(getHealth).mockResolvedValue({
-      status: "ok",
-      storage: { mysql: "ok", qdrant: "ok" },
-      providers: { openai: false, deepseek: false, qwen: true },
-      workspace: { initialized: true },
-    });
-    vi.mocked(getWorkspaceStatus).mockResolvedValue({
-      schema_version: 1,
-      language: "zh-CN",
-      artifact_count: 3,
-      initialized: true,
-    });
-    vi.mocked(getPreparationTasks).mockResolvedValue({
-      tasks: [],
-    });
     vi.mocked(getWorkspaceFileContent).mockResolvedValue({
       name: "workspace.md",
       relative_path: "workspace.md",
@@ -210,10 +189,6 @@ describe("DashboardPage", () => {
 
     expect(await screen.findByText("Interview learning workbench")).toBeInTheDocument();
     expect(getWorkspaceFiles).toHaveBeenCalledTimes(1);
-    expect(getHealth).not.toHaveBeenCalled();
-    expect(getWorkspaceStatus).not.toHaveBeenCalled();
-    expect(getPreparationTasks).not.toHaveBeenCalled();
-
     expect(screen.queryByRole("button", { name: "workspace 2" })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "raw 2" })).toHaveAttribute(
       "aria-pressed",

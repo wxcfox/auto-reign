@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.markdown_utils import markdown_list_items, markdown_sections
+from tests.sse import post_sse
 
 
 def _register(client: TestClient, username: str = "alice") -> dict[str, str]:
@@ -35,16 +36,15 @@ def test_finish_generates_workspace_report_and_updates_review_state(client: Test
         "chat_model": "gpt-4.1-mini",
         "target_rounds": 1,
     }
-    created = client.post("/api/interview-sessions", json=config).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I use tests and clear services."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I use tests and clear services."},
     )
 
-    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
-    assert finished.status_code == 200
-    body = finished.json()
+    body = post_sse(client, f"/api/interview-sessions/{session_id}/finish/stream")
     assert body["report"]["report_path"].startswith("reports/")
     assert body["report"]["report_path"].endswith(".md")
 
@@ -91,14 +91,15 @@ def test_report_detail_rejects_legacy_absolute_report_path(client: TestClient) -
         "chat_model": "gpt-4.1-mini",
         "target_rounds": 1,
     }
-    created = client.post("/api/interview-sessions", json=config).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I use tests and clear services."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I use tests and clear services."},
     )
-    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
-    report_id = finished.json()["report"]["id"]
+    finished = post_sse(client, f"/api/interview-sessions/{session_id}/finish/stream")
+    report_id = finished["report"]["id"]
 
     with session_scope(client.app.state.session_factory) as session:
         report = ArtifactRepository().get(session, user_id=1, artifact_id=report_id)
@@ -125,11 +126,12 @@ def test_finish_does_not_write_vectors_inline(
         "chat_model": "gpt-4.1-mini",
         "target_rounds": 1,
     }
-    created = client.post("/api/interview-sessions", json=config).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I use tests and clear services."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I use tests and clear services."},
     )
     calls: list[str] = []
 
@@ -142,9 +144,7 @@ def test_finish_does_not_write_vectors_inline(
         fail_upsert,
     )
 
-    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
-
-    assert finished.status_code == 200
+    post_sse(client, f"/api/interview-sessions/{session_id}/finish/stream")
     assert calls == []
 
 
@@ -162,17 +162,17 @@ def test_finish_uses_extra_prompt_as_target_context_when_structured_fields_are_b
         "chat_model": "qwen3.7-plus",
         "target_rounds": 1,
     }
-    created = client.post("/api/interview-sessions", json=config).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "我会用 Redis、限流和监控说明高并发处理。"},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "我会用 Redis、限流和监控说明高并发处理。"},
     )
 
-    finished = client.post(f"/api/interview-sessions/{session_id}/finish")
+    finished = post_sse(client, f"/api/interview-sessions/{session_id}/finish/stream")
 
-    assert finished.status_code == 200
-    assert "字节后端岗位" in finished.json()["report"]["summary"]
+    assert "字节后端岗位" in finished["report"]["summary"]
     workspace = get_settings().data_dir / "users" / "1" / "workspace"
     practice_files = list((workspace / "practice").glob("**/*.md"))
     assert len(practice_files) == 1
@@ -192,13 +192,17 @@ def test_user_cannot_read_other_users_report(client: TestClient) -> None:
         "chat_model": "gpt-4.1-mini",
         "target_rounds": 1,
     }
-    created = client.post("/api/interview-sessions", json=config).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I use tests and clear services."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I use tests and clear services."},
     )
-    report_id = client.post(f"/api/interview-sessions/{session_id}/finish").json()["report"]["id"]
+    report_id = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/finish/stream",
+    )["report"]["id"]
 
     bob = _register(client, "bob")
     client.headers.update(bob)

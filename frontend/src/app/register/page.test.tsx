@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import RegisterPage from "./page";
 import { registerUser } from "@/lib/api";
+import { ApiError } from "@/lib/api-error";
 import { setAuthToken } from "@/lib/auth";
 import type { User } from "@/lib/types";
 
@@ -65,5 +66,23 @@ describe("RegisterPage", () => {
       "Password must be at least 6 characters.",
     );
     expect(registerUser).not.toHaveBeenCalled();
+  });
+
+  it("explains when production registration is disabled", async () => {
+    vi.mocked(registerUser).mockRejectedValue(
+      new ApiError("Public registration is disabled.", {
+        code: "registration_disabled",
+        status: 403,
+      }),
+    );
+
+    render(<RegisterPage />);
+    fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: "alice" } });
+    fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Create account$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "New account registration is disabled.",
+    );
   });
 });

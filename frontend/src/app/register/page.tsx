@@ -7,6 +7,7 @@ import { type FormEvent, useState } from "react";
 
 import { useTranslation } from "@/hooks/useTranslation";
 import { registerUser } from "@/lib/api";
+import { ApiError } from "@/lib/api-error";
 import { setAuthToken } from "@/lib/auth";
 
 const MIN_PASSWORD_LENGTH = 6;
@@ -32,8 +33,12 @@ export default function RegisterPage() {
       const response = await registerUser(trimmedUsername, password);
       setAuthToken(response.access_token);
       router.replace("/");
-    } catch {
-      setError(t("auth.register_failed"));
+    } catch (submitError) {
+      setError(
+        submitError instanceof ApiError && submitError.code === "registration_disabled"
+          ? t("auth.registration_disabled")
+          : t("auth.register_failed"),
+      );
     } finally {
       setPending(false);
     }

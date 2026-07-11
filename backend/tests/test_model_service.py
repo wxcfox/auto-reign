@@ -30,6 +30,20 @@ class FakeOpenAIClient:
         self.chat = SimpleNamespace(completions=self.completions)
 
 
+class FakeStreamChatCompletions:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content=self.content))]
+            )
+        ]
+
+
 @pytest.mark.parametrize(
     ("provider", "model", "settings_overrides", "expected_base_url"),
     [
@@ -67,11 +81,12 @@ def test_model_service_uses_selected_provider(
         qdrant_collection="auto_reign_test",
         **settings_overrides,
     )
-    client = FakeOpenAIClient(
+    completions = FakeStreamChatCompletions(
         '{"feedback":"Good structure.","missing_points":["Metrics"],'
         '"follow_up_question":"Which metrics?","weaknesses":["Observability"],'
         '"review_suggestions":["Add an SLO example."]}'
     )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     factory_calls: list[dict[str, str | None]] = []
 
     def client_factory(*, api_key: str, base_url: str | None = None):
@@ -79,12 +94,16 @@ def test_model_service_uses_selected_provider(
         return client
 
     service = ModelService(settings=settings, client_factory=client_factory)
-    result = service.evaluate_answer(
-        AnswerEvaluationRequest(
-            question="How do you operate the service?",
-            answer="With dashboards and alerts.",
-            provider=provider,
-            model=model,
+    result = service.parse_answer_evaluation(
+        "".join(
+            service.stream_answer_evaluation(
+                AnswerEvaluationRequest(
+                    question="How do you operate the service?",
+                    answer="With dashboards and alerts.",
+                    provider=provider,
+                    model=model,
+                )
+            )
         )
     )
 
@@ -92,7 +111,7 @@ def test_model_service_uses_selected_provider(
     assert factory_calls == [
         {"api_key": "provider-secret", "base_url": expected_base_url}
     ]
-    assert client.completions.calls[0]["model"] == model
+    assert completions.calls[0]["model"] == model
 
 
 def test_model_service_streams_provider_chunks(tmp_path) -> None:
@@ -121,11 +140,13 @@ def test_model_service_streams_provider_chunks(tmp_path) -> None:
     service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
 
     chunks = list(
-        service.stream_chat(
-            "question_generation.md",
-            {"target_role": "Backend Engineer"},
-            "openai",
-            "gpt-4.1-mini",
+        service.stream_question(
+            QuestionGenerationRequest(
+                target_company="",
+                target_role="Backend Engineer",
+                provider="openai",
+                model="gpt-4.1-mini",
+            )
         )
     )
 
@@ -154,31 +175,6 @@ def test_model_service_streams_require_configured_provider(
                     provider="openai",
                     model="gpt-4.1-mini",
                 )
-            )
-        )
-
-    assert error.value.status_code == 503
-    assert error.value.detail["code"] == "provider_not_configured"
-
-
-def test_model_service_requires_configured_provider(
-    tmp_path,
-) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-    )
-    service = ModelService(settings=settings)
-
-    with pytest.raises(HTTPException) as error:
-        service.generate_question(
-            QuestionGenerationRequest(
-                target_company="OpenAI",
-                target_role="Backend Engineer",
-                provider="openai",
-                model="gpt-4.1-mini",
             )
         )
 
@@ -249,62 +245,6 @@ def test_model_service_generates_report_from_provider(
     assert report == "# 面试复盘报告\n\nprovider output"
 
 
-def test_model_service_evaluates_answer_from_provider(
-    tmp_path,
-) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-        openai_api_key="provider-secret",
-    )
-    client = FakeOpenAIClient(
-        '{"feedback":"Provider feedback.","missing_points":["Metrics"],'
-        '"follow_up_question":"Which metrics?","weaknesses":["Observability"],'
-        '"review_suggestions":["Add an SLO example."]}'
-    )
-    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
-
-    result = service.evaluate_answer(
-        AnswerEvaluationRequest(
-            question="How do you operate the service?",
-            answer="With dashboards and alerts.",
-            provider="openai",
-            model="gpt-4.1-mini",
-        )
-    )
-
-    assert result.feedback == "Provider feedback."
-
-
-def test_model_service_summarizes_learning_note_from_provider(
-    tmp_path,
-) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-        openai_api_key="provider-secret",
-    )
-    client = FakeOpenAIClient(
-        '{"title":"Redis","summary":"Cache stampede notes.",'
-        '"key_points":["Locking"],"interview_takeaways":["Explain tradeoffs"],'
-        '"follow_up_questions":["How does it fail?"]}'
-    )
-    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
-
-    result = service.summarize_learning_note(
-        "Redis cache stampede",
-        provider="openai",
-        model="gpt-4.1-mini",
-    )
-
-    assert result.title == "Redis"
-    assert result.key_points == ["Locking"]
-
-
 def test_model_service_generates_generic_question_from_provider_without_target_fields(
     tmp_path,
 ) -> None:
@@ -315,17 +255,20 @@ def test_model_service_generates_generic_question_from_provider_without_target_f
         qdrant_collection="auto_reign_test",
         openai_api_key="provider-secret",
     )
-    client = FakeOpenAIClient("Provider generated question")
+    completions = FakeStreamChatCompletions("Provider generated question")
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
 
-    question = service.generate_question(
-        QuestionGenerationRequest(
-            target_company="",
-            target_role="",
-            extra_prompt="面试字节后端岗位，JD 关注缓存和高并发。",
-            language="zh-CN",
-            provider="openai",
-            model="gpt-4.1-mini",
+    question = "".join(
+        service.stream_question(
+            QuestionGenerationRequest(
+                target_company="",
+                target_role="",
+                extra_prompt="面试字节后端岗位，JD 关注缓存和高并发。",
+                language="zh-CN",
+                provider="openai",
+                model="gpt-4.1-mini",
+            )
         )
     )
 
@@ -382,30 +325,6 @@ def test_model_service_streams_provider_answer_evaluation(tmp_path) -> None:
     assert parsed.feedback == "Provider feedback"
 
 
-def test_model_service_rejects_unconfigured_provider(tmp_path) -> None:
-    settings = Settings(
-        data_dir=tmp_path,
-        database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        qdrant_url=":memory:",
-        qdrant_collection="auto_reign_test",
-    )
-    service = ModelService(settings=settings)
-
-    with pytest.raises(HTTPException) as error:
-        service.generate_question(
-            QuestionGenerationRequest(
-                target_company="OpenAI",
-                target_role="Backend Engineer",
-                provider="openai",
-                model="gpt-4.1-mini",
-            )
-        )
-
-    assert error.value.status_code == 503
-    assert error.value.detail["code"] == "provider_not_configured"
-    assert "key" not in error.value.detail["message"].lower()
-
-
 def test_model_service_hides_provider_failure_details(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
@@ -423,12 +342,14 @@ def test_model_service_hides_provider_failure_details(tmp_path) -> None:
     service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
 
     with pytest.raises(HTTPException) as error:
-        service.generate_question(
-            QuestionGenerationRequest(
-                target_company="OpenAI",
-                target_role="Backend Engineer",
-                provider="openai",
-                model="gpt-4.1-mini",
+        list(
+            service.stream_question(
+                QuestionGenerationRequest(
+                    target_company="OpenAI",
+                    target_role="Backend Engineer",
+                    provider="openai",
+                    model="gpt-4.1-mini",
+                )
             )
         )
 
@@ -457,12 +378,14 @@ def test_model_service_logs_provider_error_details(
 
     with caplog.at_level("ERROR"):
         with pytest.raises(HTTPException) as error:
-            service.generate_question(
-                QuestionGenerationRequest(
-                    target_company="OpenAI",
-                    target_role="Backend Engineer",
-                    provider="openai",
-                    model="gpt-4.1-mini",
+            list(
+                service.stream_question(
+                    QuestionGenerationRequest(
+                        target_company="OpenAI",
+                        target_role="Backend Engineer",
+                        provider="openai",
+                        model="gpt-4.1-mini",
+                    )
                 )
             )
 

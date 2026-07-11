@@ -24,7 +24,8 @@
     "login_link": "登录",
     "invalid_credentials": "用户名或密码不正确。",
     "password_too_short": "密码至少需要 6 个字符。",
-    "register_failed": "账号创建失败。"
+    "register_failed": "账号创建失败。",
+    "registration_disabled": "当前服务已关闭新账号注册。"
   },
   "nav": {
     "dashboard": "总览",

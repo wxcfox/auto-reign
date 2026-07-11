@@ -83,13 +83,6 @@ class SourceMeta(BaseModel):
     source_type: str = "upload"
 
 
-class WorkspaceStatusResponse(BaseModel):
-    schema_version: int
-    language: str
-    artifact_count: int
-    initialized: bool = True
-
-
 class UploadedSourceResponse(BaseModel):
     artifact_id: str
     relative_path: str
@@ -187,17 +180,6 @@ class WorkspaceFileContentResponse(BaseModel):
     size_bytes: int
     updated_at: datetime
     content: str
-
-
-class PreparationTaskResponse(BaseModel):
-    title: str
-    reason: str
-    source_artifact_id: str | None = None
-    source_relative_path: str | None = None
-
-
-class PreparationTasksResponse(BaseModel):
-    tasks: list[PreparationTaskResponse]
 
 
 class ArtifactDetailResponse(ArtifactSummaryResponse):

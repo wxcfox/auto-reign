@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     jwt_secret_key: str | None = None
     access_token_expire_minutes: int = 60 * 24 * 7
+    app_version: str = "development"
+    registration_enabled: bool = True
 
     @property
     def workspace_dir(self) -> Path:

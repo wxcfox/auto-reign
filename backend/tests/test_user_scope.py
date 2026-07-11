@@ -8,7 +8,7 @@ def _register(client, username: str) -> str:
 
 
 def test_workspace_api_requires_auth(client) -> None:
-    response = client.get("/api/workspace")
+    response = client.get("/api/workspace/files")
 
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "auth_required"
@@ -17,7 +17,10 @@ def test_workspace_api_requires_auth(client) -> None:
 def test_user_scope_creates_user_directories(client) -> None:
     token = _register(client, "alice")
 
-    response = client.get("/api/workspace", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/workspace/files",
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
     assert response.status_code == 200
     data_dir = client.app.state.settings.data_dir

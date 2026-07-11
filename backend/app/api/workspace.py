@@ -29,8 +29,6 @@ from app.schemas.workspace import (
     ArtifactSummaryResponse,
     LearningNoteRequest,
     LearningNoteResponse,
-    PreparationTaskResponse,
-    PreparationTasksResponse,
     RealInterviewRecordRequest,
     RealInterviewRecordResponse,
     ReplaceBodyRequest,
@@ -40,11 +38,6 @@ from app.schemas.workspace import (
     WorkspaceFileContentResponse,
     WorkspaceFileResponse,
     WorkspaceFilesResponse,
-    WorkspaceStatusResponse,
-)
-from app.services.markdown_utils import (
-    markdown_list_items,
-    markdown_sections,
 )
 from app.services.artifact_metadata import (
     artifact_index_status,
@@ -56,28 +49,11 @@ from app.services.artifact_service import ArtifactService
 from app.services.index_service import IndexService
 from app.services.model_service import ModelService
 from app.services.workspace_service import UnsafeWorkspacePath, WorkspaceService
-from app.services.workspace_paths import REVIEW_STATUS_PATH, WORKSPACE_DIRECTORIES
+from app.services.workspace_paths import WORKSPACE_DIRECTORIES
 
 
 router = APIRouter(prefix="/api/workspace")
 MAX_WORKSPACE_FILE_PREVIEW_BYTES = 1_000_000
-
-
-@router.get("", response_model=WorkspaceStatusResponse)
-def workspace_status(
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> WorkspaceStatusResponse:
-    from app.repositories.artifact_repository import ArtifactRepository
-
-    _workspace_services(scope)
-    artifacts = ArtifactRepository().list(session, user_id=scope.user_id)
-    return WorkspaceStatusResponse(
-        schema_version=1,
-        language="zh-CN",
-        artifact_count=len(artifacts),
-        initialized=True,
-    )
 
 
 @router.get("/artifacts", response_model=ArtifactListResponse)
@@ -143,50 +119,9 @@ def get_file_content(
     )
 
 
-@router.get("/preparation-tasks", response_model=PreparationTasksResponse)
-def preparation_tasks(
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> PreparationTasksResponse:
-    from app.repositories.artifact_repository import ArtifactRepository
-
-    _, artifact_service = _workspace_services(scope)
-    repository = ArtifactRepository()
-    status = repository.get_by_relative_path(
-        session,
-        user_id=scope.user_id,
-        relative_path=REVIEW_STATUS_PATH,
-    )
-    if status is None:
-        return PreparationTasksResponse(tasks=[])
-    try:
-        body = artifact_service.read_markdown(status.relative_path).body
-    except Exception:
-        return PreparationTasksResponse(tasks=[])
-    sections = markdown_sections(body)
-    task_items = (
-        markdown_list_items(sections.get("当前重点") or "")
-        or markdown_list_items(sections.get("最近练习") or "")
-        or markdown_list_items(sections.get("最近整理") or "")
-    )
-    return PreparationTasksResponse(
-        tasks=[
-            PreparationTaskResponse(
-                title=task,
-                reason="来自复习状态",
-                source_artifact_id=status.id,
-                source_relative_path=status.relative_path,
-            )
-            for task in task_items[:3]
-        ]
-    )
-
-
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
 def get_artifact(
     artifact_id: str,
-    request: Request,
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactDetailResponse:
@@ -213,7 +148,6 @@ def get_artifact(
 def replace_artifact_body(
     artifact_id: str,
     payload: ReplaceBodyRequest,
-    request: Request,
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactSummaryResponse:
@@ -253,7 +187,6 @@ def replace_artifact_body(
 @router.delete("/artifacts/{artifact_id}", response_model=ArtifactDeleteResponse)
 def delete_artifact(
     artifact_id: str,
-    request: Request,
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> ArtifactDeleteResponse:
@@ -289,30 +222,6 @@ def delete_artifact(
         user_id=scope.user_id,
     )
     return ArtifactDeleteResponse(id=artifact_id, status="deleted")
-
-
-@router.post("/rebuild-projection", response_model=WorkspaceStatusResponse)
-def rebuild_projection(
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> WorkspaceStatusResponse:
-    from app.repositories.artifact_repository import ArtifactRepository
-
-    workspace, artifact_service = _workspace_services(scope)
-    repository = ArtifactRepository()
-    workspace.rebuild_projection(
-        session,
-        repository,
-        artifact_service,
-        user_id=scope.user_id,
-    )
-    artifacts = repository.list(session, user_id=scope.user_id)
-    return WorkspaceStatusResponse(
-        schema_version=1,
-        language="zh-CN",
-        artifact_count=len(artifacts),
-    )
 
 
 @router.post("/materials/upload", response_model=UploadMaterialsResponse)

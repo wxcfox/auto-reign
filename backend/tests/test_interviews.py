@@ -3,10 +3,13 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.db import models
+from app.db.session import session_scope
+from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.vector_store import VectorStoreUnavailable
 from app.services.artifact_service import ArtifactService
 from app.services.retrieval_query_planner import RetrievalRequest
 from app.services.workspace_service import WorkspaceService
+from tests.sse import post_sse, sse_error
 
 
 DEFAULT_QWEN_CONFIG = {
@@ -57,6 +60,17 @@ def _artifact_service_for_user(user_id: int = 1) -> ArtifactService:
     return ArtifactService(workspace)
 
 
+def _rebuild_projection(client: TestClient, user_id: int = 1) -> None:
+    artifact_service = _artifact_service_for_user(user_id)
+    with session_scope(client.app.state.session_factory) as session:
+        artifact_service.workspace.rebuild_projection(
+            session,
+            ArtifactRepository(),
+            artifact_service,
+            user_id=user_id,
+        )
+
+
 def test_get_last_config_defaults_to_qwen(client: TestClient) -> None:
     response = client.get("/api/interview-configs/last")
     assert response.status_code == 200
@@ -72,9 +86,7 @@ def test_save_last_config_and_create_session(client: TestClient) -> None:
     assert loaded.json()["target_company"] == "OpenAI"
     assert loaded.json()["language"] == "en"
 
-    created = client.post("/api/interview-sessions", json=CONFIG)
-    assert created.status_code == 200
-    body = created.json()
+    body = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     assert body["session"]["status"] == "active"
     assert body["turn"]["round_index"] == 1
     assert body["turn"]["question"]
@@ -96,22 +108,24 @@ def test_stream_create_session_returns_question_delta_and_result(client: TestCli
 
 
 def test_conversation_history_includes_interview_context(client: TestClient) -> None:
-    active = client.post(
-        "/api/interview-sessions",
-        json={**CONFIG, "extra_prompt": "Active backend interview", "target_rounds": 2},
-    ).json()
-    active_session_id = active["session"]["id"]
-    completed = client.post(
-        "/api/interview-sessions",
-        json={**CONFIG, "extra_prompt": "Completed backend interview", "target_rounds": 1},
-    ).json()
-    completed_session_id = completed["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{completed_session_id}/answer",
-        json={"answer": "I would give a concise architecture answer."},
+    active = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={**CONFIG, "extra_prompt": "Active backend interview", "target_rounds": 2},
     )
-    finished = client.post(f"/api/interview-sessions/{completed_session_id}/finish")
-    assert finished.status_code == 200
+    active_session_id = active["session"]["id"]
+    completed = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={**CONFIG, "extra_prompt": "Completed backend interview", "target_rounds": 1},
+    )
+    completed_session_id = completed["session"]["id"]
+    post_sse(
+        client,
+        f"/api/interview-sessions/{completed_session_id}/answer/stream",
+        json_body={"answer": "I would give a concise architecture answer."},
+    )
+    post_sse(client, f"/api/interview-sessions/{completed_session_id}/finish/stream")
 
     listed = client.get("/api/conversations")
 
@@ -130,14 +144,16 @@ def test_conversation_history_includes_interview_context(client: TestClient) -> 
 
 
 def test_stream_finish_returns_summary_delta_and_result(client: TestClient) -> None:
-    created = client.post(
-        "/api/interview-sessions",
-        json={**CONFIG, "target_rounds": 1},
-    ).json()
+    created = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={**CONFIG, "target_rounds": 1},
+    )
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would explain clear service boundaries."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I would explain clear service boundaries."},
     )
 
     response = client.post(f"/api/interview-sessions/{session_id}/finish/stream")
@@ -168,10 +184,7 @@ def test_create_session_skips_rag_when_library_is_empty(client: TestClient, monk
         fail_search,
     )
 
-    created = client.post("/api/interview-sessions", json=CONFIG)
-
-    assert created.status_code == 200
-    body = created.json()
+    body = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     assert body["turn"]["question"]
     assert body["turn"]["retrieved_context_refs"] == []
 
@@ -187,10 +200,7 @@ def test_create_session_degrades_when_index_refresh_is_unavailable(
         fail_ensure_current,
     )
 
-    created = client.post("/api/interview-sessions", json=CONFIG)
-
-    assert created.status_code == 200
-    body = created.json()
+    body = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     assert body["turn"]["question"]
     assert body["turn"]["retrieved_context_refs"] == []
 
@@ -203,13 +213,17 @@ def test_create_session_uses_workspace_indexed_artifacts(client: TestClient) -> 
     rebuild = client.post("/api/workspace/rebuild-index")
     assert rebuild.status_code == 200
 
-    created = client.post(
-        "/api/interview-sessions",
-        json={**CONFIG, "target_role": "Redis Backend Engineer", "job_description": "Redis cache"},
+    created = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={
+            **CONFIG,
+            "target_role": "Redis Backend Engineer",
+            "job_description": "Redis cache",
+        },
     )
 
-    assert created.status_code == 200
-    refs = created.json()["turn"]["retrieved_context_refs"]
+    refs = created["turn"]["retrieved_context_refs"]
     assert refs
     assert refs[0]["source_type"] == "artifact"
 
@@ -241,7 +255,7 @@ def test_create_session_reads_workspace_state_before_question_generation(
         kind="review_status",
         body="# 复习状态\n\n## 当前重点\n\n- 用 30 秒讲清缓存击穿治理。\n",
     )
-    client.post("/api/workspace/rebuild-projection")
+    _rebuild_projection(client)
 
     def capture_search(_self, _session, request: RetrievalRequest):
         assert request.purpose == "question_generation"
@@ -255,25 +269,24 @@ def test_create_session_reads_workspace_state_before_question_generation(
             }
         ]
 
-    def capture_generate_question(_self, request):
+    def capture_stream_question(_self, request):
         captured_contexts.append(request.context)
-        return "请讲讲 Redis 缓存击穿治理。"
+        yield "请讲讲 Redis 缓存击穿治理。"
 
     monkeypatch.setattr(
         "app.services.workspace_retrieval_service.WorkspaceRetrievalService.search",
         capture_search,
     )
     monkeypatch.setattr(
-        "app.services.model_service.ModelService.generate_question",
-        capture_generate_question,
+        "app.services.model_service.ModelService.stream_question",
+        capture_stream_question,
     )
 
-    created = client.post(
-        "/api/interview-sessions",
-        json={**CONFIG, "language": "zh-CN", "target_role": "后端工程师"},
+    post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={**CONFIG, "language": "zh-CN", "target_role": "后端工程师"},
     )
-
-    assert created.status_code == 200
     context_text = "\n".join(captured_contexts[0])
     assert "候选人画像" in context_text
     assert "Java 后端候选人" in context_text
@@ -309,13 +322,17 @@ def test_create_session_auto_indexes_pending_workspace_artifacts(
     listed = client.get("/api/workspace/artifacts").json()["artifacts"]
     assert any(artifact["index_status"] == "pending" for artifact in listed)
 
-    created = client.post(
-        "/api/interview-sessions",
-        json={**CONFIG, "target_role": "Redis Backend Engineer", "job_description": "Redis hot key"},
+    created = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={
+            **CONFIG,
+            "target_role": "Redis Backend Engineer",
+            "job_description": "Redis hot key",
+        },
     )
 
-    assert created.status_code == 200
-    refs = created.json()["turn"]["retrieved_context_refs"]
+    refs = created["turn"]["retrieved_context_refs"]
     assert refs
     assert refs[0]["source_type"] == "artifact"
     indexed = client.get("/api/workspace/artifacts").json()["artifacts"]
@@ -462,21 +479,19 @@ def test_natural_language_target_context_drives_workspace_retrieval(
         "language": "zh-CN",
     }
 
-    created = client.post("/api/interview-sessions", json=config)
-    assert created.status_code == 200
-    session_id = created.json()["session"]["id"]
-    answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "我会结合 Redis、限流和服务拆分说明。"},
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
+    session_id = created["session"]["id"]
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "我会结合 Redis、限流和服务拆分说明。"},
     )
-    assert answer.status_code == 200
-    follow_up = client.post(
-        f"/api/interview-sessions/{session_id}/follow-up-answer",
-        json={"answer": "我会补充超时、降级和监控告警。"},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
+        json_body={"answer": "我会补充超时、降级和监控告警。"},
     )
-    assert follow_up.status_code == 200
-    next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
-    assert next_question.status_code == 200
+    post_sse(client, f"/api/interview-sessions/{session_id}/next-question/stream")
 
     assert queries[0] == "面试字节后端岗位，JD 关注缓存和高并发。"
     assert "面试字节后端岗位，JD 关注缓存和高并发。" in queries[1]
@@ -492,35 +507,37 @@ def test_natural_language_target_context_drives_workspace_retrieval(
 
 
 def test_answer_feedback_follow_up_and_next_question(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
 
-    answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would design services around clear repository and service boundaries."},
+    body = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={
+            "answer": "I would design services around clear repository and service boundaries."
+        },
     )
-    assert answer.status_code == 200
-    body = answer.json()
     assert body["feedback"]
     assert isinstance(body["missing_points"], list)
     assert body["follow_up_question"]
     assert isinstance(body["weaknesses"], list)
     assert isinstance(body["review_suggestions"], list)
 
-    follow_up = client.post(
-        f"/api/interview-sessions/{session_id}/follow-up-answer",
-        json={"answer": "I would add retries, timeouts, and structured errors."},
+    follow_up_body = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
+        json_body={"answer": "I would add retries, timeouts, and structured errors."},
     )
-    assert follow_up.status_code == 200
-    follow_up_body = follow_up.json()
     assert follow_up_body["feedback"]
     assert isinstance(follow_up_body["missing_points"], list)
     assert isinstance(follow_up_body["weaknesses"], list)
     assert isinstance(follow_up_body["review_suggestions"], list)
 
-    next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
-    assert next_question.status_code == 200
-    assert next_question.json()["turn"]["round_index"] == 2
+    next_question = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/next-question/stream",
+    )
+    assert next_question["turn"]["round_index"] == 2
 
 
 def test_answer_feedback_uses_workspace_retrieval_context(
@@ -543,7 +560,7 @@ def test_answer_feedback_uses_workspace_retrieval_context(
         kind="mastery",
         body="# 掌握状态\n\n薄弱点：缓存击穿和降级预案讲得不稳定。",
     )
-    client.post("/api/workspace/rebuild-projection")
+    _rebuild_projection(client)
 
     def capture_search(_self, _session, request: RetrievalRequest):
         captured_purposes.append(request.purpose)
@@ -562,9 +579,9 @@ def test_answer_feedback_uses_workspace_retrieval_context(
             ]
         return []
 
-    def capture_evaluate_answer(_self, request):
+    def capture_stream_answer_evaluation(_self, request):
         captured_contexts.append(request.context)
-        return AnswerEvaluationResult(
+        result = AnswerEvaluationResult(
             feedback="Uses retrieved context.",
             missing_points=[],
             follow_up_question="",
@@ -576,33 +593,34 @@ def test_answer_feedback_uses_workspace_retrieval_context(
             should_write_high_frequency=True,
             tested_points=["Redis cache stampede", "degradation plan"],
         )
+        yield result.model_dump_json()
 
     monkeypatch.setattr(
         "app.services.workspace_retrieval_service.WorkspaceRetrievalService.search",
         capture_search,
     )
     monkeypatch.setattr(
-        "app.services.model_service.ModelService.evaluate_answer",
-        capture_evaluate_answer,
+        "app.services.model_service.ModelService.stream_answer_evaluation",
+        capture_stream_answer_evaluation,
     )
 
-    created = client.post(
-        "/api/interview-sessions",
-        json={
+    created = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={
             **CONFIG,
             "target_role": "Redis Backend Engineer",
             "job_description": "Redis cache stampede",
         },
-    ).json()
+    )
     session_id = created["session"]["id"]
 
-    response = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I use mutex locks and logical expiration."},
+    body = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I use mutex locks and logical expiration."},
     )
 
-    assert response.status_code == 200
-    body = response.json()
     assert body["better_answer"].startswith("Better:")
     assert body["mastery_change"] == "basic -> fluent if the answer includes tradeoffs."
     assert body["should_write_weakness"] is True
@@ -641,8 +659,8 @@ def test_answer_feedback_persists_structured_fields_in_session_detail(
 ) -> None:
     from app.schemas.modeling import AnswerEvaluationResult
 
-    def capture_evaluate_answer(_self, _request):
-        return AnswerEvaluationResult(
+    def capture_stream_answer_evaluation(_self, _request):
+        result = AnswerEvaluationResult(
             feedback="Good structure.",
             missing_points=["retry boundaries"],
             follow_up_question="",
@@ -654,20 +672,21 @@ def test_answer_feedback_persists_structured_fields_in_session_detail(
             should_write_high_frequency=True,
             tested_points=["failure handling", "retry budget"],
         )
+        yield result.model_dump_json()
 
     monkeypatch.setattr(
-        "app.services.model_service.ModelService.evaluate_answer",
-        capture_evaluate_answer,
+        "app.services.model_service.ModelService.stream_answer_evaluation",
+        capture_stream_answer_evaluation,
     )
 
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
 
-    response = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I add retries and rollbacks."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I add retries and rollbacks."},
     )
-    assert response.status_code == 200
 
     detail = client.get(f"/api/interview-sessions/{session_id}").json()
     turn = detail["turns"][0]
@@ -686,9 +705,9 @@ def test_follow_up_feedback_keeps_structured_fields_separate(
 ) -> None:
     from app.schemas.modeling import AnswerEvaluationResult
 
-    def capture_evaluate_answer(_self, request):
+    def capture_stream_answer_evaluation(_self, request):
         if request.question == "What fallback would you add?":
-            return AnswerEvaluationResult(
+            result = AnswerEvaluationResult(
                 feedback="Follow-up feedback.",
                 missing_points=["manual fallback"],
                 follow_up_question="",
@@ -700,39 +719,41 @@ def test_follow_up_feedback_keeps_structured_fields_separate(
                 should_write_high_frequency=True,
                 tested_points=["follow-up fallback"],
             )
-        return AnswerEvaluationResult(
-            feedback="Main feedback.",
-            missing_points=["fallback path"],
-            follow_up_question="What fallback would you add?",
-            weaknesses=["Main weakness."],
-            review_suggestions=["Review main operations."],
-            better_answer="Main better answer.",
-            mastery_change="basic",
-            should_write_weakness=True,
-            should_write_high_frequency=False,
-            tested_points=["main cache stampede"],
-        )
+        else:
+            result = AnswerEvaluationResult(
+                feedback="Main feedback.",
+                missing_points=["fallback path"],
+                follow_up_question="What fallback would you add?",
+                weaknesses=["Main weakness."],
+                review_suggestions=["Review main operations."],
+                better_answer="Main better answer.",
+                mastery_change="basic",
+                should_write_weakness=True,
+                should_write_high_frequency=False,
+                tested_points=["main cache stampede"],
+            )
+        yield result.model_dump_json()
 
     monkeypatch.setattr(
-        "app.services.model_service.ModelService.evaluate_answer",
-        capture_evaluate_answer,
+        "app.services.model_service.ModelService.stream_answer_evaluation",
+        capture_stream_answer_evaluation,
     )
 
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
-    answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would add mutex locks."},
+    answer = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I would add mutex locks."},
     )
-    follow_up = client.post(
-        f"/api/interview-sessions/{session_id}/follow-up-answer",
-        json={"answer": "I would add a manual fallback."},
+    follow_up = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
+        json_body={"answer": "I would add a manual fallback."},
     )
 
-    assert answer.status_code == 200
-    assert follow_up.status_code == 200
-    assert answer.json()["better_answer"] == "Main better answer."
-    assert follow_up.json()["better_answer"] == "Follow-up better answer."
+    assert answer["better_answer"] == "Main better answer."
+    assert follow_up["better_answer"] == "Follow-up better answer."
 
     detail = client.get(f"/api/interview-sessions/{session_id}").json()
     turn = detail["turns"][0]
@@ -761,8 +782,8 @@ def test_weak_answer_feedback_creates_question_bank_entry(
 ) -> None:
     from app.schemas.modeling import AnswerEvaluationResult
 
-    def evaluate_weak_answer(_self, _request):
-        return AnswerEvaluationResult(
+    def stream_weak_answer(_self, _request):
+        result = AnswerEvaluationResult(
             feedback="Answer misses the production tradeoffs.",
             missing_points=["hot key fallback", "degradation plan"],
             follow_up_question="How would you degrade when Redis is unavailable?",
@@ -777,29 +798,30 @@ def test_weak_answer_feedback_creates_question_bank_entry(
             should_write_high_frequency=True,
             tested_points=["cache stampede", "degradation"],
         )
+        yield result.model_dump_json()
 
     monkeypatch.setattr(
-        "app.services.model_service.ModelService.evaluate_answer",
-        evaluate_weak_answer,
+        "app.services.model_service.ModelService.stream_answer_evaluation",
+        stream_weak_answer,
     )
 
-    created = client.post(
-        "/api/interview-sessions",
-        json={
+    created = post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={
             **CONFIG,
             "language": "zh-CN",
             "target_role": "后端工程师",
             "job_description": "Redis 缓存击穿",
         },
-    ).json()
+    )
     session_id = created["session"]["id"]
 
-    response = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "我会加锁。"},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "我会加锁。"},
     )
-
-    assert response.status_code == 200
     artifacts = client.get("/api/workspace/artifacts").json()["artifacts"]
     question_cards = [artifact for artifact in artifacts if artifact["kind"] == "question_bank"]
     assert len(question_cards) == 1
@@ -833,20 +855,21 @@ def test_project_deep_dive_includes_project_artifacts_before_question_generation
         origin="human",
         edited_by="user",
     )
-    client.post("/api/workspace/rebuild-projection")
+    _rebuild_projection(client)
 
-    def capture_generate_question(_self, request):
+    def capture_stream_question(_self, request):
         captured_contexts.append(request.context)
-        return "请结合订单缓存项目讲一次热点 key 保护。"
+        yield "请结合订单缓存项目讲一次热点 key 保护。"
 
     monkeypatch.setattr(
-        "app.services.model_service.ModelService.generate_question",
-        capture_generate_question,
+        "app.services.model_service.ModelService.stream_question",
+        capture_stream_question,
     )
 
-    created = client.post(
-        "/api/interview-sessions",
-        json={
+    post_sse(
+        client,
+        "/api/interview-sessions/stream",
+        json_body={
             **CONFIG,
             "language": "zh-CN",
             "mode": "project_deep_dive",
@@ -854,7 +877,6 @@ def test_project_deep_dive_includes_project_artifacts_before_question_generation
         },
     )
 
-    assert created.status_code == 200
     context_text = "\n".join(captured_contexts[0])
     assert "项目材料" in context_text
     assert "订单缓存项目" in context_text
@@ -862,7 +884,7 @@ def test_project_deep_dive_includes_project_artifacts_before_question_generation
 
 
 def test_stream_answer_feedback_returns_delta_and_result(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
 
     response = client.post(
@@ -879,18 +901,19 @@ def test_stream_answer_feedback_returns_delta_and_result(client: TestClient) -> 
     assert "The answer shows" in body
 
     duplicate = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
+        f"/api/interview-sessions/{session_id}/answer/stream",
         json={"answer": "duplicate"},
     )
     assert duplicate.status_code == 409
 
 
 def test_stream_follow_up_answer_returns_delta_and_result(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would design clear service boundaries."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I would design clear service boundaries."},
     )
 
     response = client.post(
@@ -908,11 +931,12 @@ def test_stream_follow_up_answer_returns_delta_and_result(client: TestClient) ->
 
 
 def test_stream_next_question_returns_delta_and_result(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would design clear service boundaries."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I would design clear service boundaries."},
     )
 
     response = client.post(f"/api/interview-sessions/{session_id}/next-question/stream")
@@ -926,32 +950,15 @@ def test_stream_next_question_returns_delta_and_result(client: TestClient) -> No
     assert '"round_index":2' in body
 
 
-def test_next_question_accepts_empty_body_with_non_json_content_type(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
-    session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would design clear service boundaries."},
-    )
-
-    response = client.post(
-        f"/api/interview-sessions/{session_id}/next-question",
-        content=b"",
-        headers={"content-type": "text/plain;charset=UTF-8"},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["turn"]["round_index"] == 2
-
-
-def test_stream_next_question_accepts_empty_body_with_non_json_content_type(
+def test_next_question_accepts_empty_body_with_non_json_content_type(
     client: TestClient,
 ) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "I would design clear service boundaries."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "I would design clear service boundaries."},
     )
 
     response = client.post(
@@ -967,79 +974,82 @@ def test_stream_next_question_accepts_empty_body_with_non_json_content_type(
 
 def test_chinese_session_uses_chinese_question_and_feedback(client: TestClient) -> None:
     config = {**CONFIG, "language": "zh-CN", "target_role": "后端工程师", "target_company": "字节"}
-    created = client.post("/api/interview-sessions", json=config)
-    assert created.status_code == 200
-    body = created.json()
+    body = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     assert "请" in body["turn"]["question"] or "如何" in body["turn"]["question"]
     session_id = body["session"]["id"]
 
-    answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "我会先明确边界，再设计服务和故障处理。"},
+    feedback = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "我会先明确边界，再设计服务和故障处理。"},
     )
 
-    assert answer.status_code == 200
-    feedback = answer.json()
     assert "回答" in feedback["feedback"]
     assert "？" in feedback["follow_up_question"]
 
 
 def test_completed_session_rejects_answer(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
-    client.post(f"/api/interview-sessions/{session_id}/finish")
-    response = client.post(f"/api/interview-sessions/{session_id}/answer", json={"answer": "late"})
+    post_sse(client, f"/api/interview-sessions/{session_id}/finish/stream")
+    response = client.post(
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json={"answer": "late"},
+    )
     assert response.status_code == 409
 
 
 def test_next_question_requires_answer_but_does_not_force_finish(client: TestClient) -> None:
     config = {**CONFIG, "target_rounds": 1}
-    created = client.post("/api/interview-sessions", json=config).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=config)
     session_id = created["session"]["id"]
 
-    unanswered = client.post(f"/api/interview-sessions/{session_id}/next-question")
+    unanswered = client.post(f"/api/interview-sessions/{session_id}/next-question/stream")
     assert unanswered.status_code == 409
     assert unanswered.json()["detail"]["code"] == "current_turn_unanswered"
 
-    client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "A concrete answer."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "A concrete answer."},
     )
-    next_question = client.post(f"/api/interview-sessions/{session_id}/next-question")
-    assert next_question.status_code == 200
-    assert next_question.json()["turn"]["round_index"] == 2
+    next_question = post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/next-question/stream",
+    )
+    assert next_question["turn"]["round_index"] == 2
 
 
 def test_answers_cannot_be_submitted_twice(client: TestClient) -> None:
-    created = client.post("/api/interview-sessions", json=CONFIG).json()
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
     session_id = created["session"]["id"]
 
     follow_up_before_answer = client.post(
-        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
         json={"answer": "Too early."},
     )
     assert follow_up_before_answer.status_code == 409
     assert follow_up_before_answer.json()["detail"]["code"] == "main_answer_required"
 
-    first_answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
-        json={"answer": "First answer."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/answer/stream",
+        json_body={"answer": "First answer."},
     )
-    assert first_answer.status_code == 200
     duplicate_answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
+        f"/api/interview-sessions/{session_id}/answer/stream",
         json={"answer": "Replacement answer."},
     )
     assert duplicate_answer.status_code == 409
     assert duplicate_answer.json()["detail"]["code"] == "answer_already_submitted"
 
-    first_follow_up = client.post(
-        f"/api/interview-sessions/{session_id}/follow-up-answer",
-        json={"answer": "First follow-up."},
+    post_sse(
+        client,
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
+        json_body={"answer": "First follow-up."},
     )
-    assert first_follow_up.status_code == 200
     duplicate_follow_up = client.post(
-        f"/api/interview-sessions/{session_id}/follow-up-answer",
+        f"/api/interview-sessions/{session_id}/follow-up-answer/stream",
         json={"answer": "Replacement follow-up."},
     )
     assert duplicate_follow_up.status_code == 409
@@ -1048,23 +1058,22 @@ def test_answers_cannot_be_submitted_twice(client: TestClient) -> None:
 
 def test_user_cannot_read_other_users_interview(client: TestClient) -> None:
     alice = dict(client.headers)
-    created = client.post("/api/interview-sessions", json=CONFIG)
-    assert created.status_code == 200
-    session_id = created.json()["session"]["id"]
+    created = post_sse(client, "/api/interview-sessions/stream", json_body=CONFIG)
+    session_id = created["session"]["id"]
 
     bob = _register(client, "bob")
     client.headers.update(bob)
 
     detail = client.get(f"/api/interview-sessions/{session_id}")
     answer = client.post(
-        f"/api/interview-sessions/{session_id}/answer",
+        f"/api/interview-sessions/{session_id}/answer/stream",
         json={"answer": "I should not be able to answer this."},
     )
-    finish = client.post(f"/api/interview-sessions/{session_id}/finish")
+    finish = client.post(f"/api/interview-sessions/{session_id}/finish/stream")
 
     assert detail.status_code == 404
     assert answer.status_code == 404
-    assert finish.status_code == 404
+    assert sse_error(finish)["status_code"] == 404
 
     client.headers.update(alice)
     own_detail = client.get(f"/api/interview-sessions/{session_id}")
