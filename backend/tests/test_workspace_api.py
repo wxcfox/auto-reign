@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.db import models
 from app.db.session import session_scope
+from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.vector_store import VectorStoreUnavailable
 from app.services.artifact_service import ArtifactService
 from app.services.index_service import IndexService
@@ -36,6 +37,17 @@ def _workspace_service(client, user_id: int = 1) -> WorkspaceService:
     workspace = WorkspaceService(client.app.state.settings.data_dir / "users" / str(user_id) / "workspace")
     workspace.initialize()
     return workspace
+
+
+def _rebuild_projection(client, user_id: int = 1) -> None:
+    workspace = _workspace_service(client, user_id)
+    with session_scope(client.app.state.session_factory) as session:
+        workspace.rebuild_projection(
+            session,
+            ArtifactRepository(),
+            ArtifactService(workspace),
+            user_id=user_id,
+        )
 
 
 def _disable_index_rebuild(monkeypatch) -> None:
@@ -91,16 +103,13 @@ def _sse_result(body: str) -> dict[str, object]:
     raise AssertionError("SSE response did not include a result event.")
 
 
-def test_workspace_status_is_initialized_on_startup(client) -> None:
+def test_workspace_files_initializes_workspace_on_startup(client) -> None:
     token = _register(client)
 
-    response = client.get("/api/workspace", headers=_auth(token))
+    response = client.get("/api/workspace/files", headers=_auth(token))
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["language"] == "zh-CN"
-    assert body["schema_version"] == 1
-    assert body["artifact_count"] == 0
+    assert response.json()["root"] == "workspace"
     settings = client.app.state.settings
     assert (settings.data_dir / "users" / "1" / "workspace" / "workspace.md").exists()
     assert (settings.data_dir / "users" / "1" / "workspace" / "manifest.md").exists()
@@ -108,17 +117,6 @@ def test_workspace_status_is_initialized_on_startup(client) -> None:
     assert (settings.data_dir / "users" / "1" / "workspace" / "extracted").exists()
     assert not (settings.data_dir / "users" / "1" / "workspace" / "sources").exists()
     assert not (settings.data_dir / "uploads").exists()
-
-
-def test_workspace_rebuild_projection_endpoint(client) -> None:
-    token = _register(client)
-    artifacts = _workspace_artifacts(client)
-    artifacts.create_markdown("knowledge/api.md", kind="knowledge", body="# API\n")
-
-    response = client.post("/api/workspace/rebuild-projection", headers=_auth(token))
-
-    assert response.status_code == 200
-    assert response.json()["artifact_count"] == 2
 
 
 def test_workspace_files_lists_real_workspace_directories(client) -> None:
@@ -133,7 +131,7 @@ def test_workspace_files_lists_real_workspace_directories(client) -> None:
     nested_dir = workspace.root / "practice" / "2026" / "07"
     nested_dir.mkdir(parents=True)
     (nested_dir / "session.md").write_text("# Session\n", encoding="utf-8")
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
 
     response = client.get("/api/workspace/files", headers=_auth(token))
 
@@ -190,38 +188,6 @@ def test_workspace_files_lists_real_workspace_directories(client) -> None:
     assert escaped.status_code == 400
 
 
-def test_workspace_preparation_tasks_parse_review_status(client) -> None:
-    token = _register(client)
-    artifacts = _workspace_artifacts(client)
-    artifacts.create_markdown(
-        "review/status.md",
-        kind="review_status",
-        body=(
-            "# 复习状态\n\n"
-            "## 当前重点\n\n"
-            "1. MySQL：用 30 秒说清 redo/binlog 两阶段提交。\n"
-            "2. Spring：复述 Bean 生命周期。\n"
-            "3. Redis：说明缓存击穿治理。\n"
-            "4. JVM：复述类加载流程。\n"
-        ),
-        evidence_refs=["practice:abc"],
-    )
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
-
-    response = client.get("/api/workspace/preparation-tasks", headers=_auth(token))
-
-    assert response.status_code == 200
-    body = response.json()
-    assert [task["title"] for task in body["tasks"]] == [
-        "MySQL：用 30 秒说清 redo/binlog 两阶段提交。",
-        "Spring：复述 Bean 生命周期。",
-        "Redis：说明缓存击穿治理。",
-    ]
-    assert body["tasks"][0]["source_artifact_id"]
-    assert body["tasks"][0]["source_relative_path"] == "review/status.md"
-    assert body["tasks"][0]["reason"] == "来自复习状态"
-
-
 def test_workspace_upload_materials_endpoint(client, monkeypatch) -> None:
     _disable_index_rebuild(monkeypatch)
     token = _register(client)
@@ -234,8 +200,8 @@ def test_workspace_upload_materials_endpoint(client, monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["sources"][0]["duplicate"] is False
-    status = client.get("/api/workspace", headers=_auth(token)).json()
-    assert status["artifact_count"] == 3
+    artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
+    assert len(artifacts) == 3
 
 
 def test_workspace_artifacts_include_source_display_name(client, monkeypatch) -> None:
@@ -246,7 +212,7 @@ def test_workspace_artifacts_include_source_display_name(client, monkeypatch) ->
         kind="knowledge",
         body="# Redis\n",
     )
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
     upload = client.post(
         "/api/workspace/materials/upload",
         files={"files": ("resume-final.md", b"# Resume\n\nBackend work", "text/markdown")},
@@ -307,7 +273,7 @@ def test_workspace_rebuild_index_uses_user_active_collection(client, monkeypatch
     token = _register(client)
     artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("knowledge/index-me.md", kind="knowledge", body="# Index\n\nbody")
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
     store = RecordingWorkspaceVectorStore()
     store.collections.update({"auto_reign_user_1__old", "auto_reign_user_1__orphan"})
     with session_scope(client.app.state.session_factory) as session:
@@ -529,7 +495,8 @@ def test_learning_note_stream_rejects_unknown_conversation_before_persisting(cli
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "learning_session_not_found"
-    assert client.get("/api/workspace", headers=_auth(token)).json()["artifact_count"] == 0
+    artifacts = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
+    assert artifacts == []
 
 
 def test_record_learning_note_merges_cards_with_same_topic(client, monkeypatch) -> None:
@@ -728,10 +695,6 @@ def test_record_real_interview_archives_extracts_and_updates_status(
     assert "## 当前重点" in status_detail["body"]
     assert "Redis 缓存击穿怎么处理？" in status_detail["body"]
 
-    tasks = client.get("/api/workspace/preparation-tasks", headers=_auth(token)).json()["tasks"]
-    assert len(tasks) == 3
-    assert "Redis 缓存击穿怎么处理？" in tasks[0]["title"]
-    assert "降级预案" in tasks[1]["title"]
     assert len(calls) == 1
 
 
@@ -755,7 +718,7 @@ def test_workspace_artifact_read_and_replace_body(client) -> None:
     token = _register(client)
     artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("knowledge/edit.md", kind="knowledge", body="# Edit\n\nold")
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
     listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     artifact_id = listed[0]["id"]
     assert listed[0]["allowed_operations"] == ["replace_body"]
@@ -786,7 +749,7 @@ def test_workspace_artifact_delete_removes_file_and_projection(client) -> None:
     artifacts = _workspace_artifacts(client)
     workspace = _workspace_service(client)
     artifacts.create_markdown("knowledge/delete-me.md", kind="knowledge", body="# Delete\n")
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
     listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     artifact_id = next(artifact for artifact in listed if artifact["kind"] == "knowledge")["id"]
     artifact_path = workspace.resolve_path("knowledge/delete-me.md")
@@ -832,7 +795,7 @@ def test_workspace_artifact_delete_keeps_file_when_vector_delete_fails(
     artifacts = _workspace_artifacts(client)
     workspace = _workspace_service(client)
     artifacts.create_markdown("knowledge/keep-me.md", kind="knowledge", body="# Keep\n")
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
     listed = client.get("/api/workspace/artifacts", headers=_auth(token)).json()["artifacts"]
     artifact_id = listed[0]["id"]
     artifact_path = workspace.resolve_path("knowledge/keep-me.md")
@@ -878,7 +841,7 @@ def test_workspace_legacy_plan_artifact_is_not_editable(client) -> None:
     token = _register(client)
     artifacts = _workspace_artifacts(client)
     artifacts.create_markdown("state/plan.md", kind="plan", body="# Plan\n\n- a\n")
-    client.post("/api/workspace/rebuild-projection", headers=_auth(token))
+    _rebuild_projection(client)
     plan = next(
         artifact
         for artifact in client.get("/api/workspace/artifacts", headers=_auth(token)).json()[

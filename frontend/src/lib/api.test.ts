@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api-error";
-import { getWorkspaceStatus, recordLearningNoteStream, uploadMaterials } from "@/lib/api";
+import { getWorkspaceFiles, recordLearningNoteStream, uploadMaterials } from "@/lib/api";
 import { getAuthToken, setAuthToken } from "@/lib/auth";
 
 function streamResponse(body: string) {
@@ -33,18 +33,13 @@ describe("apiStream", () => {
   it("adds bearer tokens to JSON requests", async () => {
     setAuthToken("token-1");
     const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
-        schema_version: 1,
-        language: "zh-CN",
-        artifact_count: 0,
-        initialized: true,
-      }),
+      Response.json({ root: "workspace", directories: [] }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await getWorkspaceStatus();
+    await getWorkspaceFiles();
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/files");
     const headers = fetchMock.mock.calls[0][1].headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer token-1");
   });
@@ -87,7 +82,7 @@ describe("apiStream", () => {
       ),
     );
 
-    await expect(getWorkspaceStatus()).rejects.toMatchObject({
+    await expect(getWorkspaceFiles()).rejects.toMatchObject({
       code: "auth_required",
       status: 401,
     } satisfies Partial<ApiError>);

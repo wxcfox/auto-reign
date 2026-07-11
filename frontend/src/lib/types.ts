@@ -67,26 +67,6 @@ export interface ConversationDeleteResponse {
   status: "deleted";
 }
 
-export interface HealthResponse {
-  status: "ok";
-  version: string;
-  storage: {
-    mysql: string;
-    qdrant: string;
-  };
-  providers: Record<ProviderName, boolean>;
-  workspace?: {
-    initialized: boolean;
-  };
-}
-
-export interface WorkspaceStatusResponse {
-  schema_version: number;
-  language: "en" | "zh-CN";
-  artifact_count: number;
-  initialized: boolean;
-}
-
 export interface UploadedSourceRecord {
   artifact_id: string;
   relative_path: string;
@@ -196,17 +176,6 @@ export interface WorkspaceFileContentResponse {
 
 export interface WorkspaceArtifactDetail extends WorkspaceArtifactSummary {
   body: string | null;
-}
-
-export interface PreparationTask {
-  title: string;
-  reason: string;
-  source_artifact_id: string | null;
-  source_relative_path: string | null;
-}
-
-export interface PreparationTasksResponse {
-  tasks: PreparationTask[];
 }
 
 export interface InterviewConfig {

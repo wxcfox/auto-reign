@@ -1,8 +1,4 @@
-import type { User } from "./types";
-
 const TOKEN_KEY = "auto-reign-auth-token";
-
-export type AuthUser = User;
 
 export function setAuthToken(token: string) {
   if (typeof window === "undefined") {

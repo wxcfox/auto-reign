@@ -210,37 +210,6 @@ class InterviewService:
             session.flush()
         return self._config_from_dict(payload, is_last_used=True)
 
-    def create_session(
-        self, session: Session, config_in: InterviewConfigIn
-    ) -> tuple[InterviewSessionDTO, InterviewTurnDTO]:
-        config_in = self._config_from_natural_intent(config_in)
-        config = self._config_payload(config_in, config_id=str(uuid4()))
-        context, context_hits = self._question_context(
-            session,
-            _target_context_query(
-                target_company=config_in.target_company,
-                target_role=config_in.target_role,
-                job_description=config_in.job_description,
-                extra_prompt=config_in.extra_prompt,
-            ),
-            mode=config_in.mode,
-        )
-        question = self.model_service.generate_question(
-            self._question_request(config_in, context)
-        )
-        conversation = self.conversations.create(
-            session,
-            user_id=self.user_id,
-            kind="interview",
-            title=self._conversation_title(config_in),
-            status="active",
-            config_json=config,
-            summary_json={"current_round": 1, "last_message": question},
-        )
-        self._add_question_message(session, conversation.id, 1, question, context_hits)
-        session.flush()
-        return self._session_and_current_turn(session, conversation)
-
     def stream_create_session(
         self, session: Session, config_in: InterviewConfigIn
     ) -> Iterator[InterviewStreamEvent]:
@@ -294,19 +263,6 @@ class InterviewService:
         interview_session = self._session_response(conversation, config, turns)
         return interview_session, config, turns
 
-    def submit_answer(
-        self, session: Session, session_id: str, answer: str
-    ) -> AnswerEvaluationResult:
-        conversation = self._get_active_conversation(session, session_id)
-        config = self._conversation_config(conversation)
-        turn = self._current_turn(session, conversation)
-        if turn.answer is not None:
-            raise conflict("answer_already_submitted", "The current answer was already submitted.")
-        evaluation = self._evaluate_answer(session, config, turn.question, answer)
-        self._store_main_evaluation(session, conversation, turn, answer, evaluation)
-        self._persist_practice_progress(session, conversation)
-        return evaluation
-
     def stream_submit_answer(
         self, session: Session, session_id: str, answer: str
     ) -> Iterator[InterviewStreamEvent]:
@@ -324,30 +280,6 @@ class InterviewService:
             yield InterviewStreamEvent(event="result", data=evaluation.model_dump())
 
         return events()
-
-    def submit_follow_up_answer(
-        self, session: Session, session_id: str, answer: str
-    ) -> AnswerEvaluationResult:
-        conversation = self._get_active_conversation(session, session_id)
-        config = self._conversation_config(conversation)
-        turn = self._current_turn(session, conversation)
-        if turn.answer is None or not turn.follow_up_question:
-            raise conflict("main_answer_required", "Submit the main answer before the follow-up.")
-        if turn.follow_up_answer is not None:
-            raise conflict(
-                "follow_up_already_submitted",
-                "The current follow-up answer was already submitted.",
-            )
-        evaluation = self._evaluate_answer(
-            session,
-            config,
-            turn.follow_up_question,
-            answer,
-            retrieval_purpose="follow_up_feedback",
-        )
-        self._store_follow_up_evaluation(session, conversation, turn, answer, evaluation)
-        self._persist_practice_progress(session, conversation)
-        return evaluation
 
     def stream_submit_follow_up_answer(
         self, session: Session, session_id: str, answer: str
@@ -377,35 +309,6 @@ class InterviewService:
             yield InterviewStreamEvent(event="result", data=evaluation.model_dump())
 
         return events()
-
-    def next_question(
-        self, session: Session, session_id: str, *, intent: str = ""
-    ) -> tuple[InterviewSessionDTO, InterviewTurnDTO]:
-        conversation = self._get_active_conversation(session, session_id)
-        config = self._conversation_config(conversation)
-        current_turn = self._current_turn(session, conversation)
-        if current_turn.answer is None:
-            raise conflict("current_turn_unanswered", "Answer the current question before continuing.")
-        next_round = current_turn.round_index + 1
-        next_extra_prompt = self._apply_next_intent(conversation, config, intent)
-        context, context_hits = self._question_context(
-            session,
-            _target_context_query(
-                target_company=config.target_company,
-                target_role=config.target_role,
-                job_description=config.job_description,
-                extra_prompt=next_extra_prompt,
-                round_index=next_round,
-            ),
-            mode=config.mode,
-        )
-        question = self.model_service.generate_question(
-            self._question_request(config, context, extra_prompt=next_extra_prompt)
-        )
-        self._add_question_message(session, conversation.id, next_round, question, context_hits)
-        self._update_summary(conversation, current_round=next_round, last_message=question)
-        session.flush()
-        return self._session_and_current_turn(session, conversation)
 
     def stream_next_question(
         self, session: Session, session_id: str, *, intent: str = ""
@@ -628,24 +531,6 @@ class InterviewService:
             ),
             provider=config.chat_model_provider,
             model=config.chat_model,
-        )
-
-    def _evaluate_answer(
-        self,
-        session: Session,
-        config: InterviewConfigDTO,
-        question: str,
-        answer: str,
-        retrieval_purpose: RetrievalPurpose = "answer_feedback",
-    ) -> AnswerEvaluationResult:
-        return self.model_service.evaluate_answer(
-            self._answer_request(
-                session,
-                config,
-                question=question,
-                answer=answer,
-                retrieval_purpose=retrieval_purpose,
-            )
         )
 
     def _add_question_message(

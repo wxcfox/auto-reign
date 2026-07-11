@@ -167,21 +167,6 @@ def save_last_config(
     return InterviewConfigResponse.model_validate(config)
 
 
-@router.post("/interview-sessions", response_model=InterviewSessionCreatedResponse)
-def create_session(
-    config_in: InterviewConfigIn,
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> InterviewSessionCreatedResponse:
-    _ensure_index_current_best_effort(request, scope, session)
-    interview_session, turn = _interview_service(scope).create_session(session, config_in)
-    return InterviewSessionCreatedResponse(
-        session=interview_session,
-        turn=turn,
-    )
-
-
 @router.post("/interview-sessions/stream")
 def create_session_stream(
     config_in: InterviewConfigIn,
@@ -207,23 +192,10 @@ def get_session_detail(
     return InterviewSessionDetailResponse(session=interview_session, config=config, turns=turns)
 
 
-@router.post("/interview-sessions/{session_id}/answer", response_model=AnswerFeedbackResponse)
-def submit_answer(
-    session_id: str,
-    answer: AnswerRequest,
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> AnswerFeedbackResponse:
-    feedback = _interview_service(scope).submit_answer(session, session_id, answer.answer)
-    return AnswerFeedbackResponse.model_validate(feedback.model_dump())
-
-
 @router.post("/interview-sessions/{session_id}/answer/stream")
 def submit_answer_stream(
     session_id: str,
     answer: AnswerRequest,
-    request: Request,
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
@@ -231,28 +203,10 @@ def submit_answer_stream(
     return _streaming_response(events, _answer_feedback_payload, session)
 
 
-@router.post(
-    "/interview-sessions/{session_id}/follow-up-answer",
-    response_model=FollowUpFeedbackResponse,
-)
-def submit_follow_up_answer(
-    session_id: str,
-    answer: AnswerRequest,
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> FollowUpFeedbackResponse:
-    feedback = _interview_service(scope).submit_follow_up_answer(
-        session, session_id, answer.answer
-    )
-    return FollowUpFeedbackResponse.model_validate(feedback.model_dump())
-
-
 @router.post("/interview-sessions/{session_id}/follow-up-answer/stream")
 def submit_follow_up_answer_stream(
     session_id: str,
     answer: AnswerRequest,
-    request: Request,
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
@@ -260,22 +214,6 @@ def submit_follow_up_answer_stream(
         session, session_id, answer.answer
     )
     return _streaming_response(events, _follow_up_feedback_payload, session)
-
-
-@router.post("/interview-sessions/{session_id}/next-question", response_model=InterviewSessionCreatedResponse)
-async def next_question(
-    session_id: str,
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> InterviewSessionCreatedResponse:
-    _ensure_index_current_best_effort(request, scope, session)
-    interview_session, turn = _interview_service(scope).next_question(
-        session,
-        session_id,
-        intent=await _next_question_intent(request),
-    )
-    return InterviewSessionCreatedResponse(session=interview_session, turn=turn)
 
 
 @router.post("/interview-sessions/{session_id}/next-question/stream")
@@ -294,28 +232,9 @@ async def next_question_stream(
     return _streaming_response(events, _session_created_payload, session)
 
 
-@router.post("/interview-sessions/{session_id}/finish")
-def finish_session(
-    session_id: str,
-    request: Request,
-    session: Session = Depends(get_session),
-    scope: UserScope = Depends(get_user_scope),
-) -> dict[str, object]:
-    interview_session, report = _interview_service(scope).finish_session(session, session_id)
-    return {
-        "session": InterviewSessionDetailResponse(
-            session=interview_session,
-            config=interview_session.config,
-            turns=interview_session.turns,
-        ).session,
-        "report": ReportResponse.model_validate(report),
-    }
-
-
 @router.post("/interview-sessions/{session_id}/finish/stream")
 def finish_session_stream(
     session_id: str,
-    request: Request,
     session: Session = Depends(get_session),
     scope: UserScope = Depends(get_user_scope),
 ) -> StreamingResponse:
