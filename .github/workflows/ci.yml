@@ -57,4 +57,13 @@ jobs:
               --file deploy/compose.prod.yml \
               config --quiet
       - run: docker build --tag auto-reign-backend:ci backend
+      - name: Verify non-root backend can write application volume
+        run: |
+          volume=auto-reign-ci-app-data
+          trap 'docker volume rm --force "$volume" >/dev/null 2>&1 || true' EXIT
+          docker volume create "$volume"
+          docker run --rm \
+            --mount "type=volume,source=$volume,target=/app/data" \
+            auto-reign-backend:ci \
+            python -c 'from pathlib import Path; Path("/app/data/write-check").write_text("ok")'
       - run: docker build --tag auto-reign-frontend:ci frontend

@@ -8,6 +8,17 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_DIR = ROOT / "deploy"
 
 
+def test_local_full_container_uses_named_application_data_volume() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+
+    assert "app_data" in compose["volumes"]
+    assert compose["services"]["backend"]["volumes"] == ["app_data:/app/data"]
+    assert compose["services"]["migrate"]["volumes"] == ["app_data:/app/data"]
+    assert "./data:/app/data" not in (ROOT / "docker-compose.yml").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_production_compose_only_exposes_loopback_application_ports() -> None:
     compose = yaml.safe_load((DEPLOY_DIR / "compose.prod.yml").read_text(encoding="utf-8"))
     services = compose["services"]

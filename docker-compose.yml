@@ -48,7 +48,7 @@ services:
     ports:
       - "${BACKEND_PORT:-8300}:8000"
     volumes:
-      - ./data:/app/data
+      - app_data:/app/data
     depends_on:
       mysql:
         condition: service_healthy
@@ -73,7 +73,7 @@ services:
       QDRANT_URL: http://qdrant:6333
     command: ["alembic", "upgrade", "head"]
     volumes:
-      - ./data:/app/data
+      - app_data:/app/data
     depends_on:
       mysql:
         condition: service_healthy
@@ -95,5 +95,6 @@ services:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
 
 volumes:
+  app_data:
   mysql_data:
   qdrant_data:
