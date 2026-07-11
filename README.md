@@ -113,7 +113,9 @@ docker compose down
 
 生产环境不使用 `./start.sh`，也不在服务器执行 `docker compose up --build`。正式发布通过 SemVer Git Tag 触发 GitHub Actions，在阿里云 ACR 生成 backend/frontend 版本镜像，再由 ECS 使用 `deploy/compose.prod.yml` 部署指定版本。
 
-完整的 ACR、GitHub、ECS、域名、HTTPS、备份、回滚和旧环境迁移说明见 [生产部署](docs/production-deployment.md)。生产栈只公开 Caddy 的 `80/443`，MySQL、Qdrant、后端和前端端口不对公网映射。
+完整的 ACR、GitHub、ECS、Nginx、域名、HTTPS、备份、回滚和旧环境迁移说明见 [生产部署](docs/production-deployment.md)。生产 Compose 只把 backend/frontend 映射到宿主机回环地址，由已有 Nginx 公开 `80/443`；MySQL 和 Qdrant 不映射宿主机端口。
+
+GitHub Actions 分为三条链路：`CI` 在 PR 和 `main` 上执行后端、前端、依赖审计、Compose 与镜像构建检查；`Release` 在 SemVer Tag 上构建并推送 ACR 版本镜像；`Deploy Production` 在人工审批后通过 SSH 部署已经发布的版本。
 
 ## 权威检查命令
 

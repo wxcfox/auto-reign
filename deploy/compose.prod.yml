@@ -76,6 +76,8 @@ services:
     environment: *backend-environment
     volumes:
       - ${AUTO_REIGN_DATA_DIR:?Set AUTO_REIGN_DATA_DIR}:/app/data
+    ports:
+      - "127.0.0.1:${AUTO_REIGN_BACKEND_PORT:-18300}:8000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -95,6 +97,8 @@ services:
   frontend:
     image: ${ACR_REGISTRY:?Set ACR_REGISTRY}/${ACR_NAMESPACE:?Set ACR_NAMESPACE}/auto-reign-frontend:${AUTO_REIGN_VERSION:?Set AUTO_REIGN_VERSION}
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AUTO_REIGN_FRONTEND_PORT:-13100}:3000"
     depends_on:
       backend:
         condition: service_healthy
@@ -106,28 +110,6 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
-    logging: *default-logging
-
-  caddy:
-    image: ${CADDY_IMAGE:-caddy:2.11.4-alpine}
-    restart: unless-stopped
-    environment:
-      AUTO_REIGN_SITE_ADDRESS: ${AUTO_REIGN_SITE_ADDRESS:?Set AUTO_REIGN_SITE_ADDRESS}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${AUTO_REIGN_CADDY_DATA_DIR:?Set AUTO_REIGN_CADDY_DATA_DIR}:/data
-      - ${AUTO_REIGN_CADDY_CONFIG_DIR:?Set AUTO_REIGN_CADDY_CONFIG_DIR}:/config
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
-    networks:
-      - app
     logging: *default-logging
 
 networks:

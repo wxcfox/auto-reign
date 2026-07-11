@@ -45,7 +45,7 @@ echo "Creating pre-deployment backup..."
 AUTO_REIGN_VERSION="$version" AUTO_REIGN_ENV_FILE="$ENV_FILE" "$DEPLOY_DIR/backup.sh"
 
 echo "Pulling Auto Reign $version images..."
-compose pull mysql qdrant caddy backend frontend migrate
+compose pull mysql qdrant backend frontend migrate
 
 echo "Starting storage services..."
 compose up -d mysql qdrant
@@ -58,7 +58,7 @@ else
 fi
 
 echo "Updating application services..."
-compose up -d --remove-orphans backend frontend caddy
+compose up -d --remove-orphans backend frontend
 
 echo "Waiting for application health checks..."
 healthy=false

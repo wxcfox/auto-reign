@@ -13,7 +13,7 @@ Git Tag -> GitHub Actions -> 阿里云 ACR -> ECS Docker Compose
 ```text
 公网 80/443
     |
-  Caddy
+宿主机 Nginx
     |-- /api/* -> FastAPI
     `-- 其他请求 -> Next.js
 
@@ -22,7 +22,7 @@ FastAPI -> MySQL
         -> DATA_DIR
 ```
 
-只有 Caddy 映射宿主机端口。MySQL、Qdrant、FastAPI 和 Next.js 只在 Docker 网络中访问。Caddy 使用域名时自动申请并续期 HTTPS 证书。
+Nginx 由 ECS 宿主机和 systemd 管理。生产 Compose 只把 FastAPI 与 Next.js 分别映射到 `127.0.0.1:18300` 和 `127.0.0.1:13100`，公网不能绕过 Nginx 访问；MySQL 和 Qdrant 不映射宿主机端口。
 
 ## 一、准备阿里云资源
 
@@ -78,7 +78,11 @@ ACR_USERNAME=<ACR 推送账号>
 ACR_PASSWORD=<ACR 推送密码>
 ```
 
-`.github/workflows/release.yml` 会在推送 `vMAJOR.MINOR.PATCH` Tag 后执行测试，构建 `linux/amd64` backend/frontend 镜像，推送版本标签和 commit SHA 标签，最后创建 GitHub Release。发布流程不生成供生产部署使用的 `latest`。
+GitHub Actions 使用三条职责分离的 workflow：
+
+- `.github/workflows/ci.yml`：在 PR 和 `main` push 上运行 Ruff、pytest、前端测试、生产构建、依赖审计、Compose 校验和镜像构建。
+- `.github/workflows/release.yml`：在推送 `vMAJOR.MINOR.PATCH` Tag 后重复关键校验，构建 `linux/amd64` backend/frontend 镜像，推送版本标签和 commit SHA 标签，最后创建 GitHub Release。发布流程不生成供生产部署使用的 `latest`。
+- `.github/workflows/deploy-production.yml`：只部署已经存在的 GitHub Release，进入 `production` Environment 后等待人工审批，再通过 SSH 调用 ECS 部署脚本。
 
 ## 四、初始化 ECS
 
@@ -94,8 +98,6 @@ sudo install -d -m 0750 -o deploy -g deploy \
   /srv/auto-reign/data \
   /srv/auto-reign/mysql \
   /srv/auto-reign/qdrant \
-  /srv/auto-reign/caddy/data \
-  /srv/auto-reign/caddy/config \
   /srv/auto-reign/backups
 sudo chown 10001:deploy /srv/auto-reign/data
 sudo chmod 0770 /srv/auto-reign/data
@@ -128,7 +130,8 @@ openssl rand -base64 48
 编辑 `/etc/auto-reign/auto-reign.env`，至少替换：
 
 - `ACR_REGISTRY`、`ACR_NAMESPACE`；ECS 配置优先使用同 VPC 可达的 VPC Endpoint
-- `AUTO_REIGN_SITE_ADDRESS`、`DEPLOY_HEALTHCHECK_URL`
+- `AUTO_REIGN_BACKEND_PORT=18300`、`AUTO_REIGN_FRONTEND_PORT=13100`；只能保留回环地址映射
+- `DEPLOY_HEALTHCHECK_URL=https://auto-reign.agdoer.com`
 - `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`JWT_SECRET_KEY`
 - 实际使用的模型 API Key
 
@@ -138,7 +141,37 @@ openssl rand -base64 48
 docker login <ACR VPC Endpoint>
 ```
 
-## 五、创建第一个版本
+## 五、配置宿主机 Nginx
+
+仓库提供 `deploy/nginx/auto-reign.conf`，其中已经包含 `/api/` 的 SSE 长连接参数、上传大小、转发请求头，以及 frontend/backend 的回环地址 upstream。安装配置前先确认现有 Nginx 会加载 `/etc/nginx/conf.d/*.conf`：
+
+```sh
+nginx -T 2>/dev/null | grep -F 'include /etc/nginx/conf.d/*.conf'
+```
+
+确认 include 后安装站点配置：
+
+```sh
+sudo cp /opt/auto-reign/deploy/nginx/auto-reign.conf /etc/nginx/conf.d/auto-reign.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+模板先提供 HTTP 服务，便于接入现有证书工具。使用 Certbot 时可以执行：
+
+```sh
+sudo certbot --nginx -d auto-reign.agdoer.com
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+如果服务器已有其他证书管理方式，应由现有方式为 `auto-reign.agdoer.com` 配置证书和 HTTP 到 HTTPS 跳转，不要同时让两套工具修改同一个 Nginx server block。完成后确认只有 Nginx 监听公网端口，而应用端口只监听回环地址：
+
+```sh
+ss -lntp | grep -E ':(80|443|13100|18300)\b'
+```
+
+## 六、创建第一个版本
 
 在本地确认主分支 CI 通过后创建带注释 Tag：
 
@@ -151,7 +184,7 @@ git push origin v0.1.0
 
 等待 GitHub Actions 的 `Release` workflow 完成，并在 ACR 中确认两个 `0.1.0` 镜像存在。不要在镜像完成前部署。
 
-## 六、首次部署
+## 七、首次部署
 
 首次部署需要创建账号时，暂时设置：
 
@@ -178,7 +211,7 @@ AUTO_REIGN_ENV_FILE=/etc/auto-reign/auto-reign.env ./deploy/deploy.sh 0.1.0
 /srv/auto-reign/deployed-version
 ```
 
-## 七、配置 GitHub 一键部署
+## 八、配置 GitHub 一键部署
 
 创建 GitHub Environment `production`，并配置 Required reviewers，确保生产部署需要人工批准。
 
@@ -202,7 +235,7 @@ PROD_APP_DIR=/opt/auto-reign
 
 之后在 GitHub Actions 手工运行 `Deploy Production`，输入已经发布的版本号，例如 `0.1.1`。Workflow 会先确认对应 GitHub Release 存在，再登录 ECS、切换到对应 Tag 并运行部署脚本。
 
-## 八、日常发布
+## 九、日常发布
 
 每次发布遵循：
 
@@ -218,11 +251,12 @@ PROD_APP_DIR=/opt/auto-reign
 cd /opt/auto-reign
 export AUTO_REIGN_ENV_FILE=/etc/auto-reign/auto-reign.env
 docker compose --env-file "$AUTO_REIGN_ENV_FILE" -f deploy/compose.prod.yml ps
-docker compose --env-file "$AUTO_REIGN_ENV_FILE" -f deploy/compose.prod.yml logs -f --tail=200 backend frontend caddy
-curl -fsS https://auto-reign.example.com/api/health
+docker compose --env-file "$AUTO_REIGN_ENV_FILE" -f deploy/compose.prod.yml logs -f --tail=200 backend frontend
+sudo tail -f /var/log/nginx/access.log /var/log/nginx/error.log
+curl -fsS https://auto-reign.agdoer.com/api/health
 ```
 
-## 九、备份和恢复边界
+## 十、备份和恢复边界
 
 每次部署前，`deploy/backup.sh` 会：
 
@@ -233,7 +267,7 @@ curl -fsS https://auto-reign.example.com/api/health
 
 Qdrant 是可重建索引，默认不进入部署前备份。备份应通过 `ossutil` 或其他受控任务加密同步到 OSS，并为 OSS Bucket 配置版本控制和生命周期规则。至少每季度做一次恢复演练；未验证恢复的文件不能视为有效备份。
 
-## 十、应用回滚
+## 十一、应用回滚
 
 确认目标版本与当前数据库 schema 向后兼容后执行：
 
@@ -244,7 +278,7 @@ AUTO_REIGN_ENV_FILE=/etc/auto-reign/auto-reign.env \
 
 回滚脚本会再次备份，然后只切换应用镜像，不执行 Alembic downgrade。数据库变更应使用 expand-contract 策略，至少保证相邻版本应用能够短期共用 schema。不能确认兼容时，应先停止写入并从部署前备份恢复，不能盲目执行数据库降级。
 
-## 十一、从旧版 `git pull && ./start.sh` 迁移
+## 十二、从旧版 `git pull && ./start.sh` 迁移
 
 旧方式中的长期数据通常位于仓库 `data/`、Docker MySQL volume 和 Qdrant volume。迁移前先停止应用，但不要执行 `docker compose down -v` 或 `reset-data.sh`：
 
