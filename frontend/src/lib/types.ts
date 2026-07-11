@@ -69,6 +69,7 @@ export interface ConversationDeleteResponse {
 
 export interface HealthResponse {
   status: "ok";
+  version: string;
   storage: {
     mysql: string;
     qdrant: string;

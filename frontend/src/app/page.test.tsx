@@ -178,6 +178,7 @@ describe("DashboardPage", () => {
     vi.mocked(deleteWorkspaceArtifact).mockResolvedValue({ id: "source-1", status: "deleted" });
     vi.mocked(getHealth).mockResolvedValue({
       status: "ok",
+      version: "development",
       storage: { mysql: "ok", qdrant: "ok" },
       providers: { openai: false, deepseek: false, qwen: true },
       workspace: { initialized: true },

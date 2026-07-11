@@ -14,6 +14,7 @@
 - `../README.md`：当前可运行版本的安装、配置、启动和冒烟验证说明。
 - `workbench-architecture.md`：当前工作台的长期产品与架构边界，包括文件协议、数据职责、LLM 边界和前端信息架构。
 - `knowledge-data-flow.md`：当前资料库从入库、投影、切块、向量化、索引到检索的完整数据流。
+- `production-deployment.md`：GitHub 版本发布、阿里云 ACR、ECS 生产部署、备份和回滚流程。
 
 ## 文档生命周期
 

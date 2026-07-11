@@ -18,3 +18,5 @@ frontend/coverage/
 frontend/.turbo/
 .pids/
 logs/
+deploy/*.env
+!deploy/*.env.example

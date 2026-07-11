@@ -44,6 +44,7 @@ describe("apiStream", () => {
 
     await getWorkspaceStatus();
 
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace");
     const headers = fetchMock.mock.calls[0][1].headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer token-1");
   });

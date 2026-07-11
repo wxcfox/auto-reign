@@ -109,6 +109,12 @@ docker compose down
 
 持久化数据会保留在 MySQL、Qdrant 命名 volume 和 `./data` 中。
 
+### 版本化生产部署
+
+生产环境不使用 `./start.sh`，也不在服务器执行 `docker compose up --build`。正式发布通过 SemVer Git Tag 触发 GitHub Actions，在阿里云 ACR 生成 backend/frontend 版本镜像，再由 ECS 使用 `deploy/compose.prod.yml` 部署指定版本。
+
+完整的 ACR、GitHub、ECS、域名、HTTPS、备份、回滚和旧环境迁移说明见 [生产部署](docs/production-deployment.md)。生产栈只公开 Caddy 的 `80/443`，MySQL、Qdrant、后端和前端端口不对公网映射。
+
 ## 权威检查命令
 
 提交前运行仓库检查：
@@ -131,6 +137,8 @@ docker compose config
 | 变量 | 说明 |
 | --- | --- |
 | `BACKEND_HOST` | 容器模式下的后端监听 host。 |
+| `APP_VERSION` | 当前运行版本；生产部署由发布版本注入并通过 `/api/health` 返回。 |
+| `REGISTRATION_ENABLED` | 是否允许创建新本地账号；本地开发默认开启，生产创建首个账号后应关闭。 |
 | `BACKEND_PORT` | 后端进程或容器映射使用的首选宿主机端口。 |
 | `FRONTEND_PORT` | 前端进程或容器映射使用的首选宿主机端口。 |
 | `MYSQL_PORT` | 映射到 MySQL 容器 `3306` 的宿主机端口。 |

@@ -24,7 +24,8 @@
     "login_link": "Log in",
     "invalid_credentials": "Username or password is incorrect.",
     "password_too_short": "Password must be at least 6 characters.",
-    "register_failed": "The account could not be created."
+    "register_failed": "The account could not be created.",
+    "registration_disabled": "New account registration is disabled."
   },
   "nav": {
     "dashboard": "Dashboard",

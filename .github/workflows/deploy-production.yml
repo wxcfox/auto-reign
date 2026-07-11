@@ -1,0 +1,65 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to deploy, without v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERSION: ${{ inputs.version }}
+      PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      PROD_SSH_PORT: ${{ vars.PROD_SSH_PORT || '22' }}
+      PROD_APP_DIR: ${{ vars.PROD_APP_DIR || '/opt/auto-reign' }}
+    steps:
+      - name: Validate released version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Version must match MAJOR.MINOR.PATCH" >&2
+            exit 1
+          }
+          gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null
+
+      - name: Configure SSH
+        env:
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$PROD_SSH_HOST" || { echo "PROD_SSH_HOST is required" >&2; exit 1; }
+          test -n "$PROD_SSH_USER" || { echo "PROD_SSH_USER is required" >&2; exit 1; }
+          test -n "$PROD_SSH_PRIVATE_KEY" || { echo "PROD_SSH_PRIVATE_KEY is required" >&2; exit 1; }
+          test -n "$PROD_SSH_KNOWN_HOSTS" || { echo "PROD_SSH_KNOWN_HOSTS is required" >&2; exit 1; }
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > "$HOME/.ssh/production_key"
+          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/production_key" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy released images
+        run: |
+          ssh \
+            -i "$HOME/.ssh/production_key" \
+            -p "$PROD_SSH_PORT" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            "cd '$PROD_APP_DIR' && \
+             test -z \"\$(git status --porcelain)\" && \
+             git fetch --force --tags origin && \
+             git switch --detach 'v$VERSION' && \
+             AUTO_REIGN_ENV_FILE=/etc/auto-reign/auto-reign.env ./deploy/deploy.sh '$VERSION'"
