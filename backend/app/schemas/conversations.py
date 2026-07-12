@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-ConversationKind = Literal["interview", "learning"]
+ConversationKind = Literal["chat", "interview", "learning"]
 ConversationRole = Literal["assistant", "system", "user"]
 
 

@@ -1,6 +1,8 @@
 import type {
   AnswerFeedback,
   AuthTokenResponse,
+  ChatMessageRequest,
+  ChatMessageResult,
   ConversationDeleteResponse,
   ConversationDetailResponse,
   ConversationHistoryItem,
@@ -143,6 +145,13 @@ export function recordLearningNoteStream(
     payload,
     callbacks,
   );
+}
+
+export function sendChatMessageStream(
+  payload: ChatMessageRequest,
+  callbacks: StreamCallbacks,
+): Promise<ChatMessageResult> {
+  return apiStream<ChatMessageResult>("/api/chats/stream", payload, callbacks);
 }
 
 export function getModels(): Promise<ModelListResponse> {

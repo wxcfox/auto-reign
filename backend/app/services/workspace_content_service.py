@@ -10,12 +10,18 @@ from app.db import models
 from app.db.session import session_scope
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.artifact_service import ArtifactService
+from app.services.content_renderer import (
+    labels_for,
+    real_interview_focus_items,
+    render_high_frequency,
+    render_learning_inbox_entry,
+    render_learning_note_card,
+    render_real_interview_record,
+    render_review_status,
+    section_items,
+)
 from app.services.markdown_utils import (
-    indented_bullet_list,
-    indented_text,
-    markdown_list_items,
     markdown_sections,
-    plain_bullet_list,
     slugify,
     unique_items,
 )
@@ -86,7 +92,7 @@ class WorkspaceContentService:
             f"{RAW_SOURCE_DIR}/{timestamp.strftime('%Y-%m-%d')}-learning-notes.md",
             source_filename=f"{timestamp.strftime('%Y-%m-%d')}.md",
             media_type="text/markdown",
-            content=self.learning_note_inbox_entry(note, timestamp).encode("utf-8"),
+            content=self.learning_note_inbox_entry(note, timestamp, language).encode("utf-8"),
             language=language,
             uploaded_at=timestamp,
             source_type="learning_note",
@@ -95,7 +101,7 @@ class WorkspaceContentService:
         knowledge_path = (
             f"knowledge/{slugify(summary.title, fallback='learning-note', max_length=80)}.md"
         )
-        card_markdown = self.learning_note_card(note, summary)
+        card_markdown = self.learning_note_card(note, summary, language)
         self.create_or_merge_learning_card(
             knowledge_path,
             card_markdown=card_markdown,
@@ -158,7 +164,7 @@ class WorkspaceContentService:
             raw_path,
             kind="interview_record",
             language=language,
-            body=self.real_interview_record_body(record, questions, weak_points),
+            body=self.real_interview_record_body(record, questions, weak_points, language),
             origin="human",
             edited_by="user",
             now=timestamp,
@@ -219,65 +225,21 @@ class WorkspaceContentService:
             )
 
     @staticmethod
-    def parse_learning_note_summary(
-        markdown: str,
+    def learning_note_inbox_entry(
         note: str,
-        language: str,
-    ) -> LearningNoteSummaryResult:
-        title_match = re.search(r"^#\s+(.+)$", markdown, flags=re.MULTILINE)
-        fallback_title = "学习记录" if language == "zh-CN" else "Learning note"
-        title = (
-            title_match.group(1).strip()[:80]
-            if title_match
-            else slugify(note, fallback="learning-note", max_length=80).replace("-", " ")
-        )
-        sections = markdown_sections(markdown)
-        summary = (
-            sections.get("summary")
-            or sections.get("摘要")
-            or sections.get("ai 整理摘要")
-            or note[:240]
-            or fallback_title
-        )
-        key_points = markdown_list_items(
-            sections.get("key points") or sections.get("关键点") or ""
-        )
-        interview_takeaways = markdown_list_items(
-            sections.get("interview expression") or sections.get("面试表达") or ""
-        )
-        follow_up_questions = markdown_list_items(
-            sections.get("follow-up questions") or sections.get("可追问问题") or ""
-        )
-        return LearningNoteSummaryResult(
-            title=title or fallback_title,
-            summary=summary.strip(),
-            key_points=key_points,
-            interview_takeaways=interview_takeaways,
-            follow_up_questions=follow_up_questions,
-        )
-
-    @staticmethod
-    def learning_note_inbox_entry(note: str, timestamp: datetime) -> str:
-        return (
-            f"## {timestamp.strftime('%H:%M:%S')} 学习输入\n\n"
-            f"{note.strip()}\n"
-        )
+        timestamp: datetime,
+        language: str = "zh-CN",
+    ) -> str:
+        return render_learning_inbox_entry(note, timestamp.strftime("%H:%M:%S"), language)
 
     @staticmethod
     def real_interview_record_body(
         record: str,
         questions: list[str],
         weak_points: list[str],
+        language: str = "zh-CN",
     ) -> str:
-        return (
-            "# 真实面试记录\n\n"
-            "## 原始记录\n\n"
-            f"{record.strip()}\n\n"
-            "## 抽取问题\n\n"
-            f"{plain_bullet_list(questions)}\n\n"
-            "## 薄弱线索\n\n"
-            f"{plain_bullet_list(weak_points)}\n"
-        )
+        return render_real_interview_record(record, questions, weak_points, language)
 
     def create_or_merge_high_frequency_card(
         self,
@@ -292,8 +254,8 @@ class WorkspaceContentService:
         try:
             current = self.artifact_service.read_markdown(relative_path)
             sections = markdown_sections(current.body)
-            existing_questions = markdown_list_items(sections.get("真实面试高频问题") or "")
-            existing_weak_points = markdown_list_items(sections.get("暴露问题") or "")
+            existing_questions = section_items(sections, language, "real_interview_questions")
+            existing_weak_points = section_items(sections, language, "exposed_issues")
             source_refs = unique_items([*current.front_matter.source_refs, source_ref])
         except FileNotFoundError:
             current = None
@@ -303,13 +265,7 @@ class WorkspaceContentService:
 
         merged_questions = unique_items([*existing_questions, *questions])
         merged_weak_points = unique_items([*existing_weak_points, *weak_points])
-        body = (
-            "# 高频与薄弱点\n\n"
-            "## 真实面试高频问题\n\n"
-            f"{plain_bullet_list(merged_questions)}\n\n"
-            "## 暴露问题\n\n"
-            f"{plain_bullet_list(merged_weak_points)}\n"
-        )
+        body = render_high_frequency(merged_questions, merged_weak_points, language)
         if current is None:
             self.artifact_service.create_markdown(
                 relative_path,
@@ -341,26 +297,18 @@ class WorkspaceContentService:
         evidence_ref: str,
         timestamp: datetime,
     ) -> None:
-        tasks = self.real_interview_focus_items(questions, weak_points)
+        tasks = self.real_interview_focus_items(questions, weak_points, language)
         try:
             current = self.artifact_service.read_markdown(relative_path)
             sections = markdown_sections(current.body)
-            recent_learning = markdown_list_items(sections.get("最近整理") or "")
-            recent_practice = markdown_list_items(sections.get("最近练习") or "")
+            recent_learning = section_items(sections, language, "recent_learning")
+            recent_practice = section_items(sections, language, "recent_practice")
         except FileNotFoundError:
             current = None
             recent_learning = []
             recent_practice = []
 
-        body = (
-            "# 复习状态\n\n"
-            "## 当前重点\n\n"
-            f"{plain_bullet_list(tasks)}\n\n"
-            "## 最近整理\n\n"
-            f"{plain_bullet_list(recent_learning)}\n\n"
-            "## 最近练习\n\n"
-            f"{plain_bullet_list(recent_practice)}\n"
-        )
+        body = render_review_status(tasks, recent_learning, recent_practice, language)
         if current is None:
             self.artifact_service.create_markdown(
                 relative_path,
@@ -415,37 +363,20 @@ class WorkspaceContentService:
         return unique_items(weak_points)
 
     @staticmethod
-    def real_interview_focus_items(questions: list[str], weak_points: list[str]) -> list[str]:
-        tasks: list[str] = []
-        if questions:
-            tasks.append(f"复盘真实面试题：{questions[0]}")
-        if weak_points:
-            tasks.append(f"补齐薄弱点：{weak_points[0]}")
-        for question in questions[1:]:
-            tasks.append(f"准备标准说法：{question}")
-        for weak_point in weak_points[1:]:
-            tasks.append(f"纠正真实面试暴露问题：{weak_point}")
-        if not tasks:
-            tasks.append("整理真实面试记录，补全问题和回答。")
-        return tasks[:3]
+    def real_interview_focus_items(
+        questions: list[str],
+        weak_points: list[str],
+        language: str = "zh-CN",
+    ) -> list[str]:
+        return real_interview_focus_items(questions, weak_points, language)
 
     @staticmethod
-    def learning_note_card(note: str, summary: LearningNoteSummaryResult) -> str:
-        correction_items = unique_items([summary.summary, *summary.key_points])
-        interview_items = summary.interview_takeaways or [summary.summary]
-        follow_up_items = summary.follow_up_questions[:3] or ["这个知识点在真实项目中如何落地？"]
-        return (
-            "- 我的理解：\n"
-            f"{indented_text(note)}\n"
-            "- 修正/补充：\n"
-            f"{indented_bullet_list(correction_items)}\n"
-            "- 30 秒面试说法：\n"
-            f"{indented_bullet_list(interview_items)}\n"
-            "- 易混点：\n"
-            "  - 暂无明确易混点，后续练习中补充。\n"
-            "- 追问：\n"
-            f"{indented_bullet_list(follow_up_items)}\n"
-        )
+    def learning_note_card(
+        note: str,
+        summary: LearningNoteSummaryResult,
+        language: str = "zh-CN",
+    ) -> str:
+        return render_learning_note_card(note, summary, language)
 
     def create_or_merge_learning_card(
         self,
@@ -490,11 +421,12 @@ class WorkspaceContentService:
         language: str,
         timestamp: datetime,
     ) -> None:
-        line = f"整理知识卡：{title.strip()}"
+        labels = labels_for(language)
+        line = f"{labels.organize_card}{labels.colon}{title.strip()}"
         try:
             current = self.artifact_service.read_markdown(relative_path)
             sections = markdown_sections(current.body)
-            recent_items = markdown_list_items(sections.get("最近整理") or "")
+            recent_items = section_items(sections, language, "recent_learning")
             source_refs = unique_items([*current.front_matter.source_refs, source_ref])
         except FileNotFoundError:
             current = None
@@ -502,13 +434,7 @@ class WorkspaceContentService:
             source_refs = [source_ref]
 
         recent = unique_items([line, *recent_items])[:8]
-        body = (
-            "# 复习状态\n\n"
-            "## 当前重点\n\n"
-            "- 通过模拟面试暴露薄弱点后自动更新。\n\n"
-            "## 最近整理\n\n"
-            f"{plain_bullet_list(recent)}\n"
-        )
+        body = render_review_status([labels.auto_focus], recent, [], language)
         if current is None:
             self.artifact_service.create_markdown(
                 relative_path,

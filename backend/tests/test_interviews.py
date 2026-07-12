@@ -645,9 +645,9 @@ def test_answer_feedback_uses_workspace_retrieval_context(
     assert "Uses retrieved context." in practice_detail["body"]
     status = next(artifact for artifact in artifacts if artifact["kind"] == "review_status")
     status_detail = client.get(f"/api/workspace/artifacts/{status['id']}").json()
-    assert "## 当前重点" in status_detail["body"]
-    assert "## 最近练习" in status_detail["body"]
-    assert "- 练习：" in status_detail["body"]
+    assert "## Current Focus" in status_detail["body"]
+    assert "## Recent Practice" in status_detail["body"]
+    assert "- Practice: " in status_detail["body"]
     high_frequency = next(artifact for artifact in artifacts if artifact["kind"] == "high_frequency")
     high_frequency_detail = client.get(f"/api/workspace/artifacts/{high_frequency['id']}").json()
     assert "Redis Backend Engineer" in high_frequency_detail["body"]
@@ -772,8 +772,8 @@ def test_follow_up_feedback_keeps_structured_fields_separate(
     practice_files = list((workspace / "practice").glob("**/*.md"))
     assert len(practice_files) == 1
     practice_text = practice_files[0].read_text(encoding="utf-8")
-    assert "**更好的面试说法**：\nMain better answer." in practice_text
-    assert "**追问更好的面试说法**：\nFollow-up better answer." in practice_text
+    assert "**Better interview answer**: \nMain better answer." in practice_text
+    assert "**Follow-up Better interview answer**: \nFollow-up better answer." in practice_text
 
 
 def test_weak_answer_feedback_creates_question_bank_entry(

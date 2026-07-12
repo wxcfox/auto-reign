@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     qwen_api_key: str | None = None
     openai_chat_models: str = "gpt-4.1-mini,gpt-4.1"
     deepseek_chat_models: str = "deepseek-chat"
-    qwen_chat_models: str = "qwen-plus,qwen-max"
+    qwen_chat_models: str = "qwen3.7-plus,qwen3.7-max"
+    default_chat_provider: str = "qwen"
     deepseek_base_url: str = "https://api.deepseek.com"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     jwt_secret_key: str | None = None

@@ -101,6 +101,7 @@ describe("InterviewWorkspace", () => {
     vi.clearAllMocks();
     vi.mocked(getModels).mockResolvedValue({
       providers: [{ provider: "qwen", models: ["qwen3.7-plus"] }],
+      default: { provider: "qwen", model: "qwen3.7-plus" },
     });
     vi.mocked(getLastInterviewConfig).mockResolvedValue(baseConfig);
     vi.mocked(saveLastInterviewConfig).mockResolvedValue(baseConfig);

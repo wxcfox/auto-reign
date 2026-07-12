@@ -4,6 +4,7 @@ from datetime import timedelta
 from app.db import models
 from app.db.session import session_scope
 from app.repositories.conversation_repository import ConversationRepository
+from app.services.conversation_service import ConversationService
 
 
 def _sse_result(body: str) -> dict[str, object]:
@@ -60,6 +61,32 @@ def _create_interview_conversation(client, user_id: int) -> str:
         session.flush()
         conversation_id = conversation.id
     return conversation_id
+
+
+def test_empty_conversation_titles_follow_configured_language() -> None:
+    chinese_chat = models.Conversation(
+        user_id=1,
+        kind="chat",
+        title="",
+        config_json={"language": "zh-CN"},
+    )
+    english_interview = models.Conversation(
+        user_id=1,
+        kind="interview",
+        title="",
+        config_json={"language": "en"},
+    )
+    chinese_learning = models.Conversation(
+        user_id=1,
+        kind="learning",
+        title="",
+        config_json={"language": "zh-CN"},
+    )
+
+    assert ConversationService._title(chinese_chat) == "新聊天"
+    assert ConversationService._href(chinese_chat).startswith("/chat?session=")
+    assert ConversationService._title(english_interview) == "Untitled interview"
+    assert ConversationService._title(chinese_learning) == "学习记录"
 
 
 def test_conversation_history_merges_interviews_and_learning_rows(client, monkeypatch) -> None:

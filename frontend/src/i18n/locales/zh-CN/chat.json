@@ -1,0 +1,23 @@
+{
+  "title": "聊天",
+  "empty_label": "空聊天",
+  "empty_title": "有什么可以帮你？",
+  "you": "你",
+  "assistant": "Auto Reign",
+  "streaming": "思考中...",
+  "error_title": "聊天错误",
+  "select_model": "选择模型",
+  "model_unavailable": "不可用",
+  "no_providers": "尚未配置模型提供方",
+  "composer": {
+    "label": "聊天输入框",
+    "input_label": "给 Auto Reign 发消息",
+    "placeholder": "给 Auto Reign 发消息...",
+    "attach": "附加资料",
+    "send": "发送消息"
+  },
+  "errors": {
+    "load": "无法加载聊天。",
+    "send": "消息发送失败。"
+  }
+}

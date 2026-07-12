@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.repositories.artifact_repository import ArtifactRepository
 from app.services.artifact_service import ArtifactService, ManagedMarkdown
+from app.services.content_renderer import (
+    labels_for,
+    render_high_frequency,
+    render_practice_session,
+    render_question_bank,
+    render_review_status,
+    section_items,
+)
 from app.services.markdown_utils import (
-    markdown_list_items,
     markdown_sections,
     plain_bullet_list,
     replace_or_append_h2,
@@ -119,9 +126,10 @@ class InterviewArtifactService:
         evidence_ref: str,
     ) -> ManagedMarkdown:
         language = config.language or "zh-CN"
+        labels = labels_for(language)
         started = interview_session.started_at.astimezone(UTC)
         practice_path = f"practice/{started:%Y-%m-%d}.md"
-        session_heading = f"会话 {interview_session.id}"
+        session_heading = f"{labels.session} {interview_session.id}"
         session_body = self.practice_session_body(interview_session, config, turns)
         try:
             current = self.artifacts.read_markdown(practice_path)
@@ -129,7 +137,7 @@ class InterviewArtifactService:
             return self.artifacts.create_markdown(
                 practice_path,
                 kind="practice",
-                body=f"# 模拟面试记录\n\n## {session_heading}\n\n{session_body}\n",
+                body=f"# {labels.practice_title}\n\n## {session_heading}\n\n{session_body}\n",
                 language=language,
                 origin="observed",
                 edited_by="system",
@@ -150,76 +158,12 @@ class InterviewArtifactService:
         config: Any,
         turns: list[Any],
     ) -> str:
-        body = [
-            f"- 开始时间：{interview_session.started_at.astimezone(UTC).isoformat().replace('+00:00', 'Z')}",
-            f"- 出题要求：{config.extra_prompt.strip() or '默认抽检'}",
-            "",
-        ]
-        for turn in turns:
-            body.extend(
-                [
-                    f"### 第 {turn.round_index} 轮",
-                    "",
-                    f"**问题**：{turn.question}",
-                    "",
-                    f"**回答**：{turn.answer or ''}",
-                    "",
-                    f"**点评**：{turn.feedback or ''}",
-                    "",
-                ]
-            )
-            if turn.missing_points:
-                body.extend(["**缺失点**：", plain_bullet_list(turn.missing_points), ""])
-            if turn.weaknesses:
-                body.extend(["**薄弱点**：", plain_bullet_list(turn.weaknesses), ""])
-            if turn.review_suggestions:
-                body.extend(["**复习建议**：", plain_bullet_list(turn.review_suggestions), ""])
-            if turn.better_answer:
-                body.extend(["**更好的面试说法**：", turn.better_answer, ""])
-            if turn.tested_points:
-                body.extend(["**本题考察点**：", plain_bullet_list(turn.tested_points), ""])
-            if turn.mastery_change and turn.mastery_change != "unchanged":
-                body.extend(["**掌握状态变化**：", turn.mastery_change, ""])
-            if turn.follow_up_question:
-                body.extend(
-                    [
-                        f"**追问**：{turn.follow_up_question}",
-                        "",
-                        f"**追问回答**：{turn.follow_up_answer or ''}",
-                        "",
-                        f"**追问点评**：{turn.follow_up_feedback or ''}",
-                        "",
-                    ]
-                )
-                if turn.follow_up_missing_points:
-                    body.extend(["**追问缺失点**：", plain_bullet_list(turn.follow_up_missing_points), ""])
-                if turn.follow_up_weaknesses:
-                    body.extend(["**追问薄弱点**：", plain_bullet_list(turn.follow_up_weaknesses), ""])
-                if turn.follow_up_review_suggestions:
-                    body.extend(["**追问复习建议**：", plain_bullet_list(turn.follow_up_review_suggestions), ""])
-                if turn.follow_up_better_answer:
-                    body.extend(["**追问更好的面试说法**：", turn.follow_up_better_answer, ""])
-                if turn.follow_up_tested_points:
-                    body.extend(["**追问考察点**：", plain_bullet_list(turn.follow_up_tested_points), ""])
-                if (
-                    turn.follow_up_mastery_change
-                    and turn.follow_up_mastery_change != "unchanged"
-                ):
-                    body.extend(["**追问掌握状态变化**：", turn.follow_up_mastery_change, ""])
-                follow_up_write_suggestions = []
-                if turn.follow_up_should_write_weakness:
-                    follow_up_write_suggestions.append("写入薄弱点")
-                if turn.follow_up_should_write_high_frequency:
-                    follow_up_write_suggestions.append("写入高频题")
-                if follow_up_write_suggestions:
-                    body.extend(
-                        [
-                            "**追问写入建议**：",
-                            plain_bullet_list(follow_up_write_suggestions),
-                            "",
-                        ]
-                    )
-        return "\n".join(body).strip()
+        return render_practice_session(
+            interview_session,
+            config,
+            turns,
+            config.language or "zh-CN",
+        )
 
     def upsert_review_status(
         self,
@@ -245,12 +189,16 @@ class InterviewArtifactService:
             limit=3,
         )
         latest_question = next((turn.question for turn in reversed(turns) if turn.answer), "")
-        latest_practice = f"练习：{latest_question}" if latest_question else ""
+        language = config.language or "zh-CN"
+        labels = labels_for(language)
+        latest_practice = (
+            f"{labels.practice_prefix}{labels.colon}{latest_question}" if latest_question else ""
+        )
         try:
             current = self.artifacts.read_markdown(status_path)
             sections = markdown_sections(current.body)
-            recent_learning = markdown_list_items(sections.get("最近整理") or "", unique=True, limit=100)
-            recent_practice = markdown_list_items(sections.get("最近练习") or "", unique=True, limit=100)
+            recent_learning = section_items(sections, language, "recent_learning")
+            recent_practice = section_items(sections, language, "recent_practice")
             evidence_refs = unique_items([*current.front_matter.evidence_refs, evidence_ref], limit=20)
         except FileNotFoundError:
             current = None
@@ -259,23 +207,18 @@ class InterviewArtifactService:
             evidence_refs = [evidence_ref]
 
         practice_items = unique_items([latest_practice, *recent_practice], limit=8)
-        recent_learning_text = plain_bullet_list(recent_learning) if recent_learning else "暂无。"
-        recent_practice_text = plain_bullet_list(practice_items) if practice_items else "暂无。"
-        body = (
-            "# 复习状态\n\n"
-            "## 当前重点\n\n"
-            f"{plain_bullet_list(focus or ['继续通过模拟面试暴露薄弱点'])}\n\n"
-            "## 最近整理\n\n"
-            f"{recent_learning_text}\n\n"
-            "## 最近练习\n\n"
-            f"{recent_practice_text}\n"
+        body = render_review_status(
+            focus or [labels.continue_practice],
+            recent_learning,
+            practice_items,
+            language,
         )
         if current is None:
             self.artifacts.create_markdown(
                 status_path,
                 kind="review_status",
                 body=body,
-                language=config.language or "zh-CN",
+            language=language,
                 origin="llm",
                 edited_by="system",
                 evidence_refs=evidence_refs,
@@ -301,12 +244,9 @@ class InterviewArtifactService:
         try:
             current = self.artifacts.read_markdown(relative_path)
             sections = markdown_sections(current.body)
-            existing_questions = markdown_list_items(
-                sections.get("真实面试高频问题") or "", unique=True, limit=100
-            )
-            existing_weak_points = markdown_list_items(
-                sections.get("暴露问题") or "", unique=True, limit=100
-            )
+            language = config.language or "zh-CN"
+            existing_questions = section_items(sections, language, "real_interview_questions")
+            existing_weak_points = section_items(sections, language, "exposed_issues")
         except FileNotFoundError:
             current = None
             existing_questions = []
@@ -317,19 +257,14 @@ class InterviewArtifactService:
             [*evaluation.weaknesses, *evaluation.missing_points, *existing_weak_points],
             limit=20,
         )
-        body = (
-            "# 高频与薄弱点\n\n"
-            "## 真实面试高频问题\n\n"
-            f"{plain_bullet_list(questions)}\n\n"
-            "## 暴露问题\n\n"
-            f"{plain_bullet_list(weak_points)}\n"
-        )
+        language = config.language or "zh-CN"
+        body = render_high_frequency(questions, weak_points, language)
         if current is None:
             self.artifacts.create_markdown(
                 relative_path,
                 kind="high_frequency",
                 body=body,
-                language=config.language or "zh-CN",
+                language=language,
                 origin="llm",
                 edited_by="system",
             )
@@ -410,31 +345,34 @@ class InterviewArtifactService:
             for item in self.project_context(session)
             if "\n" in item and item.split("\n", 1)[1].strip()
         ]
+        language = config.language or "zh-CN"
+        labels = labels_for(language)
         project_section = (
             "\n\n".join(project_lines)
             if project_lines
-            else "结合已有项目材料补充业务场景、角色职责、技术取舍和结果指标。"
+            else labels.project_fallback
         )
         review_status = evaluation.mastery_change or "weak"
         if evaluation.should_write_weakness:
-            review_status = review_status if "weak" in review_status else f"{review_status}；写入薄弱点"
+            review_status = (
+                review_status
+                if "weak" in review_status
+                else f"{review_status}{labels.clause_separator}{labels.write_weakness}"
+            )
         if evaluation.should_write_high_frequency:
-            review_status = f"{review_status}；写入高频题"
+            review_status = (
+                f"{review_status}{labels.clause_separator}{labels.write_high_frequency}"
+            )
 
-        return (
-            f"## 问题：{question.strip()}\n\n"
-            "### 考察点\n\n"
-            f"{plain_bullet_list(tested_points)}\n\n"
-            "### 标准回答\n\n"
-            f"{(evaluation.better_answer or evaluation.feedback).strip()}\n\n"
-            "### 结合项目\n\n"
-            f"{project_section}\n\n"
-            "### 常见追问\n\n"
-            f"{evaluation.follow_up_question.strip() or '暂无。'}\n\n"
-            "### 易错点\n\n"
-            f"{plain_bullet_list(error_points or evaluation.review_suggestions)}\n\n"
-            "### 复习状态\n\n"
-            f"{review_status}\n"
+        return render_question_bank(
+            question,
+            tested_points,
+            evaluation.better_answer or evaluation.feedback,
+            project_section,
+            evaluation.follow_up_question,
+            error_points or evaluation.review_suggestions,
+            review_status,
+            language,
         )
 
     def write_mastery(self, turns: list[Any], language: str, evidence_ref: str) -> None:

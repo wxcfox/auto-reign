@@ -30,9 +30,13 @@ export interface ModelProvider {
 
 export interface ModelListResponse {
   providers: ModelProvider[];
+  default: {
+    provider: ProviderName;
+    model: string;
+  } | null;
 }
 
-export type ConversationKind = "interview" | "learning";
+export type ConversationKind = "chat" | "interview" | "learning";
 export type ConversationRole = "assistant" | "system" | "user";
 
 export interface ConversationMessage {
@@ -65,6 +69,19 @@ export interface ConversationDetailResponse extends ConversationHistoryItem {
 export interface ConversationDeleteResponse {
   id: string;
   status: "deleted";
+}
+
+export interface ChatMessageRequest {
+  text: string;
+  conversation_id?: string;
+  language: "en" | "zh-CN";
+  provider?: ProviderName;
+  model?: string;
+}
+
+export interface ChatMessageResult {
+  conversation_id: string;
+  message: ConversationMessage;
 }
 
 export interface UploadedSourceRecord {
@@ -185,7 +202,7 @@ export interface InterviewConfig {
   extra_prompt: string;
   language: "en" | "zh-CN";
   mode: InterviewMode;
-  chat_model_provider: ProviderName;
+  chat_model_provider: ProviderName | "";
   chat_model: string;
   target_rounds: number;
 }

@@ -15,7 +15,7 @@ type ModelPickerProps = {
   open: boolean;
   providers: ModelProvider[];
   selectedModel: string;
-  selectedProvider: ProviderName;
+  selectedProvider: ProviderName | "" | null;
 };
 
 export function ModelPicker({
