@@ -155,6 +155,32 @@ def test_model_service_streams_provider_chunks(tmp_path) -> None:
     assert completions.calls[0]["model"] == "gpt-4.1-mini"
 
 
+def test_model_service_streams_general_messages_without_system_prompt(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="auto_reign_test",
+        openai_api_key="provider-secret",
+    )
+    completions = FakeStreamChatCompletions("Direct response")
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
+    messages = [
+        {"role": "user", "content": "First question"},
+        {"role": "assistant", "content": "First answer"},
+        {"role": "user", "content": "Follow-up"},
+    ]
+
+    result = "".join(
+        service.stream_messages(messages, provider="openai", model="gpt-4.1-mini")
+    )
+
+    assert result == "Direct response"
+    assert completions.calls[0]["messages"] == messages
+    assert all(message["role"] != "system" for message in completions.calls[0]["messages"])
+
+
 def test_model_service_streams_require_configured_provider(
     tmp_path,
 ) -> None:

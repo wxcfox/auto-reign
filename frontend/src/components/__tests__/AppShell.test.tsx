@@ -30,14 +30,19 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 describe("AppShell", () => {
-  function conversationResponse(label: string, kind: "interview" | "learning", id: string) {
+  function conversationResponse(label: string, kind: "chat" | "interview" | "learning", id: string) {
+    const href = kind === "chat"
+      ? `/chat?session=${id}`
+      : kind === "interview"
+        ? `/interview?session=${id}`
+        : `/learn?session=${id}`;
     return {
       conversations: [
         {
           id,
           kind,
           title: label,
-          href: kind === "interview" ? `/interview?session=${id}` : `/learn?session=${id}`,
+          href,
           started_at: "2026-06-23T00:00:00Z",
           updated_at: "2026-06-23T00:10:00Z",
           last_message: `${label} latest message`,
@@ -85,21 +90,28 @@ describe("AppShell", () => {
     });
     vi.mocked(listConversations).mockResolvedValue({
       conversations: [
+        ...conversationResponse("Python context managers", "chat", "chat-session").conversations,
         ...conversationResponse("Active backend interview", "interview", "active-session").conversations,
         ...conversationResponse("Redis cache learning", "learning", "learning-session").conversations,
       ],
     });
   });
 
-  it("renders one new interview entry, history, workbench, and merged user settings", async () => {
+  it("renders new chat first, followed by interview and learning entries", async () => {
     render(
       <AppShell>
         <div>Current page</div>
       </AppShell>,
     );
 
-    expect(screen.getAllByRole("link", { name: /New interview/i })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: /New learning/i })).toBeInTheDocument();
+    const newChat = screen.getByRole("link", { name: /^New chat$/i });
+    const newInterview = screen.getByRole("link", { name: /New interview/i });
+    const newLearning = screen.getByRole("link", { name: /New learning/i });
+    expect(newChat).toHaveAttribute("href", "/chat");
+    expect(newChat.compareDocumentPosition(newInterview) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(newInterview.compareDocumentPosition(newLearning) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
     expect(screen.getByRole("navigation", { name: /Primary/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^Interview$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Recent/i)).not.toBeInTheDocument();
@@ -109,6 +121,8 @@ describe("AppShell", () => {
     expect(activeSessionLink).toHaveAttribute("title", "Active backend interview");
     expect(screen.getByRole("link", { name: /Redis cache learning/i }))
       .toHaveAttribute("href", "/learn?session=learning-session");
+    expect(screen.getByRole("link", { name: /Python context managers/i }))
+      .toHaveAttribute("href", "/chat?session=chat-session");
     expect(screen.queryByText(/Completed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Working/i)).not.toBeInTheDocument();
 

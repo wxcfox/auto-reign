@@ -64,6 +64,12 @@ def _create_interview_conversation(client, user_id: int) -> str:
 
 
 def test_empty_conversation_titles_follow_configured_language() -> None:
+    chinese_chat = models.Conversation(
+        user_id=1,
+        kind="chat",
+        title="",
+        config_json={"language": "zh-CN"},
+    )
     english_interview = models.Conversation(
         user_id=1,
         kind="interview",
@@ -77,6 +83,8 @@ def test_empty_conversation_titles_follow_configured_language() -> None:
         config_json={"language": "zh-CN"},
     )
 
+    assert ConversationService._title(chinese_chat) == "新聊天"
+    assert ConversationService._href(chinese_chat).startswith("/chat?session=")
     assert ConversationService._title(english_interview) == "Untitled interview"
     assert ConversationService._title(chinese_learning) == "学习记录"
 

@@ -1,0 +1,23 @@
+{
+  "title": "Chat",
+  "empty_label": "Empty chat",
+  "empty_title": "What can I help with?",
+  "you": "You",
+  "assistant": "Auto Reign",
+  "streaming": "Thinking...",
+  "error_title": "Chat error",
+  "select_model": "Select model",
+  "model_unavailable": "Unavailable",
+  "no_providers": "No model providers configured",
+  "composer": {
+    "label": "Chat composer",
+    "input_label": "Message Auto Reign",
+    "placeholder": "Message Auto Reign...",
+    "attach": "Attach material",
+    "send": "Send message"
+  },
+  "errors": {
+    "load": "The chat could not be loaded.",
+    "send": "The message could not be sent."
+  }
+}

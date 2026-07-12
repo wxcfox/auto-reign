@@ -36,7 +36,7 @@ export interface ModelListResponse {
   } | null;
 }
 
-export type ConversationKind = "interview" | "learning";
+export type ConversationKind = "chat" | "interview" | "learning";
 export type ConversationRole = "assistant" | "system" | "user";
 
 export interface ConversationMessage {
@@ -69,6 +69,19 @@ export interface ConversationDetailResponse extends ConversationHistoryItem {
 export interface ConversationDeleteResponse {
   id: string;
   status: "deleted";
+}
+
+export interface ChatMessageRequest {
+  text: string;
+  conversation_id?: string;
+  language: "en" | "zh-CN";
+  provider?: ProviderName;
+  model?: string;
+}
+
+export interface ChatMessageResult {
+  conversation_id: string;
+  message: ConversationMessage;
 }
 
 export interface UploadedSourceRecord {

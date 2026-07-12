@@ -50,6 +50,9 @@ function stopHistoryMenuPointerDown(event: ReactPointerEvent<HTMLElement>) {
 }
 
 function conversationLandingPath(kind: ConversationHistoryItem["kind"]) {
+  if (kind === "chat") {
+    return "/chat";
+  }
   return kind === "learning" ? "/learn" : "/interview";
 }
 
@@ -320,8 +323,12 @@ export function AppShell({ children }: AppShellProps) {
             <SidebarIcon size={18} aria-hidden="true" />
           </button>
         </div>
-        <Link className="new-chat-link" href="/interview" aria-label={t("actions.new_interview")}>
+        <Link className="new-chat-link" href="/chat" aria-label={t("actions.new_chat")}>
           <Plus size={18} aria-hidden="true" />
+          <span className="sidebar-label">{t("actions.new_chat")}</span>
+        </Link>
+        <Link className="new-chat-link" href="/interview" aria-label={t("actions.new_interview")}>
+          <MessageSquareText size={18} aria-hidden="true" />
           <span className="sidebar-label">{t("actions.new_interview")}</span>
         </Link>
         <Link className="new-chat-link new-learning-link" href="/learn" aria-label={t("actions.new_learning")}>

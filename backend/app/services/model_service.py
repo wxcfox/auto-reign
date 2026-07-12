@@ -67,6 +67,24 @@ class ModelService:
             request.model,
         )
 
+    def stream_messages(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> Iterator[str]:
+        normalized = [
+            {"role": message["role"], "content": message["content"]}
+            for message in messages
+            if message.get("role") in {"user", "assistant"}
+            and isinstance(message.get("content"), str)
+            and message["content"]
+        ]
+        if not normalized:
+            raise ValueError("chat messages are required")
+        yield from self._stream_messages(normalized, provider, model)
+
     def parse_answer_evaluation(self, content: str) -> AnswerEvaluationResult:
         return self.parse_structured_response(content, AnswerEvaluationResult)
 
@@ -152,23 +170,30 @@ class ModelService:
         provider: str | None,
         model: str | None,
     ) -> Iterator[str]:
-        resolved_provider, resolved_model, api_key, base_url = self._resolve_provider(
-            provider, model
+        yield from self._stream_messages(
+            [
+                {"role": "system", "content": load_prompt(prompt_id)},
+                {
+                    "role": "user",
+                    "content": json.dumps(payload, ensure_ascii=False),
+                },
+            ],
+            provider,
+            model,
         )
+
+    def _stream_messages(
+        self,
+        messages: list[dict[str, str]],
+        provider: str | None,
+        model: str | None,
+    ) -> Iterator[str]:
+        resolved_provider, resolved_model, api_key, base_url = self._resolve_provider(provider, model)
         try:
             client = self.client_factory(api_key=api_key, base_url=base_url)
             stream = client.chat.completions.create(
                 model=resolved_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": load_prompt(prompt_id),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(payload, ensure_ascii=False),
-                    },
-                ],
+                messages=messages,
                 stream=True,
             )
             yielded = False

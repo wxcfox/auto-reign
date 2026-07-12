@@ -8,6 +8,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { ChatMessage } from "@/components/ChatMessage";
+import { AutoResizeTextarea } from "@/components/AutoResizeTextarea";
 import { ModelPicker } from "@/components/ModelPicker";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -822,7 +823,7 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
             <label className="sr-only" htmlFor="interview-composer">
               {t("composer.input_label")}
             </label>
-            <textarea
+            <AutoResizeTextarea
               aria-label={t("composer.input_label")}
               disabled={composerMode === "idle"}
               id="interview-composer"
@@ -834,7 +835,6 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
                 }
               }}
               placeholder={composerPlaceholder}
-              rows={1}
               value={composerValue}
             />
             <ModelPicker

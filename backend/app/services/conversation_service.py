@@ -130,12 +130,16 @@ class ConversationService:
         if conversation.title.strip():
             return conversation.title.strip()
         language = (conversation.config_json or {}).get("language")
+        if conversation.kind == "chat":
+            return "新聊天" if language == "zh-CN" else "New chat"
         if conversation.kind == "interview":
             return "未命名面试" if language == "zh-CN" else "Untitled interview"
         return "学习记录" if language == "zh-CN" else "Learning note"
 
     @staticmethod
     def _href(conversation: models.Conversation) -> str:
+        if conversation.kind == "chat":
+            return f"/chat?session={conversation.id}"
         if conversation.kind == "interview":
             return f"/interview?session={conversation.id}"
         return f"/learn?session={conversation.id}"

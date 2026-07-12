@@ -43,6 +43,16 @@ def test_conversation_api_requires_auth(client) -> None:
     assert response.json()["detail"]["code"] == "auth_required"
 
 
+def test_chat_api_requires_auth(client) -> None:
+    response = client.post(
+        "/api/chats/stream",
+        json={"text": "hello", "language": "en"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "auth_required"
+
+
 def test_report_api_requires_auth(client) -> None:
     response = client.get("/api/reports")
 
