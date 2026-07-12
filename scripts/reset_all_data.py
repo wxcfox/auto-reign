@@ -157,9 +157,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not result.removed_paths:
         print("No local filesystem runtime data found.")
     if not args.skip_docker and args.dry_run:
-        print("Docker application, MySQL, and Qdrant volumes would be reset.")
+        print("Docker MySQL and Qdrant volumes would be reset.")
     elif not args.skip_docker:
-        print("Docker application, MySQL, and Qdrant volumes were reset.")
+        print("Docker MySQL and Qdrant volumes were reset.")
     return 0
 
 

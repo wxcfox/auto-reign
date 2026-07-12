@@ -33,68 +33,6 @@ services:
       <<: *healthcheck-defaults
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6333/readyz', timeout=5)"]
 
-  backend:
-    build:
-      context: ./backend
-    env_file:
-      - .env.example
-      - path: .env
-        required: false
-    environment:
-      BACKEND_HOST: 0.0.0.0
-      DATA_DIR: /app/data
-      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-auto_reign}:${MYSQL_PASSWORD:-auto_reign}@mysql:3306/${MYSQL_DATABASE:-auto_reign}
-      QDRANT_URL: http://qdrant:6333
-    ports:
-      - "${BACKEND_PORT:-8300}:8000"
-    volumes:
-      - app_data:/app/data
-    depends_on:
-      mysql:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
-
-  migrate:
-    build:
-      context: ./backend
-    env_file:
-      - .env.example
-      - path: .env
-        required: false
-    environment:
-      DATA_DIR: /app/data
-      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-auto_reign}:${MYSQL_PASSWORD:-auto_reign}@mysql:3306/${MYSQL_DATABASE:-auto_reign}
-      QDRANT_URL: http://qdrant:6333
-    command: ["alembic", "upgrade", "head"]
-    volumes:
-      - app_data:/app/data
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:8300}
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:8300}
-    ports:
-      - "${FRONTEND_PORT:-3100}:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
-
 volumes:
-  app_data:
   mysql_data:
   qdrant_data:
