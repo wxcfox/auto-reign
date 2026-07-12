@@ -212,7 +212,7 @@ RAG 组件层使用 LangChain 的 splitter、embedding、Qdrant vectorstore 和 
 
 ## 运行与发布边界
 
-`./start.sh` 是本地开发入口，允许从源码同步依赖、执行迁移并启动宿主机进程。生产运行使用版本化容器镜像，不在服务器从源码构建应用。代码合并到 `main` 只运行 CI；需要发布时，由 GitHub Actions 从 `main` 构建镜像，并在成功后创建同一个 SemVer 对应的 Git Tag 和 GitHub Release。
+`./start.sh` 是唯一的本地开发入口：根目录 Compose 只启动 MySQL 和 Qdrant，FastAPI 与 Next.js 由脚本作为宿主机进程管理，本地文件统一写入 `./data`。生产运行使用版本化容器镜像，不在服务器从源码构建应用。代码合并到 `main` 只运行 CI；需要发布时，由 GitHub Actions 从 `main` 构建镜像，并在成功后创建同一个 SemVer 对应的 Git Tag 和 GitHub Release。
 
 生产入口由反向代理统一提供同域 HTTPS，浏览器通过 `/api` 访问后端。MySQL、Qdrant、FastAPI 和 Next.js 不直接暴露公网端口。管理员在服务器上手工选择已发布 Tag 并执行部署；仓库不通过 GitHub Actions 连接生产主机。生产部署、备份、回滚和阿里云资源配置的权威流程见 [生产部署](production-deployment.md)。
 
