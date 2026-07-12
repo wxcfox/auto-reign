@@ -1,20 +1,41 @@
-export type ProviderName = "openai" | "deepseek" | "qwen";
+export type ProviderName = string;
+export type ResourceScope = "global" | "private";
+export type ResourceListScope = "visible" | "owned" | "global";
+export type WorkspaceScope = ResourceScope;
 
-export type InterviewMode =
-  | "comprehensive"
-  | "project_deep_dive"
-  | "knowledge_drill"
-  | "weakness_reinforcement";
-
-export type SessionStatus = "active" | "completed" | "cancelled";
+export interface ModelRef {
+  provider: string;
+  model: string;
+}
 
 export interface User {
   id: number;
   username: string;
   display_name: string;
+  role: "admin" | "user";
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: "admin" | "user";
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminUserListResponse {
+  users: AdminUser[];
+}
+
+export interface AdminUserCreateRequest {
+  username: string;
+  display_name: string;
+  password: string;
 }
 
 export interface AuthTokenResponse {
@@ -30,25 +51,172 @@ export interface ModelProvider {
 
 export interface ModelListResponse {
   providers: ModelProvider[];
+  default: ModelRef | null;
 }
 
-export type ConversationKind = "interview" | "learning";
-export type ConversationRole = "assistant" | "system" | "user";
+export interface KnowledgeScope {
+  collection_id: string;
+  document_ids: string[] | null;
+}
+
+export interface AgentConfig {
+  system_prompt: string;
+  default_model: ModelRef | null;
+  home_workspace_id: string | null;
+  knowledge_scopes: KnowledgeScope[];
+}
+
+export interface ResourceEnvelope<TConfig> {
+  id: string;
+  name: string;
+  scope: ResourceScope;
+  can_manage: boolean;
+  is_active: boolean;
+  config: TConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResourceWriteRequest<TConfig> {
+  name: string;
+  config: TConfig;
+}
+
+export interface ResourceUpdateRequest<TConfig> extends ResourceWriteRequest<TConfig> {
+  is_active: boolean;
+}
+
+export interface ResourceDeleteResponse {
+  id: string;
+  status: "deleted";
+}
+
+export type Agent = ResourceEnvelope<AgentConfig>;
+export type AgentResource = Agent;
+
+export interface AgentListResponse {
+  agents: AgentResource[];
+}
+
+export interface WorkspaceConfig {
+  workspace_type: "agent_home";
+  initial_agents_md: string;
+}
+
+export type Workspace = ResourceEnvelope<WorkspaceConfig>;
+export type WorkspaceResource = Workspace;
+
+export interface WorkspaceListResponse {
+  workspaces: WorkspaceResource[];
+}
+
+export interface WorkspaceFileItem {
+  path: string;
+  name: string;
+  is_directory: boolean;
+  size_bytes: number | null;
+  etag: string | null;
+}
+
+export interface WorkspaceFileContent extends WorkspaceFileItem {
+  is_directory: false;
+  content: string;
+}
+
+export interface WorkspaceFileList {
+  directory: string;
+  items: WorkspaceFileItem[];
+}
+
+export interface WorkspaceFileCreateRequest {
+  path: string;
+  content: string;
+}
+
+export interface WorkspaceFileWriteRequest extends WorkspaceFileCreateRequest {
+  expected_etag: string;
+}
+
+export type KnowledgeDocumentStatus =
+  | "uploaded"
+  | "queued"
+  | "processing"
+  | "ready"
+  | "failed";
+
+export interface KnowledgeCollectionConfig {
+  chunk_size: number;
+  chunk_overlap: number;
+  top_k: number;
+  score_threshold: number | null;
+}
+
+export type KnowledgeCollection = ResourceEnvelope<KnowledgeCollectionConfig>;
+export type KnowledgeCollectionResource = KnowledgeCollection;
+
+export interface KnowledgeCollectionListResponse {
+  collections: KnowledgeCollectionResource[];
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  collection_id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  status: KnowledgeDocumentStatus;
+  index_generation: number;
+  error_code: string | null;
+  error_message: string | null;
+  is_active: boolean;
+  indexed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeDocumentContent {
+  document_id: string;
+  content: string;
+}
+
+export interface KnowledgeDeletePending {
+  document_id: string;
+  status: "cleanup_pending";
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  message_id: string | null;
+  created_at: string;
+}
 
 export interface ConversationMessage {
   id: string;
-  role: ConversationRole;
-  message_type: string;
+  role: "assistant" | "user";
+  status: "pending" | "streaming" | "completed" | "failed";
   content: string;
+  attachments: Attachment[];
+  provider: string | null;
+  model: string | null;
   created_at: string;
+  updated_at: string;
   metadata: Record<string, unknown>;
 }
 
 export interface ConversationHistoryItem {
   id: string;
-  kind: ConversationKind;
   title: string;
   href: string;
+  agent: {
+    id: string;
+    name: string;
+    is_available: boolean;
+  };
+  model_override: ModelRef | null;
+  status: "idle" | "generating";
   started_at: string;
   updated_at: string;
   last_message: string;
@@ -67,230 +235,14 @@ export interface ConversationDeleteResponse {
   status: "deleted";
 }
 
-export interface UploadedSourceRecord {
-  artifact_id: string;
-  relative_path: string;
-  duplicate: boolean;
-}
-
-export interface LearningNoteSummary {
-  title: string;
-  summary: string;
-  key_points: string[];
-  interview_takeaways: string[];
-  follow_up_questions: string[];
-}
-
-export interface LearningNoteRequest {
-  text: string;
-  language: "en" | "zh-CN";
-  provider?: ProviderName;
-  model?: string;
-  conversation_id?: string;
-}
-
-export interface LearningNoteResponse {
+export interface ConversationStreamResult {
   conversation_id: string;
-  source: UploadedSourceRecord;
-  artifact: WorkspaceArtifactSummary;
-  summary: LearningNoteSummary;
-  card_markdown: string;
+  message: ConversationMessage;
 }
 
-export interface RealInterviewRecordRequest {
-  text: string;
-  language: "en" | "zh-CN";
-}
-
-export interface RealInterviewRecordResponse {
-  raw_artifact: WorkspaceArtifactSummary;
-  high_frequency_artifact: WorkspaceArtifactSummary;
-  status_artifact: WorkspaceArtifactSummary;
-  questions: string[];
-  weak_points: string[];
-}
-
-export interface UploadMaterialsResponse {
-  sources: UploadedSourceRecord[];
-}
-
-export interface WorkspaceArtifactSummary {
-  id: string;
-  kind: string;
-  owner: string;
-  relative_path: string;
-  display_name: string;
-  revision: number;
-  processing_status: string;
-  index_status: string;
-  recovery_required: boolean;
-  allowed_operations: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface WorkspaceArtifactListResponse {
-  artifacts: WorkspaceArtifactSummary[];
-}
-
-export interface WorkspaceFileEntry {
-  name: string;
-  relative_path: string;
-  directory: string;
-  size_bytes: number;
-  created_at: string;
-  updated_at: string;
-  owner: string;
-  kind: string;
-  processing_status: string;
-  index_status: string;
-  recovery_required: boolean;
-  allowed_operations: string[];
-  artifact_id: string | null;
-  artifact_kind: string | null;
-}
-
-export interface WorkspaceDirectoryEntry {
-  name: string;
-  relative_path: string;
-  depth: number;
-  file_count: number;
-  child_directory_count: number;
-  created_at: string;
-  updated_at: string;
-  files: WorkspaceFileEntry[];
-}
-
-export interface WorkspaceFilesResponse {
-  root: string;
-  directories: WorkspaceDirectoryEntry[];
-}
-
-export interface WorkspaceFileContentResponse {
-  name: string;
-  relative_path: string;
-  size_bytes: number;
-  updated_at: string;
-  content: string;
-}
-
-export interface WorkspaceArtifactDetail extends WorkspaceArtifactSummary {
-  body: string | null;
-}
-
-export interface InterviewConfig {
-  target_company: string;
-  target_role: string;
-  job_description: string;
-  extra_prompt: string;
-  language: "en" | "zh-CN";
-  mode: InterviewMode;
-  chat_model_provider: ProviderName;
-  chat_model: string;
-  target_rounds: number;
-}
-
-export interface InterviewConfigResponse extends InterviewConfig {
-  id: string;
-  is_last_used: boolean;
-  updated_at: string;
-}
-
-export interface InterviewSession {
-  id: string;
-  config_id: string;
-  status: SessionStatus;
-  current_round: number;
-  started_at: string;
-  ended_at: string | null;
-  report_path: string | null;
-}
-
-export interface InterviewTurn {
-  id: string;
-  session_id: string;
-  round_index: number;
-  question: string;
-  answer: string | null;
-  feedback: string | null;
-  missing_points: string[];
-  follow_up_question: string | null;
-  follow_up_answer: string | null;
-  follow_up_feedback: string | null;
-  follow_up_missing_points: string[];
-  follow_up_weaknesses: string[];
-  follow_up_review_suggestions: string[];
-  follow_up_better_answer?: string;
-  follow_up_mastery_change?: string;
-  follow_up_should_write_weakness?: boolean;
-  follow_up_should_write_high_frequency?: boolean;
-  follow_up_tested_points?: string[];
-  weaknesses: string[];
-  review_suggestions: string[];
-  better_answer?: string;
-  mastery_change?: string;
-  should_write_weakness?: boolean;
-  should_write_high_frequency?: boolean;
-  tested_points?: string[];
-  retrieved_context_refs: Array<Record<string, string>>;
-  created_at: string;
-}
-
-export interface InterviewSessionCreatedResponse {
-  session: InterviewSession;
-  turn: InterviewTurn;
-}
-
-export interface InterviewSessionFinishResponse {
-  session: InterviewSession;
-  report: ReportRecord;
-}
-
-export interface InterviewSessionDetailResponse {
-  session: InterviewSession;
-  config: InterviewConfigResponse;
-  turns: InterviewTurn[];
-}
-
-export interface AnswerFeedback {
-  feedback: string;
-  missing_points: string[];
-  follow_up_question: string;
-  weaknesses: string[];
-  review_suggestions: string[];
-  better_answer: string;
-  mastery_change: string;
-  should_write_weakness: boolean;
-  should_write_high_frequency: boolean;
-  tested_points: string[];
-}
-
-export interface FollowUpFeedback {
-  feedback: string;
-  missing_points: string[];
-  weaknesses: string[];
-  review_suggestions: string[];
-  better_answer: string;
-  mastery_change: string;
-  should_write_weakness: boolean;
-  should_write_high_frequency: boolean;
-  tested_points: string[];
-}
-
-export interface ReportRecord {
-  id: string;
-  session_id: string;
-  report_path: string;
-  summary: string;
-  weaknesses: string[];
-  created_at: string;
-}
-
-export interface ReportListResponse {
-  reports: ReportRecord[];
-}
-
-export interface ReportDetailResponse {
-  report: ReportRecord;
-  content: string;
+export interface AcceptedGeneration {
+  conversation_id: string;
+  user_message_id: string | null;
+  assistant_message_id: string;
+  attachment_ids: string[];
 }

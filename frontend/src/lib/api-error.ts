@@ -1,11 +1,23 @@
 export class ApiError extends Error {
   code?: string;
+  conversationId?: string;
+  assistantMessageId?: string;
   status: number;
 
-  constructor(message: string, options: { code?: string; status: number }) {
+  constructor(
+    message: string,
+    options: {
+      code?: string;
+      conversationId?: string;
+      assistantMessageId?: string;
+      status: number;
+    },
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = options.code;
+    this.conversationId = options.conversationId;
+    this.assistantMessageId = options.assistantMessageId;
     this.status = options.status;
   }
 }

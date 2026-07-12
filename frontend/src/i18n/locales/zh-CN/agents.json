@@ -1,0 +1,110 @@
+{
+  "fields": {
+    "name": "智能体名称",
+    "system_prompt": "系统提示词",
+    "default_model": "默认模型",
+    "provider": "模型服务商",
+    "model": "模型"
+  },
+  "model": {
+    "follow_system": "跟随系统默认模型",
+    "specific": "使用指定模型",
+    "unavailable_provider_option": "不可用的模型服务商 · {{provider}}",
+    "unavailable_model_option": "不可用的模型 · {{model}}",
+    "unavailable_label": "默认模型不可用",
+    "unavailable": "默认模型 {{provider}} / {{model}} 已不可用，请改为跟随系统默认模型，或在保存前选择可用模型。"
+  },
+  "home": {
+    "title": "智能体工作区",
+    "none": "不使用工作区",
+    "existing": "使用已有工作区",
+    "workspace": "工作区",
+    "select_workspace": "选择工作区",
+    "no_workspaces": "暂无可用工作区。",
+    "unavailable_workspace_option": "不可用的工作区 · {{id}}",
+    "workspace_unavailable_label": "工作区不可用",
+    "workspace_unavailable": "工作区 {{id}} 已不可用，请选择其他文件中台模式以解除引用。",
+    "create": "新建智能体工作区",
+    "workspace_name": "工作区名称",
+    "initial_agents_md": "初始 AGENTS.md"
+  },
+  "knowledge": {
+    "title": "资料库",
+    "add_collection": "添加资料库",
+    "select_collection": "选择资料库",
+    "add_scope": "添加资料库范围",
+    "entire_collection": "整库",
+    "selected_documents": "指定文档",
+    "loading_documents": "正在加载文档…",
+    "documents_load_failed": "文档加载失败。",
+    "no_documents": "此资料库暂无文档。",
+    "collection_unavailable_label": "资料库不可用",
+    "collection_unavailable": "资料库 {{id}} 已不可用，请在保存前移除此范围。",
+    "document_unavailable_alert_label": "所选文档不可用 · {{id}}",
+    "document_unavailable_checkbox": "不可用的所选文档 {{id}}",
+    "document_unavailable": "所选文档 {{id}} 已不可用。",
+    "document_unavailable_hint": "请取消选择此文档、改用整库，或在保存前移除此资料库范围。",
+    "document_status": "状态：{{status}}",
+    "status": {
+      "uploaded": "已上传",
+      "queued": "等待索引",
+      "processing": "索引中",
+      "ready": "可用",
+      "failed": "失败"
+    }
+  },
+  "personal": {
+    "title": "我的智能体",
+    "summary": "创建和管理仅当前账号可用的智能体。"
+  },
+  "global": {
+    "title": "全局智能体",
+    "summary": "创建和管理所有用户均可使用的智能体。"
+  },
+  "states": {
+    "loading": "正在加载智能体…",
+    "load_failed": "智能体加载失败。",
+    "empty": "暂无智能体。",
+    "active": "已启用",
+    "inactive": "已停用"
+  },
+  "dialog": {
+    "create_title": "创建智能体",
+    "edit_title": "编辑 {{name}}"
+  },
+  "actions": {
+    "select": "选择",
+    "remove": "移除",
+    "retry": "重试",
+    "cancel": "取消",
+    "save": "保存智能体",
+    "saving": "正在保存…",
+    "create": "创建智能体",
+    "create_global": "创建全局智能体",
+    "edit": "编辑",
+    "edit_label": "编辑 {{name}}",
+    "enable": "启用",
+    "enable_label": "启用 {{name}}",
+    "disable": "停用",
+    "disable_label": "停用 {{name}}",
+    "delete": "删除",
+    "delete_label": "删除 {{name}}",
+    "delete_confirm": "删除 {{name}}？",
+    "working": "处理中…"
+  },
+  "errors": {
+    "name_required": "请输入智能体名称。",
+    "system_prompt_required": "请输入系统提示词。",
+    "default_model_required": "请选择模型服务商和模型。",
+    "home_workspace_required": "请选择已有工作区。",
+    "workspace_name_required": "请输入工作区名称。",
+    "agents_md_required": "请输入初始 AGENTS.md 管理说明。",
+    "knowledge_collection_required": "请选择资料库。",
+    "knowledge_collection_duplicate": "同一个资料库只能添加一次。",
+    "knowledge_subset_required": "请至少选择一个文档。",
+    "save_failed": "智能体保存失败。",
+    "workspace_created_agent_failed": "工作区 {{name}} 已创建，但智能体保存失败。",
+    "delete_failed": "智能体删除失败。",
+    "status_failed": "智能体状态修改失败。"
+  }
+}

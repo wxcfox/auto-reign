@@ -13,40 +13,41 @@
   },
   "auth": {
     "login_title": "登录 Auto Reign",
-    "register_title": "创建本地账号",
+    "setup_title": "设置管理员密码",
+    "setup_description": "请为初始 admin 账号设置密码。此步骤只能完成一次。",
     "username": "用户名",
     "password": "密码",
+    "new_password": "新密码",
+    "confirm_password": "确认密码",
     "login_action": "登录",
-    "register_action": "创建账号",
-    "no_account": "还没有账号？",
-    "has_account": "已有账号？",
-    "create_account_link": "创建一个",
-    "login_link": "登录",
+    "setup_action": "设置管理员密码",
     "invalid_credentials": "用户名或密码不正确。",
     "password_too_short": "密码至少需要 6 个字符。",
-    "register_failed": "账号创建失败。",
-    "registration_disabled": "当前服务已关闭新账号注册。"
+    "password_too_long": "密码不能超过 256 个字符。",
+    "password_mismatch": "两次输入的密码不一致。",
+    "setup_failed": "管理员密码设置失败。"
   },
   "nav": {
-    "dashboard": "总览",
-    "workbench": "工作台",
-    "library": "资料库",
-    "interview": "面试",
-    "review": "复盘",
-    "more": "更多",
+    "primary": "主导航",
+    "agents": "智能体",
+    "knowledge": "资料库",
+    "workspaces": "智能体工作区",
+    "global_agents": "全局智能体",
+    "global_workspaces": "全局工作区",
+    "global_knowledge": "全局资料库",
+    "users": "用户管理",
     "history": "历史对话",
     "empty_history": "暂无历史对话",
-    "untitled_session": "未命名对话",
-    "recent_sessions": "最近",
-    "current_session": "当前面试",
-    "latest_review": "最近复盘"
+    "untitled_session": "未命名对话"
   },
   "states": {
     "loading": "加载中...",
-    "unavailable": "不可用",
-    "checking": "检查中",
-    "completed": "已完成",
     "working": "处理中..."
+  },
+  "permissions": {
+    "loading": "正在检查权限…",
+    "admin_required": "需要管理员权限。",
+    "load_failed": "权限检查失败。"
   },
   "actions": {
     "cancel": "取消",
@@ -57,31 +58,14 @@
     "save": "保存",
     "rename_conversation": "重命名",
     "rename_conversation_description": "保持简短且易于识别。",
-    "upload": "上传",
-    "start": "开始面试",
-    "new_interview": "新面试",
-    "new_learning": "新学习",
-    "open_report": "打开报告",
-    "save_and_reindex": "保存并重建索引"
+    "new_chat": "新聊天"
   },
   "errors": {
     "generic_load": "加载数据失败。",
     "generic_save": "保存失败。",
-    "generic_upload": "上传失败。",
-    "answer_already_submitted": "当前回答已经提交过了。",
-    "current_turn_unanswered": "请先提交当前回答，再继续下一步。",
-    "document_not_found": "未找到该文档。",
-    "embedding_call_failed": "向量模型请求失败。",
-    "follow_up_already_submitted": "当前追问回答已经提交过了。",
-    "main_answer_required": "请先提交主回答，再提交追问回答。",
-    "model_not_configured": "所选模型未配置。",
-    "provider_call_failed": "模型请求失败。",
-    "provider_invalid_response": "模型返回了无效的结构化结果。",
-    "provider_not_configured": "所选模型提供方未配置。",
-    "session_not_active": "当前面试会话已不处于进行中。",
-    "session_not_found": "未找到该面试会话。",
-    "target_rounds_reached": "已达到配置的轮次数。",
-    "vector_dimension_mismatch": "当前向量集合与 embedding 模型维度不兼容。",
-    "vector_store_unavailable": "向量库暂时不可用。"
+    "admin_required": "需要管理员权限。",
+    "fixed_admin_managed": "固定管理员不能在这里修改。",
+    "user_not_found": "未找到该用户。",
+    "username_taken": "该用户名已被使用。"
   }
 }

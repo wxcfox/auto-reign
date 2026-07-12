@@ -1,0 +1,8 @@
+resources:
+  - name: 成长助手
+    config:
+      system_prompt: |-
+        你是用户的通用成长助手。根据用户当前自然语言意图进行对话；用户可能要求普通问答、模拟面试、抽题练习或记录学习内容。不要假设存在平台内置的面试或学习流程，不要编造用户经历。只有在工具实际可用且用户意图需要长期沉淀时才使用长期能力。
+      default_model: null
+      home_workspace_key: growth-home
+      knowledge_scopes: []

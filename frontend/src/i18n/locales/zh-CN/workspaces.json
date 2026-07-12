@@ -1,0 +1,110 @@
+{
+  "page": {
+    "title": "智能体工作区",
+    "description": "管理 Agent Home 定义，并打开按当前账号严格隔离的文件。",
+    "createTitle": "创建工作区",
+    "createDescription": "初始 AGENTS.md 模板只在当前账号首次打开该工作区时使用。",
+    "listTitle": "可用工作区",
+    "listDescription": "全局和私有定义打开的都是当前账号自己隔离的 Agent Home 文件。",
+    "homeTitle": "智能体文件中台",
+    "homeDescription": "浏览和编辑该工作区中作为长期权威来源的文件。",
+    "back": "返回工作区列表",
+    "loading": "正在加载工作区…"
+  },
+  "personal": {
+    "title": "智能体工作区",
+    "summary": "管理自己的 Agent Home 定义，并打开按当前账号严格隔离的文件。",
+    "ownedTitle": "我的工作区",
+    "ownedSummary": "管理自己的启用和停用定义，文件始终与其他账号隔离。",
+    "sharedTitle": "全局工作区",
+    "sharedSummary": "全局定义为当前账号打开一份独立的 Agent Home 文件实例。"
+  },
+  "global": {
+    "title": "全局工作区管理",
+    "summary": "管理所有用户可见的定义；每个用户仍拥有彼此隔离的文件实例。",
+    "listTitle": "全局定义",
+    "listSummary": "修改初始模板不会覆盖任何用户已经初始化的 AGENTS.md。"
+  },
+  "states": {
+    "loading": "正在加载工作区…",
+    "empty": "暂无工作区。",
+    "active": "已启用",
+    "inactive": "已停用"
+  },
+  "managementEditor": {
+    "createTitle": "创建工作区",
+    "createGlobalTitle": "创建全局工作区",
+    "editTitle": "编辑 {{name}}"
+  },
+  "list": {
+    "loading": "正在加载工作区…",
+    "loadError": "工作区加载失败。",
+    "empty": "暂无工作区。",
+    "open": "打开 {{name}}"
+  },
+  "scope": {
+    "global": "全局共享",
+    "private": "仅自己可见"
+  },
+  "form": {
+    "name": "名称",
+    "initialAgentsMd": "初始 AGENTS.md",
+    "initialAgentsMdHint": "模板只在当前账号首次初始化实例时使用，绝不会覆盖已经存在的 AGENTS.md。",
+    "initialAgentsMdHintGlobal": "修改只影响之后首次初始化该工作区的用户，绝不会覆盖任何已有的 AGENTS.md。",
+    "editTitle": "编辑工作区",
+    "nameTaken": "已存在同名工作区。",
+    "saveError": "工作区保存失败。"
+  },
+  "browser": {
+    "breadcrumb": "工作区目录",
+    "root": "工作区根目录",
+    "rootShort": "根目录",
+    "loading": "正在加载文件…",
+    "loadError": "文件加载失败。",
+    "empty": "此目录为空。",
+    "selectFile": "请选择一个文件。",
+    "delete": "删除 {{name}}",
+    "deleteConfirm": "确定删除 {{name}} 吗？此操作无法撤销。",
+    "deleteError": "文件删除失败。",
+    "agentsMdProtected": "根 AGENTS.md 负责管理 Agent Home，不能删除。"
+  },
+  "editor": {
+    "loading": "正在加载文件…",
+    "loadError": "文件加载失败。",
+    "fileContent": "文件内容",
+    "conflict": "文件在打开后已发生变化，当前草稿已保留。",
+    "reloadError": "文件重新加载失败，当前草稿已保留。",
+    "saveError": "文件保存失败。"
+  },
+  "actions": {
+    "retry": "重试",
+    "open": "打开",
+    "openFiles": "打开我的文件",
+    "openFilesLabel": "打开 {{name}} 的文件",
+    "create": "创建工作区",
+    "createGlobal": "创建全局工作区",
+    "edit": "编辑",
+    "editLabel": "编辑 {{name}}",
+    "save": "保存",
+    "saving": "正在保存…",
+    "working": "处理中…",
+    "cancel": "取消",
+    "enable": "启用",
+    "enableLabel": "启用 {{name}}",
+    "disable": "停用",
+    "disableLabel": "停用 {{name}}",
+    "reload": "重新加载",
+    "delete": "删除",
+    "deleteLabel": "删除 {{name}}",
+    "deleteConfirm": "确定删除工作区定义“{{name}}”吗？已存储的用户文件不会自动删除。"
+  },
+  "errors": {
+    "loadFailed": "工作区加载失败。",
+    "statusFailed": "工作区状态修改失败。",
+    "deleteFailed": "工作区删除失败。",
+    "resourceInUse": "该工作区仍被启用中的 Agent 引用。",
+    "accessDenied": "你无权访问该工作区。",
+    "workspaceUnavailable": "Agent Home 暂时不可用。",
+    "workspaceConflict": "文件已发生变化，请重新加载后再保存。"
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "fields": {
+    "name": "Agent name",
+    "system_prompt": "System prompt",
+    "default_model": "Default model",
+    "provider": "Provider",
+    "model": "Model"
+  },
+  "model": {
+    "follow_system": "Follow system default model",
+    "specific": "Use a specific model",
+    "unavailable_provider_option": "Unavailable provider · {{provider}}",
+    "unavailable_model_option": "Unavailable model · {{model}}",
+    "unavailable_label": "Default model unavailable",
+    "unavailable": "Default model {{provider}} / {{model}} is no longer available. Follow the system default or select an available model before saving."
+  },
+  "home": {
+    "title": "Agent Home",
+    "none": "Do not use a workspace",
+    "existing": "Use an existing workspace",
+    "workspace": "Workspace",
+    "select_workspace": "Select a workspace",
+    "no_workspaces": "No workspaces are available.",
+    "unavailable_workspace_option": "Unavailable workspace · {{id}}",
+    "workspace_unavailable_label": "Workspace unavailable",
+    "workspace_unavailable": "Workspace {{id}} is no longer available. Choose another Home mode to remove this reference.",
+    "create": "Create a new workspace",
+    "workspace_name": "Workspace name",
+    "initial_agents_md": "Initial AGENTS.md"
+  },
+  "knowledge": {
+    "title": "Knowledge sources",
+    "add_collection": "Add collection",
+    "select_collection": "Select a collection",
+    "add_scope": "Add knowledge scope",
+    "entire_collection": "Entire collection",
+    "selected_documents": "Selected documents",
+    "loading_documents": "Loading documents…",
+    "documents_load_failed": "Documents could not be loaded.",
+    "no_documents": "No documents in this collection.",
+    "collection_unavailable_label": "Collection unavailable",
+    "collection_unavailable": "Collection {{id}} is no longer available. Remove this scope before saving.",
+    "document_unavailable_alert_label": "Selected document unavailable · {{id}}",
+    "document_unavailable_checkbox": "Unavailable selected document {{id}}",
+    "document_unavailable": "Selected document {{id}} is no longer available.",
+    "document_unavailable_hint": "Clear this selection, use the entire collection, or remove this knowledge scope before saving.",
+    "document_status": "Status: {{status}}",
+    "status": {
+      "uploaded": "Uploaded",
+      "queued": "Queued",
+      "processing": "Processing",
+      "ready": "Ready",
+      "failed": "Failed"
+    }
+  },
+  "personal": {
+    "title": "My Agents",
+    "summary": "Create and manage Agents available only to your account."
+  },
+  "global": {
+    "title": "Global Agents",
+    "summary": "Create and manage Agents available to every user."
+  },
+  "states": {
+    "loading": "Loading Agents…",
+    "load_failed": "Agents could not be loaded.",
+    "empty": "No Agents yet.",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "dialog": {
+    "create_title": "Create Agent",
+    "edit_title": "Edit {{name}}"
+  },
+  "actions": {
+    "select": "Select",
+    "remove": "Remove",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save agent",
+    "saving": "Saving…",
+    "create": "Create Agent",
+    "create_global": "Create global Agent",
+    "edit": "Edit",
+    "edit_label": "Edit {{name}}",
+    "enable": "Enable",
+    "enable_label": "Enable {{name}}",
+    "disable": "Disable",
+    "disable_label": "Disable {{name}}",
+    "delete": "Delete",
+    "delete_label": "Delete {{name}}",
+    "delete_confirm": "Delete {{name}}?",
+    "working": "Working…"
+  },
+  "errors": {
+    "name_required": "Enter an Agent name.",
+    "system_prompt_required": "Enter a system prompt.",
+    "default_model_required": "Select both a provider and model.",
+    "home_workspace_required": "Select an existing workspace.",
+    "workspace_name_required": "Enter a workspace name.",
+    "agents_md_required": "Enter initial AGENTS.md instructions.",
+    "knowledge_collection_required": "Select a knowledge collection.",
+    "knowledge_collection_duplicate": "Each knowledge collection can be added only once.",
+    "knowledge_subset_required": "Select at least one document.",
+    "save_failed": "The Agent could not be saved.",
+    "workspace_created_agent_failed": "Workspace {{name}} was created, but the Agent was not saved.",
+    "delete_failed": "The Agent could not be deleted.",
+    "status_failed": "The Agent status could not be changed."
+  }
+}

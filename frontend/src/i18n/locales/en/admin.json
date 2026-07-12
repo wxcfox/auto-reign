@@ -1,0 +1,56 @@
+{
+  "title": "User management",
+  "summary": "Create ordinary users, manage account status, and reset passwords.",
+  "table": {
+    "caption": "User accounts"
+  },
+  "fields": {
+    "username": "Username",
+    "display_name": "Display name",
+    "password": "Password",
+    "new_password": "New password",
+    "status": "Status",
+    "created_at": "Created",
+    "actions": "Actions"
+  },
+  "states": {
+    "loading": "Loading users…",
+    "load_failed": "Users could not be loaded.",
+    "empty": "No users found.",
+    "active": "Active",
+    "inactive": "Inactive",
+    "fixed_admin": "The fixed administrator cannot be changed here."
+  },
+  "create": {
+    "title": "Create user"
+  },
+  "reset": {
+    "title": "Reset password for {{name}}"
+  },
+  "actions": {
+    "retry": "Retry",
+    "create_user": "Create user",
+    "create": "Create",
+    "creating": "Creating…",
+    "cancel": "Cancel",
+    "enable": "Enable",
+    "disable": "Disable",
+    "enable_label": "Enable {{name}}",
+    "disable_label": "Disable {{name}}",
+    "enable_confirm": "Enable {{name}}?",
+    "disable_confirm": "Disable {{name}}?",
+    "reset_password": "Reset password",
+    "resetting": "Resetting…",
+    "reset_label": "Reset password for {{name}}",
+    "working": "Working…"
+  },
+  "errors": {
+    "username_length": "Username must contain 3 to 80 characters.",
+    "username_format": "Username may contain only ASCII letters, numbers, periods, underscores, and hyphens.",
+    "display_name_length": "Display name must contain no more than 120 characters.",
+    "password_length": "Password must contain 6 to 256 characters.",
+    "create_failed": "The user could not be created.",
+    "reset_failed": "The password could not be reset.",
+    "status_failed": "The user status could not be changed."
+  }
+}

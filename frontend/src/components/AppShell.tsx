@@ -10,11 +10,14 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Bot,
+  BookOpenText,
   ChevronDown,
   ChevronUp,
-  Database,
-  LayoutDashboard,
+  FolderCog,
+  FolderKanban,
   Languages,
+  LibraryBig,
   LogOut,
   MessageSquareText,
   MoreHorizontal,
@@ -23,9 +26,11 @@ import {
   PanelLeftOpen,
   PencilLine,
   Plus,
+  ShieldCheck,
   Sun,
   Trash2,
   UserCircle,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,7 +39,8 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { deleteConversation, getCurrentUser, listConversations, renameConversation } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 import { CONVERSATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
-import type { ConversationHistoryItem } from "@/lib/types";
+import { MAX_CONVERSATION_TITLE_LENGTH } from "@/lib/limits";
+import type { ConversationHistoryItem, User } from "@/lib/types";
 
 type AppShellProps = {
   children: ReactNode;
@@ -49,15 +55,14 @@ function stopHistoryMenuPointerDown(event: ReactPointerEvent<HTMLElement>) {
   event.nativeEvent.stopImmediatePropagation();
 }
 
-function conversationLandingPath(kind: ConversationHistoryItem["kind"]) {
-  return kind === "learning" ? "/learn" : "/interview";
-}
-
 function isCurrentBrowserConversation(item: ConversationHistoryItem) {
   if (typeof window === "undefined") {
     return false;
   }
-  return `${window.location.pathname}${window.location.search}` === item.href;
+  return (
+    window.location.pathname === "/chat" &&
+    new URLSearchParams(window.location.search).get("session") === item.id
+  );
 }
 
 function readPreferredDarkMode() {
@@ -116,22 +121,12 @@ export function AppShell({ children }: AppShellProps) {
     useState<ConversationHistoryItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const conversationRefreshId = useRef(0);
   const mountedRef = useRef(false);
-  const primaryNavItems = [
-    { href: "/library", label: t("nav.library"), icon: Database },
-  ];
-  const secondaryNavItems = [
-    { href: "/", label: t("nav.workbench"), icon: LayoutDashboard },
-  ];
-  const secondaryNavActive = secondaryNavItems.some((item) =>
-    item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href),
-  );
-  const isAuthPage = currentPath === "/login" || currentPath === "/register";
-  const [moreOpen, setMoreOpen] = useState(secondaryNavActive);
+  const isAuthPage = currentPath === "/login" || currentPath === "/setup";
 
   const refreshConversations = useCallback(async () => {
     if (isAuthPage) {
@@ -154,10 +149,10 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     mountedRef.current = true;
-
     if (isAuthPage) {
+      conversationRefreshId.current += 1;
       setConversations([]);
-      setCurrentUsername(null);
+      setCurrentUser(null);
       return () => {
         mountedRef.current = false;
       };
@@ -168,7 +163,6 @@ export function AppShell({ children }: AppShellProps) {
       void refreshConversations();
     };
     window.addEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
-
     return () => {
       mountedRef.current = false;
       window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
@@ -177,19 +171,19 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     if (isAuthPage) {
-      setCurrentUsername(null);
+      setCurrentUser(null);
       return;
     }
     let cancelled = false;
     getCurrentUser()
       .then((user) => {
         if (!cancelled) {
-          setCurrentUsername(user.username);
+          setCurrentUser(user);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setCurrentUsername(null);
+          setCurrentUser(null);
         }
       });
     return () => {
@@ -202,10 +196,9 @@ export function AppShell({ children }: AppShellProps) {
       return;
     }
     const closeMenu = (event: PointerEvent) => {
-      if (isHistoryMenuSurfaceTarget(event.target)) {
-        return;
+      if (!isHistoryMenuSurfaceTarget(event.target)) {
+        setHistoryMenuKey(null);
       }
-      setHistoryMenuKey(null);
     };
     document.addEventListener("pointerdown", closeMenu);
     return () => document.removeEventListener("pointerdown", closeMenu);
@@ -226,11 +219,33 @@ export function AppShell({ children }: AppShellProps) {
   const ThemeIcon = darkMode ? Sun : Moon;
   const SidebarIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   const UserMenuIcon = settingsOpen ? ChevronDown : ChevronUp;
-  const userLabel = currentUsername ?? t("app.user");
-
-  function conversationKey(item: ConversationHistoryItem) {
-    return `${item.kind}:${item.id}`;
-  }
+  const userLabel = currentUser?.username ?? t("app.user");
+  const primaryNavItems = [
+    { href: "/agents", icon: Bot, label: t("nav.agents") },
+    { href: "/workspaces", icon: FolderKanban, label: t("nav.workspaces") },
+    { href: "/knowledge", icon: BookOpenText, label: t("nav.knowledge") },
+  ];
+  const adminNavItems =
+    currentUser?.role === "admin"
+      ? [
+          {
+            href: "/admin/agents",
+            icon: ShieldCheck,
+            label: t("nav.global_agents"),
+          },
+          {
+            href: "/admin/workspaces",
+            icon: FolderCog,
+            label: t("nav.global_workspaces"),
+          },
+          {
+            href: "/admin/knowledge",
+            icon: LibraryBig,
+            label: t("nav.global_knowledge"),
+          },
+          { href: "/admin/users", icon: Users, label: t("nav.users") },
+        ]
+      : [];
 
   function openRenameDialog(item: ConversationHistoryItem, title: string) {
     setHistoryActionError(null);
@@ -241,55 +256,68 @@ export function AppShell({ children }: AppShellProps) {
 
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!renamingConversation) {
+    if (!renamingConversation || historyActionPendingKey !== null) {
       return;
     }
     const title = renameValue.trim();
     if (!title) {
       return;
     }
-    const pendingKey = conversationKey(renamingConversation);
+    const pendingKey = renamingConversation.id;
     setHistoryActionPendingKey(pendingKey);
     setHistoryActionError(null);
     try {
       const renamedConversation = await renameConversation(renamingConversation.id, title);
+      if (!mountedRef.current) {
+        return;
+      }
       setConversations((current) =>
         current.map((conversation) =>
-          conversationKey(conversation) === pendingKey ? renamedConversation : conversation,
+          conversation.id === pendingKey ? renamedConversation : conversation,
         ),
       );
       setRenamingConversation(null);
       setRenameValue("");
     } catch {
-      setHistoryActionError(t("errors.generic_save"));
+      if (mountedRef.current) {
+        setHistoryActionError(t("errors.generic_save"));
+      }
     } finally {
-      setHistoryActionPendingKey(null);
+      if (mountedRef.current) {
+        setHistoryActionPendingKey(null);
+      }
     }
   }
 
   async function handleDeleteConversation(item: ConversationHistoryItem, title: string) {
     setHistoryMenuKey(null);
     const confirmed = window.confirm(t("actions.delete_conversation_confirm", { title }));
-    if (!confirmed) {
+    if (!confirmed || historyActionPendingKey !== null) {
       return;
     }
-    const pendingKey = conversationKey(item);
     const deletingCurrentConversation = isCurrentBrowserConversation(item);
-    setHistoryActionPendingKey(pendingKey);
+    setHistoryActionPendingKey(item.id);
     setHistoryActionError(null);
     try {
       await deleteConversation(item.id);
+      if (!mountedRef.current) {
+        return;
+      }
       setConversations((current) =>
-        current.filter((conversation) => conversationKey(conversation) !== pendingKey),
+        current.filter((conversation) => conversation.id !== item.id),
       );
       if (deletingCurrentConversation) {
-        router.replace(conversationLandingPath(item.kind));
+        router.replace("/chat");
       }
       await refreshConversations();
     } catch {
-      setHistoryActionError(t("errors.generic_save"));
+      if (mountedRef.current) {
+        setHistoryActionError(t("errors.generic_save"));
+      }
     } finally {
-      setHistoryActionPendingKey(null);
+      if (mountedRef.current) {
+        setHistoryActionPendingKey(null);
+      }
     }
   }
 
@@ -307,9 +335,7 @@ export function AppShell({ children }: AppShellProps) {
     <div className="app-shell" data-sidebar-collapsed={sidebarCollapsed}>
       <aside className="app-sidebar">
         <div className="app-brand">
-          <span className="app-brand-mark" aria-hidden="true">
-            AR
-          </span>
+          <span className="app-brand-mark" aria-hidden="true">AR</span>
           <span className="sidebar-label app-brand-title">{t("app.title")}</span>
           <button
             aria-label={sidebarCollapsed ? t("app.expand_sidebar") : t("app.collapse_sidebar")}
@@ -320,71 +346,48 @@ export function AppShell({ children }: AppShellProps) {
             <SidebarIcon size={18} aria-hidden="true" />
           </button>
         </div>
-        <Link className="new-chat-link" href="/interview" aria-label={t("actions.new_interview")}>
+        <Link className="new-chat-link" href="/chat" aria-label={t("actions.new_chat")}>
           <Plus size={18} aria-hidden="true" />
-          <span className="sidebar-label">{t("actions.new_interview")}</span>
+          <span className="sidebar-label">{t("actions.new_chat")}</span>
         </Link>
-        <Link className="new-chat-link new-learning-link" href="/learn" aria-label={t("actions.new_learning")}>
-          <PencilLine size={18} aria-hidden="true" />
-          <span className="sidebar-label">{t("actions.new_learning")}</span>
-        </Link>
-        <nav aria-label="Primary" className="app-nav">
-          {primaryNavItems.map((item) => {
-            const Icon = item.icon;
+        <nav aria-label={t("nav.primary")} className="app-nav">
+          {[...primaryNavItems, ...adminNavItems].map((item) => {
             const active =
-              item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href);
+              currentPath === item.href || currentPath.startsWith(`${item.href}/`);
+            const Icon = item.icon;
             return (
-              <Link href={item.href} key={item.href} data-active={active} aria-label={item.label}>
-                <Icon size={18} aria-hidden="true" />
+              <Link
+                aria-current={active ? "page" : undefined}
+                data-active={active}
+                href={item.href}
+                key={item.href}
+              >
+                <Icon aria-hidden="true" size={18} />
                 <span className="sidebar-label">{item.label}</span>
               </Link>
             );
           })}
         </nav>
-        <section className="sidebar-more" aria-label={t("nav.more")}>
-          <button
-            className="sidebar-more-button"
-            type="button"
-            aria-expanded={moreOpen}
-            aria-label={t("nav.more")}
-            onClick={() => setMoreOpen((current) => !current)}
-          >
-            <MoreHorizontal size={18} aria-hidden="true" />
-            <span className="sidebar-label">{t("nav.more")}</span>
-            <ChevronDown className="sidebar-more-chevron sidebar-label" size={16} aria-hidden="true" />
-          </button>
-          <div className="sidebar-more-list" data-open={moreOpen}>
-            {secondaryNavItems.map((item) => {
-              const Icon = item.icon;
-              const active =
-                item.href === "/" ? currentPath === item.href : currentPath.startsWith(item.href);
-              return (
-                <Link href={item.href} key={item.href} data-active={active} aria-label={item.label}>
-                  <Icon size={18} aria-hidden="true" />
-                  <span className="sidebar-label">{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
         <section className="sidebar-history" aria-labelledby="sidebar-history-heading">
           <h2 id="sidebar-history-heading">{t("nav.history")}</h2>
           {historyActionError ? (
-            <p className="sidebar-history-error" role="alert">
-              {historyActionError}
-            </p>
+            <p className="sidebar-history-error" role="alert">{historyActionError}</p>
           ) : null}
           {conversations.length === 0 ? (
             <p className="sidebar-history-empty">{t("nav.empty_history")}</p>
           ) : null}
           {conversations.map((item) => {
             const title = item.title || t("nav.untitled_session");
-            const itemKey = conversationKey(item);
-            const menuOpen = historyMenuKey === itemKey;
-            const pending = historyActionPendingKey === itemKey;
+            const menuOpen = historyMenuKey === item.id;
+            const pending = historyActionPendingKey === item.id;
             return (
-              <div className="sidebar-history-row" key={itemKey}>
-                <Link className="sidebar-history-item" href={item.href} aria-label={title} title={title}>
+              <div className="sidebar-history-row" key={item.id}>
+                <Link
+                  aria-label={title}
+                  className="sidebar-history-item"
+                  href={item.href}
+                  title={title}
+                >
                   <MessageSquareText size={16} aria-hidden="true" />
                   <span className="sidebar-label">{title}</span>
                 </Link>
@@ -397,7 +400,7 @@ export function AppShell({ children }: AppShellProps) {
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    setHistoryMenuKey((current) => (current === itemKey ? null : itemKey));
+                    setHistoryMenuKey((current) => (current === item.id ? null : item.id));
                   }}
                   onPointerDown={stopHistoryMenuPointerDown}
                   type="button"
@@ -408,15 +411,11 @@ export function AppShell({ children }: AppShellProps) {
                   <div
                     className="sidebar-history-menu"
                     data-history-menu-surface="true"
-                    role="menu"
                     onClick={(event) => event.stopPropagation()}
                     onPointerDown={stopHistoryMenuPointerDown}
+                    role="menu"
                   >
-                    <button
-                      onClick={() => openRenameDialog(item, title)}
-                      role="menuitem"
-                      type="button"
-                    >
+                    <button onClick={() => openRenameDialog(item, title)} role="menuitem" type="button">
                       <PencilLine size={15} aria-hidden="true" />
                       <span>{t("actions.rename_conversation")}</span>
                     </button>
@@ -494,20 +493,16 @@ export function AppShell({ children }: AppShellProps) {
               <h2 id="rename-conversation-title">{t("actions.rename_conversation")}</h2>
               <p>{t("actions.rename_conversation_description")}</p>
             </div>
-            <label htmlFor="rename-conversation-input">
-              {t("actions.conversation_name")}
-            </label>
+            <label htmlFor="rename-conversation-input">{t("actions.conversation_name")}</label>
             <input
               autoFocus
               id="rename-conversation-input"
-              maxLength={120}
+              maxLength={MAX_CONVERSATION_TITLE_LENGTH}
               onChange={(event) => setRenameValue(event.target.value)}
               value={renameValue}
             />
             {historyActionError ? (
-              <p className="form-error" role="alert">
-                {historyActionError}
-              </p>
+              <p className="form-error" role="alert">{historyActionError}</p>
             ) : null}
             <div className="dialog-actions">
               <button

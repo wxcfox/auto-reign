@@ -1,0 +1,143 @@
+{
+  "page": {
+    "eyebrow": "资料库",
+    "title": "资料库",
+    "description": "上传只读参考资料，Agent 在显式绑定资料库后可按需检索。",
+    "createTitle": "创建资料库",
+    "createDescription": "私有资料库及其中的文档仅当前账号可见。",
+    "listTitle": "可用资料库",
+    "listDescription": "全局和私有资料库都只作为 Agent 检索的只读信息来源。",
+    "detailTitle": "资料库",
+    "detailDescription": "管理原始文档、索引状态、解析预览和显式清理。",
+    "back": "返回资料库列表",
+    "loading": "正在加载资料库…",
+    "loadError": "资料库加载失败。"
+  },
+  "personal": {
+    "title": "资料库",
+    "summary": "管理自己的参考资料集合，并浏览已启用的全局资料库。",
+    "ownedTitle": "我的资料库",
+    "ownedSummary": "管理自己的启用和停用 Collection 及其私有原始文档。",
+    "sharedTitle": "全局资料库",
+    "sharedSummary": "已启用的全局 Collection 是普通用户只读的共享参考来源。"
+  },
+  "global": {
+    "title": "全局资料库管理",
+    "summary": "管理对所有用户共享的 Collection 和原始文档。",
+    "listTitle": "全局 Collection",
+    "listSummary": "上传到已启用全局 Collection 的文档是共享内容，不会按用户复制。"
+  },
+  "states": {
+    "loading": "正在加载资料库…",
+    "empty": "暂无资料库。",
+    "active": "已启用",
+    "inactive": "已停用"
+  },
+  "editor": {
+    "createTitle": "创建资料库",
+    "createGlobalTitle": "创建全局资料库",
+    "editTitle": "编辑 {{name}}"
+  },
+  "scope": {
+    "global": "全局共享",
+    "private": "仅自己可见"
+  },
+  "list": {
+    "loading": "正在加载资料库…",
+    "loadError": "资料库加载失败。",
+    "empty": "暂无资料库。",
+    "open": "打开 {{name}}"
+  },
+  "form": {
+    "name": "名称",
+    "retrievalConfig": "索引与检索设置",
+    "chunkSize": "Chunk 大小",
+    "chunkOverlap": "Chunk 重叠长度",
+    "topK": "Top K",
+    "scoreThreshold": "分数阈值（可选）",
+    "indexingHint": "Chunk 大小和重叠长度只影响之后上传或显式重新索引的文档。",
+    "retrievalHint": "Top K 和分数阈值会影响之后的检索。",
+    "nameTaken": "已存在同名资料库。",
+    "saveError": "资料库保存失败。"
+  },
+  "validation": {
+    "nameRequired": "请输入名称。",
+    "chunkSize": "Chunk 大小必须是 200 到 4000 之间的整数。",
+    "chunkOverlap": "Chunk 重叠长度必须是 0 到 1000 之间的整数。",
+    "chunkOverlapHalf": "Chunk 重叠长度不能超过 Chunk 大小的一半。",
+    "topK": "Top K 必须是 1 到 30 之间的整数。",
+    "scoreThreshold": "分数阈值必须留空，或填写 -1 到 1 之间的数字。"
+  },
+  "uploader": {
+    "title": "上传文档",
+    "description": "支持 TXT、Markdown、PDF 和 DOCX。",
+    "select": "上传文档",
+    "uploading": "正在上传 {{name}}…",
+    "success": "{{name}} 已上传并进入索引队列。",
+    "error": "文档上传失败。"
+  },
+  "documents": {
+    "title": "文档",
+    "loading": "正在加载文档…",
+    "loadError": "文档加载失败。",
+    "empty": "此资料库暂无文档。",
+    "name": "文档",
+    "status": "状态",
+    "size": "大小",
+    "generation": "索引代次",
+    "actions": "操作",
+    "inactive": "已停用",
+    "cleanupPending": "清理待重试，请再次显式删除以完成清理。",
+    "cleanupFailed": "清理失败，请再次显式删除以完成清理。",
+    "cleanupComplete": "已删除且已清理。",
+    "resourceInUse": "此文档仍被 Agent 引用。",
+    "operationError": "文档操作失败。",
+    "previewError": "解析内容加载失败。",
+    "downloadError": "原始文档下载失败。",
+    "reindexError": "文档重新索引排队失败。",
+    "deleteError": "文档删除失败。",
+    "previewTitle": "解析内容：{{name}}",
+    "previewLoading": "正在加载解析内容…"
+  },
+  "status": {
+    "uploaded": "已上传",
+    "queued": "等待索引",
+    "processing": "索引中",
+    "ready": "可用",
+    "failed": "失败"
+  },
+  "actions": {
+    "create": "创建资料库",
+    "createGlobal": "创建全局资料库",
+    "creating": "正在创建…",
+    "saving": "正在保存…",
+    "save": "保存",
+    "cancel": "取消",
+    "retry": "重试",
+    "open": "打开",
+    "openDocuments": "打开文档",
+    "openDocumentsLabel": "打开 {{name}} 中的文档",
+    "edit": "编辑",
+    "editLabel": "编辑 {{name}}",
+    "enable": "启用",
+    "enableLabel": "启用 {{name}}",
+    "disable": "停用",
+    "disableLabel": "停用 {{name}}",
+    "working": "处理中…",
+    "deleteDefinition": "删除",
+    "deleteLabel": "删除 {{name}}",
+    "deleteConfirm": "确定删除资料库“{{name}}”吗？其中的文档必须已经完成清理。",
+    "preview": "预览 {{name}}",
+    "download": "下载 {{name}}",
+    "reindex": "重新索引 {{name}}",
+    "delete": "删除 {{name}}",
+    "retryCleanup": "重试清理 {{name}}",
+    "closePreview": "关闭预览"
+  },
+  "errors": {
+    "loadFailed": "资料库加载失败。",
+    "statusFailed": "资料库状态修改失败。",
+    "deleteFailed": "资料库删除失败。",
+    "resourceInUse": "该资料库仍有启用中的 Agent 引用、启用中的文档，或尚未完成的文档清理。"
+  }
+}

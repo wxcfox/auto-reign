@@ -1,0 +1,1 @@
+"""Application ASGI middleware."""

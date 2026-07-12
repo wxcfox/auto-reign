@@ -1,69 +1,175 @@
-# 资料库数据流
+# Knowledge Collection 数据流
 
-本文描述 Auto Reign 当前资料库从上传资料、学习记录、真实面试记录、工作区投影、切块、embedding、向量索引到面试检索的完整流程。
+聊天附件、Agent Home 和 Knowledge 是三种不同来源：聊天附件绑定一条 User Message，并在该消息进入有界历史窗口时作为消息上下文；Agent Home 是可写、可演进的长期文件权威源，通过精确文件工具访问；Knowledge 是用户或管理员显式维护的只读参考资料，只有 Knowledge Document 会进入 Qdrant。
+
+本文是 Knowledge Collection、Knowledge Document、ObjectStore、索引 Worker、Qdrant 与聊天 Runtime 的当前数据流权威。通用资源、权限、Runtime 和预算边界见[通用 Agent 平台架构](workbench-architecture.md)。
+
+## 当前范围
+
+当前实现包括：
+
+- `resources` 表中的 `knowledge_collection` typed resource；
+- `/api/knowledge-collections` 和管理员领域 API；
+- `/knowledge` 与 `/admin/knowledge` 管理页面；
+- Agent `knowledge_scopes` 的整库或 Document 子集绑定；
+- `knowledge_documents` 状态、对象引用、内容 hash 和 `index_generation`；
+- 显式 Document 上传、预览、下载、重新索引和删除；
+- 只从持久状态领取工作的进程内索引 Worker；
+- generation 专属解析对象和 Qdrant point；
+- 绑定 Knowledge 后才向主聊天 LLM 暴露的 `search_knowledge(query)`。
+
+同一个 Agent 可以同时绑定 Agent Home 和多个 Knowledge Collection。两类 Capability 互不复制，主 LLM 按当前问题决定是否及以何种顺序调用。
+
+## 数据权威边界
+
+| 存储 | 权威职责 |
+| --- | --- |
+| ObjectStore | Knowledge Document 原始文件和 generation 专属完整解析文本 |
+| MySQL | Collection/Document owner、对象 Key、内容 hash、状态、当前 `index_generation`、错误和时间戳 |
+| Qdrant | 从当前解析文本确定性切分、可重建的原文 chunk 向量投影 |
+
+Qdrant 不保存业务权威数据。删除 point、索引损坏或服务不可用，都不能删除或改写原始文件和完整解析文本。恢复索引只能从 ObjectStore 与 MySQL 当前 generation 重建，不能从 Qdrant、聊天回答或生成式摘要反推来源。
+
+## 入库与重新索引
 
 ```mermaid
-flowchart TD
-  A["用户上传资料、记录学习笔记或粘贴真实面试"] --> B{"输入类型"}
-  B -->|Markdown 或 TXT| C["原始文件保存到 DATA_DIR/users/{user_id}/workspace/raw"]
-  B -->|PDF 或 DOCX| D["原始文件保存到 DATA_DIR/users/{user_id}/workspace/raw"]
-  D --> E["可解析时提取文本到 extracted"]
-  B -->|学习笔记| F["把原始笔记追加到 DATA_DIR/users/{user_id}/workspace/raw"]
-  B -->|真实面试记录| V["保存到 raw 并抽取问题和薄弱线索"]
-  F --> G["整理为 knowledge 短卡片"]
-  V --> W["更新 review/high-frequency 和 review/status"]
-  C --> H["整理到候选人画像、目标画像或知识分类"]
-  E --> H
-  G --> I["重建工作区投影"]
-  W --> I
-  H --> I
-  I --> J["扫描工作区文件和 sidecar 元数据"]
-  J --> K["把 artifact 元数据写入 MySQL"]
-  F --> Y["把学习输入和整理结果写入学习对话"]
-  Y --> K
-  K --> L["重建向量索引"]
-  L --> M["读取可索引 artifact 正文：原文、提取文本、知识、题库、项目、真实面试、高频卡和练习记录"]
-  M --> N["LangChain Markdown/递归切块"]
-  N --> O["LangChain embedding 生成向量"]
-  O --> P["LangChain QdrantVectorStore 写入 chunk 向量和元数据"]
-  P --> Q["在当前用户 settings_json.active_collection 中记录活跃向量 collection"]
-  Q --> R["WorkspaceRetrievalService 生成 query plan"]
-  R --> S["LangChain retriever 查询 active collection"]
-  S --> T["Auto Reign 后处理、来源多样性和上下文预算"]
-  T --> U["把检索片段注入出题、回答点评和追问点评 prompt"]
+flowchart LR
+    A[用户显式上传 Document] --> B[ObjectStore 保存原文]
+    B --> C[MySQL 写入 uploaded/queued 与 generation]
+    C --> D[确定性解析原文]
+    D --> E[ObjectStore 保存 generation 专属解析文本]
+    E --> F[按原文切 chunk]
+    F --> G[Embedding]
+    G --> H[Qdrant 写入 generation 专属 point]
+    H --> I[MySQL 条件更新 ready]
 ```
 
-## 当前存储职责
+Document 状态主线为：
 
-- `backend/app/templates/default_manifest.example.md` 是随包提供的默认清单种子，语义类似 `.env.example`。
-- `DATA_DIR/default_manifest.md` 保存运行时全局默认清单正文，首次启动时由 `default_manifest.example.md` 种子创建。后续 admin 接口可以修改该运行时默认值。
-- `DATA_DIR/users/{user_id}/workspace/manifest.md` 保存用户可编辑的工作区清单，用来描述推荐阅读顺序、文件职责和上下文偏好。它帮助用户和 LLM 理解工作区，但不作为权限、安全或删除策略。尚未自定义清单的用户会同步全局默认值；已经编辑过清单的用户不会被覆盖。
-- `DATA_DIR/users/{user_id}/workspace/raw/` 保存用户原始输入，包括上传资料、“新学习”自由文本输入和真实面试原始记录。上传来源文件会在 sidecar 元数据中保留用户原始文件名、MIME、大小、hash 和 `source_type`；真实面试记录使用 Markdown front matter 保留 artifact 身份。原文不由 AI 覆盖。
-- `DATA_DIR/users/{user_id}/workspace/extracted/` 保存 PDF 和 DOCX 输入可解析出的文本。它是派生文本，可以从 `raw/` 原始资料重新生成。
-- `DATA_DIR/users/{user_id}/workspace/knowledge/`、`DATA_DIR/users/{user_id}/workspace/questions/`、`DATA_DIR/users/{user_id}/workspace/projects/`、`DATA_DIR/users/{user_id}/workspace/review/`、`DATA_DIR/users/{user_id}/workspace/profile/`、`DATA_DIR/users/{user_id}/workspace/practice/`、`DATA_DIR/users/{user_id}/workspace/state/` 和 `DATA_DIR/users/{user_id}/workspace/reports/` 保存系统管理的 Markdown 资产。
-- MySQL 保存本地用户、用户级 artifact 投影、处理状态、索引状态、修订版本、学习和面试统一会话、消息与报告摘要。
-- Qdrant 保存可检索的 chunk 向量。活跃 Qdrant collection 保存在当前用户的 `settings_json.active_collection`，可以从该用户的文件工作区和 MySQL artifact 投影重新构建。LangChain 负责 Markdown/递归切块、embedding、QdrantVectorStore 写入和 retriever 查询，Auto Reign 负责 workspace 协议、provenance、可索引规则、active collection 发布、检索后处理和上下文预算。
+```text
+uploaded -> queued -> processing -> ready
+                            \-> failed
+```
 
-资料入库、投影重建、索引重建和检索都只处理当前 JWT 用户对应的工作区。Qdrant active collection 保存在当前用户的 `settings_json.active_collection`。
+规则如下：
 
-## 索引规则
+1. 上传必须针对明确 Collection；聊天附件不会隐式创建 Knowledge Document。
+2. 接口先把原始文件写入 ObjectStore，再在 MySQL 创建可追踪 Document；任一步失败都不能留下伪装成 ready 的记录。
+3. 文档解析和 chunk 由确定性应用代码完成。LLM 不改写原文或决定持久化格式，Embedding 模型只生成向量。
+4. 每次上传或重新索引使用新的 `index_generation`；完整解析文本和 point 都属于该 generation。
+5. Worker 只有在任务 generation 仍是 Document 当前 generation 时，才能把 MySQL 状态条件更新为 `ready`。
+6. 迟到旧任务不能覆盖当前状态；其对象或 point 即使清理失败残留，也不能进入直接原文或向量检索。
+7. 新 generation 发布后再 best-effort 清理旧解析对象和 point。清理失败不改变当前可见内容，也不删除 source object。
+8. `failed` 不无限自动重试；用户通过管理界面显式重新索引。启动时只恢复持久化 queued 或超时 processing 工作。
 
-- `manifest.md` 不进入向量索引；面试前它可以作为体积受控的小文件直接读取，帮助解释工作区阅读顺序和上下文偏好。
-- Markdown 和 TXT 上传来源文件直接从 `raw/` 原始文件索引。
-- `raw/` 中的新学习原始记录直接索引。
-- PDF 和 DOCX 来源文件不直接索引；解析成功后索引对应的 `extracted/` Markdown artifact。
-- 知识、题库、项目、真实面试、高频复盘和练习 Markdown artifact 从正文内容索引。新学习生成的知识文件使用「我的理解 / 修正/补充 / 30 秒面试说法 / 易混点 / 追问」短卡片格式，并按标题 slug 合并到同一个 `knowledge/<主题>.md`。学习对话本身用于侧边栏历史和继续追加，不作为长期知识资产，也不直接进入向量索引。
-- 答差或缺失点会沉淀为 `questions/<题目>.md`，结构包含「考察点 / 标准回答 / 结合项目 / 常见追问 / 易错点 / 复习状态」。
-- 真实面试粘贴记录会保存到 `raw/`，并更新 `review/high-frequency.md` 与 `review/status.md`。
-- 候选人画像、目标画像、复习状态、报告和掌握状态会展示在资料库中，但报告和掌握状态当前不进入向量索引。报告是展示产物，不作为事实来源进入检索。
-- 删除资料库 artifact 时，系统删除对应工作区文件并重建投影。随后索引重建会发布新的活跃 collection，从而移除陈旧向量内容。
+`index_generation` 同时隔离 MySQL 状态、parsed object 和 Qdrant point，不只是一个展示字段。
 
-`POST /api/workspace/rebuild-index` 保留为诊断 API，用于手工重建 Qdrant collection。资料库主界面不展示该能力，普通学习流程不要求用户理解索引或 collection。
+## Qdrant 投影
 
-## 工作台文件展示
+每个 point 的 ID 和 payload 都必须能服务端校验，至少包含：
 
-工作台首页读取当前 JWT 用户的只读 workspace 文件树，展示 `DATA_DIR/users/{user_id}/workspace` 下的真实目录和直接文件。文件树接口不接受用户 id；后端从当前用户 scope 派生根目录，并为能匹配到 MySQL artifact 投影的文件附带 artifact id、归属、状态和可用操作，便于前端复用资料库式表格、编辑和删除入口。前端左侧不展示 workspace 根节点，而是直接列出 workspace 下的一级文件夹和根目录文件，不默认展开子目录；点击文件夹后，右侧表格展示该目录的直接子文件夹和文件，子文件夹可继续点击进入。普通 UTF-8 文本文件通过只读内容接口预览；该接口只接受当前 workspace 内的相对路径，并拒绝越界路径、目录、非文本文件和过大文件。首页不展示健康检查、Qdrant collection、embedding 或抽检任务。`review/status.md` 中的“当前重点”仍来自模拟练习或真实面试记录暴露出的薄弱点，但它主要用于面试出题前上下文，而不是首页卡片。
+- owner；
+- Collection ID；
+- Document ID；
+- `index_generation`；
+- 内容 hash；
+- chunk 起止位置和顺序；
+- 文件名等来源标识；
+- 确定性切分得到的原文片段。
 
-## 面试点评检索
+查询 filter 由应用根据认证用户、本轮冻结的 Agent scope、active Document 和当前 generation 强制添加。模型只能提交 `query`，不能提交 owner、Collection、Document、generation 或 filter 来扩大范围。
 
-面试出题先读取候选人画像、目标画像、掌握状态、复习状态和高频问题，再使用用户自然语言提示、当前题目和轮次构造检索 query plan。项目深挖模式会优先加入 `projects/` 材料。LangChain retriever 只查询当前 JWT 用户的 workspace active collection；Auto Reign 会对结果做分数阈值、单 artifact 上限、来源多样性和上下文预算控制。回答点评和追问点评会额外结合当前题目、用户回答、项目材料、历史薄弱点和检索片段。检索片段只作为不可信用户资料使用，不能覆盖系统 prompt，也不能把 AI 生成报告当作新的事实来源。
+旧 generation point 可以在清理失败时残留，但任何查询都必须同时匹配有效 scope、active/ready 状态和当前 generation。Qdrant 返回的 payload 也不能直接信任；应用会回读权威解析对象并逐项验证 hash、字符范围和逐字内容。
+
+## Agent 绑定语义
+
+Agent `knowledge_scopes` 支持多个 Collection：
+
+- `document_ids=null` 表示整库；以后新增并进入 ready 的 Document 自动进入有效范围；
+- 非空 `document_ids` 表示精确子集；
+- 空数组没有语义，拒绝保存；
+- global Agent 只能绑定 global Collection；
+- private Agent 可以绑定自己的 private Collection 或 global Collection；
+- 保存 Agent 时在同一事务中校验 owner、可见性、active、tombstone 和 Document 归属。
+
+每个新轮次解析最新 Agent 配置并冻结该轮有效 Knowledge scope。已经开始的工具循环不会因管理员中途修改 Agent 而改变范围，下一轮才读取新配置。
+
+## 检索：直接原文与 RAG
+
+主聊天 LLM 根据用户问题和 Agent Prompt 决定是否调用 `search_knowledge(query)`。平台不会在主模型前固定运行 Retrieval Agent，也不使用关键词规则强制每轮检索。
+
+`search_knowledge` 使用确定性的 `auto` 路由：
+
+1. 服务端根据用户、本轮 Agent scope、Collection/Document 状态和 generation 解析有效来源。
+2. 若全部有效来源的完整解析文本能放入本轮剩余预算，直接读取并返回权威 parsed object。
+3. 若完整原文超出预算，使用主 LLM 提供的 query 在 Qdrant 检索当前范围、当前 generation 的候选 chunk。
+4. 应用回读权威解析对象，验证候选 metadata、hash、字符范围和逐字内容。
+5. ToolResult 返回有界原文、Collection、Document、文件名、chunk 位置、score 和稳定引用。
+
+只有第 3 步属于向量 RAG。直接原文与向量路径共享完全相同的权限、Document 状态、来源引用和上下文预算，不能因使用 RAG 扩大范围。
+
+Qdrant 不可用，或者候选 metadata、score、generation、hash、范围、parsed object 不合法时，工具 fail-closed 返回稳定的 `knowledge_unavailable`，不能伪装成“没有结果”。直接原文路径发现来源损坏时也不能回退到二手投影掩盖故障。
+
+RAG 返回确定性切分得到的原文片段，不返回生成式摘要。当前不启用：
+
+- query rewriting；
+- 独立 Retrieval Agent；
+- MultiQuery 或 HyDE；
+- LLM rerank；
+- 生成式摘要检索；
+- Agent Home 文件索引。
+
+## LLM 与确定性代码分工
+
+| 环节 | 主聊天 LLM | Embedding 模型 | 确定性应用代码 |
+| --- | --- | --- | --- |
+| 判断是否需要 Knowledge | 决定是否调用工具 | 否 | 只提供已授权能力 |
+| 生成检索 query | 是 | 否 | 校验 schema、长度和预算 |
+| 解析 Agent 绑定范围 | 否 | 否 | 校验用户、Collection、Document、active 和 generation |
+| 选择直接原文或向量检索 | 否 | 否 | 根据完整文本大小与剩余预算决定 |
+| 文档解析与 chunk | 否 | 否 | 是 |
+| 生成向量 | 否 | 是 | 调度并写入投影 |
+| Qdrant 查询与 filter | 否 | 否 | 是 |
+| 验证并回读权威原文 | 否 | 否 | 是 |
+| 根据来源生成回答 | 是 | 否 | 提供片段和引用 |
+
+LLM 没有 DB Session、ObjectStore client 或 Qdrant client。它只能提出 schema 校验后的工具调用；权限、范围收窄、预算、状态机和持久化由应用代码执行。
+
+Knowledge Tool audit 可以保存有界的 Collection、Document、文件名、generation、内容 hash、chunk 位置和 score 等来源身份，但不保存 Knowledge 正文、Object Key、query、Provider payload 或模型返回的任意 metadata。审计不是下一轮内容权威。
+
+## 生命周期与删除
+
+- private Collection/Document 使用实际用户 ID，只对 owner 可管理；
+- global Collection/Document 使用 owner sentinel `0`，它不代表可登录用户；
+- 只有 `ready + active + current generation` 的 Document 可进入检索；
+- 被 active Agent 引用的 Collection 不能停用或删除；
+- 被精确 `document_ids` 引用的 Document 不能删除；
+- 整库绑定不阻止删除其中单个 Document。
+
+允许删除的 Document 先在 MySQL 把 `is_active` 设为 false，并以 cleanup-pending 状态从检索范围隔离，再清理当前及旧 generation 的 Qdrant point、parsed object 和 source object。外部清理失败时保留 `knowledge_cleanup_failed` 和 HTTP `202 cleanup_pending`，由管理者显式重试；系统不能静默改写 Agent 配置或把失败伪装成删除完成。
+
+原文解析、Embedding 或 Qdrant 写入失败不会删除 source object。用户可以在修复配置或外部服务后显式重新索引。
+
+## 与附件和 Agent Home 的关系
+
+```text
+聊天附件 -> 所属 User Message 与有界历史窗口
+聊天附件 -X-> Agent Home
+聊天附件 -X-> Knowledge Document
+聊天附件 -X-> Qdrant
+
+Agent Home -> ObjectStore 权威文件与精确文件工具
+Agent Home -X-> Knowledge Document
+Agent Home -X-> Qdrant
+
+Knowledge Document -> ObjectStore 权威原文/解析文本
+Knowledge Document -> Qdrant 可重建 chunk 投影
+```
+
+用户上传内容、解析文本和检索 chunk 都是不可信来源，不能覆盖平台 Prompt、Agent Prompt、工具 schema、用户隔离或持久化协议。
+
+## Worker 与恢复边界
+
+索引 Worker 只把 `knowledge_documents` 持久状态作为领取、恢复与发布的权威。当前 Worker 与 SSE/取消运行在同一 FastAPI 进程，不使用内存队列、额外 Job 表、Redis、Celery 或独立 worker container。
+
+进程退出不会丢失队列语义；重启从 MySQL 恢复安全工作。Qdrant 可从 ObjectStore 与 MySQL 重建，不能成为恢复原文的来源。

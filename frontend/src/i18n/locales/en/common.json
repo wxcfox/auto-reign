@@ -13,40 +13,41 @@
   },
   "auth": {
     "login_title": "Log in to Auto Reign",
-    "register_title": "Create local account",
+    "setup_title": "Set administrator password",
+    "setup_description": "Choose the password for the initial admin account. This step is available only once.",
     "username": "Username",
     "password": "Password",
+    "new_password": "New password",
+    "confirm_password": "Confirm password",
     "login_action": "Log in",
-    "register_action": "Create account",
-    "no_account": "No account yet?",
-    "has_account": "Already have an account?",
-    "create_account_link": "Create one",
-    "login_link": "Log in",
+    "setup_action": "Set administrator password",
     "invalid_credentials": "Username or password is incorrect.",
     "password_too_short": "Password must be at least 6 characters.",
-    "register_failed": "The account could not be created.",
-    "registration_disabled": "New account registration is disabled."
+    "password_too_long": "Password must be no more than 256 characters.",
+    "password_mismatch": "Passwords do not match.",
+    "setup_failed": "The administrator password could not be set."
   },
   "nav": {
-    "dashboard": "Dashboard",
-    "workbench": "Workbench",
-    "library": "Library",
-    "interview": "Interview",
-    "review": "Review",
-    "more": "More",
+    "primary": "Primary navigation",
+    "agents": "Agents",
+    "knowledge": "Knowledge bases",
+    "workspaces": "Agent workspaces",
+    "global_agents": "Global agents",
+    "global_workspaces": "Global workspaces",
+    "global_knowledge": "Global knowledge",
+    "users": "User management",
     "history": "History",
     "empty_history": "No conversations yet",
-    "untitled_session": "Untitled conversation",
-    "recent_sessions": "Recent",
-    "current_session": "Current interview",
-    "latest_review": "Latest review"
+    "untitled_session": "Untitled conversation"
   },
   "states": {
     "loading": "Loading...",
-    "unavailable": "Unavailable",
-    "checking": "Checking",
-    "completed": "Completed",
     "working": "Working..."
+  },
+  "permissions": {
+    "loading": "Checking permissions…",
+    "admin_required": "Administrator access is required.",
+    "load_failed": "Permissions could not be checked."
   },
   "actions": {
     "cancel": "Cancel",
@@ -57,31 +58,14 @@
     "save": "Save",
     "rename_conversation": "Rename",
     "rename_conversation_description": "Keep it short and easy to recognize.",
-    "upload": "Upload",
-    "start": "Start interview",
-    "new_interview": "New interview",
-    "new_learning": "New learning",
-    "open_report": "Open report",
-    "save_and_reindex": "Save and reindex"
+    "new_chat": "New chat"
   },
   "errors": {
     "generic_load": "The requested data could not be loaded.",
     "generic_save": "The changes could not be saved.",
-    "generic_upload": "The upload failed.",
-    "answer_already_submitted": "This answer has already been submitted.",
-    "current_turn_unanswered": "Submit the current answer before continuing.",
-    "document_not_found": "The document could not be found.",
-    "embedding_call_failed": "The embedding request failed.",
-    "follow_up_already_submitted": "This follow-up answer has already been submitted.",
-    "main_answer_required": "Submit the main answer before the follow-up.",
-    "model_not_configured": "The selected model is not configured.",
-    "provider_call_failed": "The model request failed.",
-    "provider_invalid_response": "The model returned an invalid structured response.",
-    "provider_not_configured": "The selected provider is not configured.",
-    "session_not_active": "This interview session is no longer active.",
-    "session_not_found": "The interview session could not be found.",
-    "target_rounds_reached": "The configured round count has already been reached.",
-    "vector_dimension_mismatch": "The vector collection is incompatible with the current embedding model.",
-    "vector_store_unavailable": "The vector store is temporarily unavailable."
+    "admin_required": "Administrator access is required.",
+    "fixed_admin_managed": "The fixed administrator cannot be changed here.",
+    "user_not_found": "The user could not be found.",
+    "username_taken": "This username is already in use."
   }
 }
