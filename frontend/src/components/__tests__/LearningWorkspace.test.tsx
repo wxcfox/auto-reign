@@ -59,6 +59,7 @@ describe("LearningWorkspace", () => {
     i18next.changeLanguage("en");
     vi.mocked(getModels).mockResolvedValue({
       providers: [{ provider: "qwen", models: ["qwen3.7-plus"] }],
+      default: { provider: "qwen", model: "qwen3.7-plus" },
     });
     vi.mocked(getConversation).mockRejectedValue(new Error("not used"));
     vi.mocked(recordLearningNoteStream).mockImplementation(async (_payload, handlers) => {

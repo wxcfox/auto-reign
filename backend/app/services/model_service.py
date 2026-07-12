@@ -2,7 +2,6 @@ import json
 import logging
 import re
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -11,9 +10,13 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings, get_settings
 from app.core.errors import bad_gateway, service_unavailable
+from app.core.model_providers import find_chat_provider
+from app.prompts import PromptId, load_prompt
 from app.schemas.modeling import (
     AnswerEvaluationRequest,
     AnswerEvaluationResult,
+    InterviewReportResult,
+    LearningNoteSummaryResult,
     QuestionGenerationRequest,
     ReportGenerationRequest,
 )
@@ -29,26 +32,28 @@ class ModelService:
     ) -> None:
         self.settings = settings or get_settings()
         self.client_factory = client_factory or OpenAI
-        self.prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
 
-    def stream_learning_note_summary(
+    def generate_learning_note_summary(
         self,
         text: str,
         *,
         language: str = "zh-CN",
         provider: str | None = None,
         model: str | None = None,
-    ) -> Iterator[str]:
-        yield from self._stream_chat(
-            "learning_note_summary_stream.md",
-            {"text": text, "language": language},
-            provider,
-            model,
+    ) -> LearningNoteSummaryResult:
+        return self.parse_structured_response(
+            self._chat(
+                PromptId.LEARNING_NOTE_SUMMARY,
+                {"text": text, "language": language},
+                provider,
+                model,
+            ),
+            LearningNoteSummaryResult,
         )
 
     def stream_question(self, request: QuestionGenerationRequest) -> Iterator[str]:
         yield from self._stream_chat(
-            "question_generation.md",
+            PromptId.QUESTION_GENERATION,
             request.model_dump(exclude={"provider", "model"}),
             request.provider,
             request.model,
@@ -56,7 +61,7 @@ class ModelService:
 
     def stream_answer_evaluation(self, request: AnswerEvaluationRequest) -> Iterator[str]:
         yield from self._stream_chat(
-            "answer_feedback.md",
+            PromptId.ANSWER_FEEDBACK,
             request.model_dump(exclude={"provider", "model"}),
             request.provider,
             request.model,
@@ -65,13 +70,16 @@ class ModelService:
     def parse_answer_evaluation(self, content: str) -> AnswerEvaluationResult:
         return self.parse_structured_response(content, AnswerEvaluationResult)
 
-    def generate_report(self, request: ReportGenerationRequest) -> str:
-        return self._chat(
-            "report_generation.md",
-            request.model_dump(exclude={"provider", "model"}),
-            request.provider,
-            request.model,
-        ).strip()
+    def generate_report(self, request: ReportGenerationRequest) -> InterviewReportResult:
+        return self.parse_structured_response(
+            self._chat(
+                PromptId.REPORT_GENERATION,
+                request.model_dump(exclude={"provider", "model"}),
+                request.provider,
+                request.model,
+            ),
+            InterviewReportResult,
+        )
 
     def parse_structured_response(
         self,
@@ -89,7 +97,7 @@ class ModelService:
 
     def _chat(
         self,
-        prompt_filename: str,
+        prompt_id: PromptId,
         payload: dict[str, object],
         provider: str | None,
         model: str | None,
@@ -104,7 +112,7 @@ class ModelService:
                 messages=[
                     {
                         "role": "system",
-                        "content": (self.prompt_dir / prompt_filename).read_text(encoding="utf-8"),
+                        "content": load_prompt(prompt_id),
                     },
                     {
                         "role": "user",
@@ -139,7 +147,7 @@ class ModelService:
 
     def _stream_chat(
         self,
-        prompt_filename: str,
+        prompt_id: PromptId,
         payload: dict[str, object],
         provider: str | None,
         model: str | None,
@@ -154,7 +162,7 @@ class ModelService:
                 messages=[
                     {
                         "role": "system",
-                        "content": (self.prompt_dir / prompt_filename).read_text(encoding="utf-8"),
+                        "content": load_prompt(prompt_id),
                     },
                     {
                         "role": "user",
@@ -201,44 +209,23 @@ class ModelService:
     def _resolve_provider(
         self, provider: str | None, model: str | None
     ) -> tuple[str, str, str, str | None]:
-        providers = {
-            "openai": (
-                self.settings.openai_api_key,
-                self.settings.openai_chat_models,
-                None,
-            ),
-            "deepseek": (
-                self.settings.deepseek_api_key,
-                self.settings.deepseek_chat_models,
-                self.settings.deepseek_base_url,
-            ),
-            "qwen": (
-                self.settings.qwen_api_key,
-                self.settings.qwen_chat_models,
-                self.settings.qwen_base_url,
-            ),
-        }
-        if provider is None:
-            provider = next(
-                (name for name, (key, _models, _url) in providers.items() if key),
-                None,
-            )
-        if provider not in providers:
+        provider_config = find_chat_provider(self.settings, provider)
+        if provider_config is None:
             raise service_unavailable(
                 "provider_not_configured",
                 "The selected model provider is not configured.",
             )
-        api_key, configured_models, base_url = providers[provider]
-        if not api_key:
+        api_key = provider_config.api_key
+        if api_key is None:
             raise service_unavailable(
                 "provider_not_configured",
                 "The selected model provider is not configured.",
             )
-        allowed_models = [item.strip() for item in configured_models.split(",") if item.strip()]
+        allowed_models = provider_config.models
         resolved_model = model or (allowed_models[0] if allowed_models else "")
         if resolved_model not in allowed_models:
             raise service_unavailable(
                 "model_not_configured",
                 "The selected model is not configured for this provider.",
             )
-        return provider, resolved_model, api_key, base_url
+        return provider_config.name, resolved_model, api_key, provider_config.base_url

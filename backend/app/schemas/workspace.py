@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.modeling import LearningNoteSummaryResult
+from app.schemas.modeling import LearningNoteSummaryResult, SupportedLanguage
 
 
 ArtifactKind = Literal[
@@ -95,7 +95,7 @@ class UploadMaterialsResponse(BaseModel):
 
 class LearningNoteRequest(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
-    language: str = "zh-CN"
+    language: SupportedLanguage = "zh-CN"
     provider: str | None = None
     model: str | None = None
     conversation_id: str | None = None
@@ -103,7 +103,7 @@ class LearningNoteRequest(BaseModel):
 
 class RealInterviewRecordRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000)
-    language: str = "zh-CN"
+    language: SupportedLanguage = "zh-CN"
 
 
 class ArtifactSummaryResponse(BaseModel):

@@ -10,6 +10,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.core.errors import bad_gateway, conflict, not_found
+from app.core.model_providers import default_chat_provider, preferred_chat_provider
 from app.db import models
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.conversation_repository import ConversationRepository
@@ -22,6 +23,7 @@ from app.schemas.modeling import (
 )
 from app.services.artifact_service import ArtifactService
 from app.services.context_assembler import ContextAssembler
+from app.services.content_renderer import render_answer_preview, render_interview_report
 from app.services.interview_artifact_service import InterviewArtifactService
 from app.services.model_service import ModelService
 from app.services.retrieval_query_planner import RetrievalPurpose, RetrievalRequest
@@ -181,6 +183,7 @@ class InterviewService:
         self.user_id = user_id
         self.conversations = conversation_repository or ConversationRepository()
         self.model_service = model_service or ModelService()
+        self.settings = self.model_service.settings
         self.retrieval_service = retrieval_service or WorkspaceRetrievalService(user_id=user_id)
         self.context_assembler = context_assembler or ContextAssembler()
         self.artifact_repository = artifact_repository or ArtifactRepository()
@@ -350,7 +353,7 @@ class InterviewService:
         conversation = self._get_active_conversation(session, session_id)
         config = self._conversation_config(conversation)
         turns = self._turns_for_conversation(session, conversation)
-        report_markdown = self.model_service.generate_report(
+        report_result = self.model_service.generate_report(
             ReportGenerationRequest(
                 session_id=conversation.id,
                 language=config.language,
@@ -359,6 +362,7 @@ class InterviewService:
                 model=config.chat_model,
             )
         )
+        report_markdown = render_interview_report(report_result, config.language)
         writer = self._artifact_writer()
         if writer is None:
             raise bad_gateway("workspace_unavailable", "Workspace services are unavailable.")
@@ -415,6 +419,7 @@ class InterviewService:
         return events()
 
     def _default_config(self) -> InterviewConfigIn:
+        provider = default_chat_provider(self.settings) or preferred_chat_provider(self.settings)
         return InterviewConfigIn(
             target_company="",
             target_role="",
@@ -422,8 +427,8 @@ class InterviewService:
             extra_prompt="",
             language="en",
             mode="comprehensive",
-            chat_model_provider="qwen",
-            chat_model="qwen3.7-plus",
+            chat_model_provider=provider.name,
+            chat_model=provider.models[0] if provider.models else "",
             target_rounds=3,
         )
 
@@ -920,7 +925,7 @@ class InterviewService:
                 preview = next_preview
 
         evaluation = self.model_service.parse_answer_evaluation(raw_content)
-        final_preview = self._format_answer_preview(evaluation)
+        final_preview = self._format_answer_preview(evaluation, request.language)
         delta = self._preview_delta(preview, final_preview)
         if delta:
             yield InterviewStreamEvent(event="delta", data={"text": delta})
@@ -960,38 +965,12 @@ class InterviewService:
             value.append(char)
         return "".join(value)
 
-    def _format_answer_preview(self, evaluation: AnswerEvaluationResult) -> str:
-        sections = [evaluation.feedback.strip()]
-        if evaluation.missing_points:
-            sections.append(
-                "Missing points\n" + "\n".join(f"- {point}" for point in evaluation.missing_points)
-            )
-        if evaluation.weaknesses:
-            sections.append(
-                "Weaknesses\n" + "\n".join(f"- {weakness}" for weakness in evaluation.weaknesses)
-            )
-        if evaluation.review_suggestions:
-            sections.append(
-                "Review suggestions\n"
-                + "\n".join(f"- {suggestion}" for suggestion in evaluation.review_suggestions)
-            )
-        if evaluation.better_answer:
-            sections.append("Better answer\n" + evaluation.better_answer.strip())
-        if evaluation.tested_points:
-            sections.append(
-                "Tested points\n" + "\n".join(f"- {point}" for point in evaluation.tested_points)
-            )
-        sections.append(f"Mastery change\n{evaluation.mastery_change}")
-        if evaluation.should_write_weakness or evaluation.should_write_high_frequency:
-            write_flags = []
-            if evaluation.should_write_weakness:
-                write_flags.append("write weakness")
-            if evaluation.should_write_high_frequency:
-                write_flags.append("write high-frequency question")
-            sections.append("Persistence suggestion\n" + ", ".join(write_flags))
-        if evaluation.follow_up_question:
-            sections.append("Follow-up\n" + evaluation.follow_up_question.strip())
-        return "\n\n".join(section for section in sections if section)
+    def _format_answer_preview(
+        self,
+        evaluation: AnswerEvaluationResult,
+        language: str = "en",
+    ) -> str:
+        return render_answer_preview(evaluation, language)
 
     def _preview_delta(self, previous: str, current: str) -> str:
         if not current or current == previous:
@@ -1220,7 +1199,7 @@ class InterviewService:
             return f"{config.target_company.strip()} {config.target_role.strip()}"[:255]
         if config.target_role.strip():
             return config.target_role.strip()[:255]
-        return "模拟面试"
+        return "模拟面试" if config.language == "zh-CN" else "Mock interview"
 
     @staticmethod
     def _optional_str(value: object) -> str | None:

@@ -29,11 +29,6 @@ type LearningWorkspaceProps = {
   sessionId?: string;
 };
 
-const defaultModel = {
-  provider: "qwen" as ProviderName,
-  model: "qwen3.7-plus",
-};
-
 function responseToMarkdown(response: LearningNoteResponse, language: "en" | "zh-CN") {
   const title = response.summary.title.trim()
     || (language === "zh-CN" ? "学习记录" : "Learning note");
@@ -63,8 +58,8 @@ function conversationMessageToLearningMessage(
 export function LearningWorkspace({ sessionId }: LearningWorkspaceProps = {}) {
   const { t, getCurrentLanguage } = useTranslation("learning");
   const [providers, setProviders] = useState<ModelProvider[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderName>(defaultModel.provider);
-  const [selectedModel, setSelectedModel] = useState(defaultModel.model);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderName | null>(null);
+  const [selectedModel, setSelectedModel] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(sessionId ?? null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [messages, setMessages] = useState<LearningMessage[]>([]);
@@ -82,18 +77,12 @@ export function LearningWorkspace({ sessionId }: LearningWorkspaceProps = {}) {
           return;
         }
         setProviders(response.providers);
-        const preferred = response.providers.find(
-          (provider) =>
-            provider.provider === defaultModel.provider
-            && provider.models.includes(defaultModel.model),
-        );
-        const fallback = response.providers[0];
-        if (preferred) {
-          setSelectedProvider(preferred.provider);
-          setSelectedModel(defaultModel.model);
-        } else if (fallback) {
-          setSelectedProvider(fallback.provider);
-          setSelectedModel(fallback.models[0] ?? "");
+        if (response.default) {
+          setSelectedProvider(response.default.provider);
+          setSelectedModel(response.default.model);
+        } else {
+          setSelectedProvider(null);
+          setSelectedModel("");
         }
       })
       .catch((loadError) => setError(getErrorMessage(loadError, t, "learning:errors.load")));
@@ -185,7 +174,7 @@ export function LearningWorkspace({ sessionId }: LearningWorkspaceProps = {}) {
           conversation_id: conversationId ?? undefined,
           text,
           language: responseLanguage,
-          provider: selectedProvider,
+          provider: selectedProvider ?? undefined,
           model: selectedModel,
         },
         {

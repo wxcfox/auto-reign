@@ -1,4 +1,9 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+
+SupportedLanguage = Literal["en", "zh-CN"]
 
 
 class LearningNoteSummaryResult(BaseModel):
@@ -19,7 +24,7 @@ class QuestionGenerationRequest(ProviderRequest):
     target_role: str
     job_description: str = ""
     extra_prompt: str = ""
-    language: str = "en"
+    language: SupportedLanguage = "en"
     mode: str = "comprehensive"
     context: list[str] = Field(default_factory=list)
 
@@ -27,7 +32,7 @@ class QuestionGenerationRequest(ProviderRequest):
 class AnswerEvaluationRequest(ProviderRequest):
     question: str
     answer: str
-    language: str = "en"
+    language: SupportedLanguage = "en"
     context: list[str] = Field(default_factory=list)
 
 
@@ -46,5 +51,14 @@ class AnswerEvaluationResult(BaseModel):
 
 class ReportGenerationRequest(ProviderRequest):
     session_id: str
-    language: str = "en"
+    language: SupportedLanguage = "en"
     turns: list[dict[str, object]] = Field(default_factory=list)
+
+
+class InterviewReportResult(BaseModel):
+    summary: str
+    strong_signals: list[str] = Field(default_factory=list)
+    missing_points: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    review_focus: list[str] = Field(default_factory=list)
+    source_context: list[str] = Field(default_factory=list)

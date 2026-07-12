@@ -30,6 +30,10 @@ export interface ModelProvider {
 
 export interface ModelListResponse {
   providers: ModelProvider[];
+  default: {
+    provider: ProviderName;
+    model: string;
+  } | null;
 }
 
 export type ConversationKind = "interview" | "learning";
@@ -185,7 +189,7 @@ export interface InterviewConfig {
   extra_prompt: string;
   language: "en" | "zh-CN";
   mode: InterviewMode;
-  chat_model_provider: ProviderName;
+  chat_model_provider: ProviderName | "";
   chat_model: string;
   target_rounds: number;
 }

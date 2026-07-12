@@ -41,8 +41,8 @@ const defaultConfig: InterviewConfig = {
   extra_prompt: "",
   language: "en",
   mode: "comprehensive",
-  chat_model_provider: "qwen",
-  chat_model: "qwen3.7-plus",
+  chat_model_provider: "",
+  chat_model: "",
   target_rounds: 1,
 };
 
@@ -247,6 +247,8 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
 
         const availableProviders =
           modelsResult.status === "fulfilled" ? modelsResult.value.providers : [];
+        const defaultModel =
+          modelsResult.status === "fulfilled" ? modelsResult.value.default : null;
 
         if (modelsResult.status === "fulfilled") {
           setProviders(availableProviders);
@@ -268,17 +270,17 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
           );
           if (matchedProvider?.models.includes(nextConfig.chat_model)) {
             setConfig(nextConfig);
-          } else if (availableProviders.length > 0) {
+          } else if (defaultModel) {
             setConfig((current) => ({
               ...current,
               ...nextConfig,
-              chat_model_provider: availableProviders[0].provider,
-              chat_model: availableProviders[0].models[0] ?? "",
+              chat_model_provider: defaultModel.provider,
+              chat_model: defaultModel.model,
             }));
           } else {
             setConfig(nextConfig);
           }
-        } else if (availableProviders.length > 0 && !sessionId) {
+        } else if (defaultModel && !sessionId) {
           setConfig((current) => {
             const matchedProvider = availableProviders.find(
               (provider) => provider.provider === current.chat_model_provider,
@@ -288,8 +290,8 @@ export function InterviewWorkspace({ sessionId }: InterviewWorkspaceProps = {}) 
             }
             return {
               ...current,
-              chat_model_provider: availableProviders[0].provider,
-              chat_model: availableProviders[0].models[0] ?? "",
+              chat_model_provider: defaultModel.provider,
+              chat_model: defaultModel.model,
             };
           });
         }

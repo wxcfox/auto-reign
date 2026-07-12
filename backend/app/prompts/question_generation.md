@@ -13,5 +13,7 @@ project materials, and recent weak points when they are available.
 
 The question should be grounded in the user's materials when context is
 available and should be answerable in a written mock interview flow.
+Write the question in the payload's requested language. Preserve conventional
+technical terms and code identifiers.
 
 Return only the question text.

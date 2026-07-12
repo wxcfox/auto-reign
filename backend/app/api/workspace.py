@@ -277,7 +277,6 @@ def record_learning_note_stream(
 ) -> StreamingResponse:
     from app.services.workspace_content_service import (
         WorkspaceContentProjectionError,
-        WorkspaceContentService,
     )
 
     note = payload.text.strip()
@@ -287,26 +286,18 @@ def record_learning_note_stream(
         _require_learning_conversation(request, scope, payload.conversation_id)
 
     def body() -> Iterator[str]:
-        chunks: list[str] = []
         try:
-            for chunk in ModelService().stream_learning_note_summary(
+            summary = ModelService().generate_learning_note_summary(
                 note,
                 language=payload.language,
                 provider=payload.provider,
                 model=payload.model,
-            ):
-                chunks.append(chunk)
-                yield sse_event("delta", {"text": chunk})
-            assistant_message = "".join(chunks).strip()
-            summary = WorkspaceContentService.parse_learning_note_summary(
-                assistant_message,
-                note,
-                payload.language,
             )
             service = _workspace_content_service(request, scope)
             response = _learning_note_response(
                 service.persist_learning_note(note, payload.language, summary)
             )
+            yield sse_event("delta", {"text": _learning_assistant_message(response)})
             response.conversation_id = _persist_learning_conversation(
                 request,
                 scope,

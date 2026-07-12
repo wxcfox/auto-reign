@@ -61,7 +61,7 @@ class FakeStreamChatCompletions:
         ),
         (
             "qwen",
-            "qwen-plus",
+            "qwen3.7-plus",
             {"qwen_api_key": "provider-secret"},
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
         ),
@@ -182,7 +182,7 @@ def test_model_service_streams_require_configured_provider(
     assert error.value.detail["code"] == "provider_not_configured"
 
 
-def test_model_service_streams_learning_note_summary_from_provider(tmp_path) -> None:
+def test_model_service_generates_structured_learning_note_summary(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
@@ -191,32 +191,24 @@ def test_model_service_streams_learning_note_summary_from_provider(tmp_path) -> 
         openai_api_key="provider-secret",
     )
 
-    class FakeStreamCompletions:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, object]] = []
-
-        def create(self, **kwargs):
-            self.calls.append(kwargs)
-            return [
-                SimpleNamespace(choices=[SimpleNamespace(delta={"content": "# Redis"})]),
-                SimpleNamespace(choices=[SimpleNamespace(delta={"content": "\n\nSummary"})]),
-            ]
-
-    completions = FakeStreamCompletions()
-    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    content = (
+        '{"title":"Redis","summary":"Cache stampede summary",'
+        '"key_points":["Single flight"],"interview_takeaways":["Explain tradeoffs"],'
+        '"follow_up_questions":["How do you handle failures?"]}'
+    )
+    client = FakeOpenAIClient(content)
     service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
 
-    chunks = list(
-        service.stream_learning_note_summary(
-            "Redis cache stampede",
-            provider="openai",
-            model="gpt-4.1-mini",
-        )
+    summary = service.generate_learning_note_summary(
+        "Redis cache stampede",
+        provider="openai",
+        model="gpt-4.1-mini",
     )
 
-    assert chunks == ["# Redis", "\n\nSummary"]
-    assert completions.calls[0]["stream"] is True
-    assert completions.calls[0]["model"] == "gpt-4.1-mini"
+    assert summary.title == "Redis"
+    assert summary.key_points == ["Single flight"]
+    assert client.completions.calls[0]["model"] == "gpt-4.1-mini"
+    assert "JSON Schema" in client.completions.calls[0]["messages"][0]["content"]
 
 
 def test_model_service_generates_report_from_provider(
@@ -229,7 +221,10 @@ def test_model_service_generates_report_from_provider(
         qdrant_collection="auto_reign_test",
         openai_api_key="provider-secret",
     )
-    client = FakeOpenAIClient("# 面试复盘报告\n\nprovider output")
+    client = FakeOpenAIClient(
+        '{"summary":"provider output","strong_signals":["Clear structure"],'
+        '"missing_points":[],"weaknesses":[],"review_focus":[],"source_context":[]}'
+    )
     service = ModelService(settings=settings, client_factory=lambda **_kwargs: client)
 
     report = service.generate_report(
@@ -242,7 +237,8 @@ def test_model_service_generates_report_from_provider(
         )
     )
 
-    assert report == "# 面试复盘报告\n\nprovider output"
+    assert report.summary == "provider output"
+    assert report.strong_signals == ["Clear structure"]
 
 
 def test_model_service_generates_generic_question_from_provider_without_target_fields(

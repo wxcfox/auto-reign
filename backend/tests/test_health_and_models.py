@@ -33,8 +33,9 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
     assert response.status_code == 200
     body = response.json()
     assert body["providers"] == [
-        {"provider": "qwen", "models": ["qwen3.7-plus", "qwen3.7-max", "qwen3.7-max"]}
+        {"provider": "qwen", "models": ["qwen3.7-plus", "qwen3.7-max"]}
     ]
+    assert body["default"] == {"provider": "qwen", "model": "qwen3.7-plus"}
     assert "qwen-test" not in response.text
 
 

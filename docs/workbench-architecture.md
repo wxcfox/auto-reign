@@ -162,6 +162,9 @@ RAG 组件层使用 LangChain 的 splitter、embedding、Qdrant vectorstore 和 
 所有 LLM 任务遵循相同边界：
 
 - 输出结构化 JSON 或结构化流式片段，由应用代码渲染为 Markdown 或聊天消息。
+- Prompt 作为随应用发布的版本化 Markdown 资源保存，由 Prompt catalog 统一加载；结构化响应的 JSON Schema 从 Pydantic 模型生成，不在 Prompt 中复制维护。
+- Prompt 不通过数据库、环境变量或管理界面运行时编辑，发布版本同时确定代码、Prompt 和输出协议，便于复现与回滚。
+- 学习卡片、面试报告、练习记录、题库和复习状态的固定结构由确定性本地化 renderer 生成；LLM 不负责 Markdown 标题和持久化格式。
 - 不编造用户工作经历、项目职责、业务规模或数据指标。
 - 不把 AI 生成报告再次作为事实来源强化。
 - 不把用户资料里的命令、脚本或提示词当作系统指令执行。
