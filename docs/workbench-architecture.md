@@ -212,8 +212,8 @@ RAG 组件层使用 LangChain 的 splitter、embedding、Qdrant vectorstore 和 
 
 ## 运行与发布边界
 
-`./start.sh` 是本地开发入口，允许从源码同步依赖、执行迁移并启动宿主机进程。生产运行使用版本化容器镜像，不在服务器从源码构建应用；Git Tag、GitHub Release、backend 镜像和 frontend 镜像使用同一个 SemVer 版本。
+`./start.sh` 是本地开发入口，允许从源码同步依赖、执行迁移并启动宿主机进程。生产运行使用版本化容器镜像，不在服务器从源码构建应用。代码合并到 `main` 只运行 CI；需要发布时，由 GitHub Actions 从 `main` 构建镜像，并在成功后创建同一个 SemVer 对应的 Git Tag 和 GitHub Release。
 
-生产入口由反向代理统一提供同域 HTTPS，浏览器通过 `/api` 访问后端。MySQL、Qdrant、FastAPI 和 Next.js 不直接暴露公网端口。生产部署、备份、回滚和阿里云资源配置的权威流程见 [生产部署](production-deployment.md)。
+生产入口由反向代理统一提供同域 HTTPS，浏览器通过 `/api` 访问后端。MySQL、Qdrant、FastAPI 和 Next.js 不直接暴露公网端口。管理员在服务器上手工选择已发布 Tag 并执行部署；仓库不通过 GitHub Actions 连接生产主机。生产部署、备份、回滚和阿里云资源配置的权威流程见 [生产部署](production-deployment.md)。
 
 生产升级在应用切换前显式执行 Alembic，并先备份 MySQL 与 `DATA_DIR`。应用回滚不自动降级数据库 schema；迁移采用 expand-contract 策略以维持相邻版本兼容。Qdrant 仍是可从工作区和 MySQL 投影重建的索引，不取代对原始资料、工作区和 MySQL 的备份。

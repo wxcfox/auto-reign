@@ -46,12 +46,26 @@ def test_nginx_routes_api_and_frontend_to_loopback_ports() -> None:
     assert "proxy_buffering off;" in nginx
 
 
-def test_release_workflow_does_not_publish_latest_application_images() -> None:
+def test_release_workflow_publishes_main_as_an_explicit_version() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
+    assert "  workflow_dispatch:" in workflow
+    assert "\n  push:" not in workflow
+    assert "ref: main" in workflow
     assert "auto-reign-${{ matrix.component }}:${{ needs.metadata.outputs.version }}" in workflow
-    assert "auto-reign-${{ matrix.component }}:sha-${{ github.sha }}" in workflow
+    assert (
+        "auto-reign-${{ matrix.component }}:sha-${{ needs.metadata.outputs.source_sha }}"
+        in workflow
+    )
     assert "auto-reign-${{ matrix.component }}:latest" not in workflow
+    assert workflow.index("docker/build-push-action") < workflow.index("git tag --annotate")
+    assert workflow.count("git rev-list -n 1") == 2
+    assert "Reusing existing tag v$VERSION after an incomplete release." in workflow
+    assert 'if [[ "$tag_commit" != "$SOURCE_SHA" ]]' in workflow
+
+
+def test_repository_does_not_deploy_production_from_github_actions() -> None:
+    assert not (ROOT / ".github" / "workflows" / "deploy-production.yml").exists()
 
 
 def test_deploy_rejects_non_semver_before_reading_production_config() -> None:
