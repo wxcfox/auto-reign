@@ -151,6 +151,40 @@ def test_models_does_not_fallback_when_default_provider_is_unconfigured(
     }
 
 
+def test_app_startup_does_not_require_embedding_provider(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'app.db'}")
+    monkeypatch.setenv("QDRANT_URL", ":memory:")
+    monkeypatch.setenv("QDRANT_COLLECTION", "auto_reign_test")
+    monkeypatch.setenv("DEFAULT_CHAT_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-test")
+    monkeypatch.setenv("DEEPSEEK_CHAT_MODELS", "deepseek-chat")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+    monkeypatch.setenv("OBJECT_STORE_BACKEND", "local")
+    monkeypatch.setenv("OBJECT_STORE_LOCAL_ROOT", str(tmp_path / "objects"))
+
+    from app.core.config import get_settings
+    from app.db.models import Base
+    from app.db.session import create_engine_for_settings
+    from app.main import create_app
+
+    get_settings.cache_clear()
+    try:
+        engine = create_engine_for_settings(get_settings())
+        try:
+            Base.metadata.create_all(bind=engine)
+        finally:
+            engine.dispose()
+        with TestClient(create_app(start_background_workers=False)) as app_client:
+            response = app_client.get("/api/health")
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
 def test_frontend_origin_is_allowed(client: TestClient) -> None:
     response = client.options(
         "/api/health",

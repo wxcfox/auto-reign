@@ -140,12 +140,15 @@ class KnowledgeVectorStore:
     ) -> None:
         self.settings = settings or get_settings()
         self.client = client if client is not None else build_qdrant_client(self.settings)
-        self.embeddings = (
-            embeddings
-            if embeddings is not None
-            else build_knowledge_embeddings(self.settings)
-        )
+        self._embeddings = embeddings
         self.collection_name = self.settings.qdrant_collection
+
+    @property
+    def embeddings(self) -> Embeddings:
+        """Build embeddings only when a vector operation actually needs them."""
+        if self._embeddings is None:
+            self._embeddings = build_knowledge_embeddings(self.settings)
+        return self._embeddings
 
     @staticmethod
     def _external(operation: str, callback: Callable[[], _Result]) -> _Result:

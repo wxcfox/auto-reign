@@ -317,6 +317,42 @@ def test_repository_has_only_the_new_single_track_public_surface() -> None:
     assert "kind" not in signature(ConversationRepository.get).parameters
 
 
+def test_list_recent_keeps_creation_order_after_conversation_activity(
+    db_session: Session,
+) -> None:
+    _add_user(db_session, 1, "alice")
+    _add_agent(
+        db_session,
+        agent_id="agent-1",
+        owner_id=1,
+        name="General Agent",
+    )
+    older = _add_conversation(
+        db_session,
+        user_id=1,
+        agent_id="agent-1",
+        title="Older",
+    )
+    newer = _add_conversation(
+        db_session,
+        user_id=1,
+        agent_id="agent-1",
+        title="Newer",
+    )
+    older.created_at = datetime(2026, 7, 1, tzinfo=UTC)
+    newer.created_at = datetime(2026, 7, 2, tzinfo=UTC)
+    older.updated_at = datetime(2026, 7, 3, tzinfo=UTC)
+    newer.updated_at = datetime(2026, 7, 2, tzinfo=UTC)
+    db_session.flush()
+
+    history = ConversationRepository().list_recent(
+        db_session,
+        user_id=1,
+    )
+
+    assert [item.conversation.id for item in history] == [newer.id, older.id]
+
+
 def test_repository_creates_generating_conversation_with_fixed_agent(
     db_session: Session,
 ) -> None:

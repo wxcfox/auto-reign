@@ -599,3 +599,49 @@ def test_embedding_construction_failure_is_mapped(
 
     with pytest.raises(VectorStoreUnavailable, match="embedding construction"):
         build_knowledge_embeddings(vector_settings())  # type: ignore[arg-type]
+
+
+def test_store_construction_defers_embedding_configuration_until_use(
+    monkeypatch: pytest.MonkeyPatch,
+    qdrant_client: QdrantClient,
+) -> None:
+    calls: list[object] = []
+
+    def fail_embeddings(_settings):
+        calls.append(_settings)
+        raise RuntimeError("embedding provider is not configured")
+
+    monkeypatch.setattr(
+        "app.services.knowledge_vector_store.build_knowledge_embeddings",
+        fail_embeddings,
+    )
+
+    store = KnowledgeVectorStore(
+        settings=vector_settings(),
+        client=qdrant_client,
+    )
+    assert calls == []
+
+    with pytest.raises(RuntimeError, match="embedding provider is not configured"):
+        _ = store.embeddings
+    assert len(calls) == 1
+
+
+def test_vector_operation_maps_deferred_embedding_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    qdrant_client: QdrantClient,
+) -> None:
+    def fail_embedding_service(_settings):
+        raise RuntimeError("embedding provider is not configured")
+
+    monkeypatch.setattr(
+        "app.services.knowledge_vector_store.EmbeddingService",
+        fail_embedding_service,
+    )
+    store = KnowledgeVectorStore(
+        settings=vector_settings(),
+        client=qdrant_client,
+    )
+
+    with pytest.raises(VectorStoreUnavailable, match="embedding construction"):
+        store.upsert_generation(chunks_for("doc-1", generation=1, text="source"))
