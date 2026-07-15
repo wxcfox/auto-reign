@@ -139,10 +139,14 @@ def put_conversation_model(
                 "generation_in_progress",
                 "This conversation already has an active generation.",
             )
-        agent = agent_service.resolve_for_turn(
-            session,
-            user_id=current_user.id,
-            agent_id=conversation.agent_id,
+        agent = (
+            agent_service.resolve_for_turn(
+                session,
+                user_id=current_user.id,
+                agent_id=conversation.agent_id,
+            )
+            if conversation.agent_id is not None
+            else None
         )
         agent_service.resolve_model(
             agent=agent,

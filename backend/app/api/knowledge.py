@@ -287,12 +287,14 @@ def reindex_document(
     session: SessionDep,
     current_user: models.User = Depends(get_current_user),
     service: KnowledgeDocumentService = Depends(_service),
+    settings: Settings = Depends(get_settings),
 ) -> KnowledgeDocumentResponse:
     document = service.require_in_collection(document_id, collection_id, session)
     updated = service.reindex(
         session,
         actor=current_user,
         document_id=document.id,
+        processing_timeout_seconds=settings.knowledge_worker_processing_timeout_seconds,
     )
     return KnowledgeDocumentResponse.model_validate(updated)
 

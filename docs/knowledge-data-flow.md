@@ -62,6 +62,10 @@ uploaded -> queued -> processing -> ready
 7. 新 generation 发布后再 best-effort 清理旧解析对象和 point。清理失败不改变当前可见内容，也不删除 source object。
 8. `failed` 不无限自动重试；用户通过管理界面显式重新索引。启动时只恢复持久化 queued 或超时 processing 工作。
 
+Embedding 请求由 provider-compatible wrapper 逐个发送 chunk，每个 HTTP 请求只包含一个文本。这样不限制文档可以生成的 chunk 数量，同时兼容 Qwen 等对批量输入有严格上限的服务。网络错误、超时、429 和 5xx 只在请求层做有限指数退避；确定性的 4xx 不重复请求。连续失败后当前 generation 进入 `failed`，不会无限重放整个索引任务。
+
+显式重新索引遵循 generation 去重：文档处于 `queued` 或未超时的 `processing` 时，重复请求返回当前任务，不创建新的 generation；processing 超过 `KNOWLEDGE_WORKER_PROCESSING_TIMEOUT_SECONDS` 后才允许新的 generation 接管。新的 generation 发布前，旧任务不能写入或发布其解析对象和 Qdrant point。
+
 `index_generation` 同时隔离 MySQL 状态、parsed object 和 Qdrant point，不只是一个展示字段。
 
 ## Qdrant 投影

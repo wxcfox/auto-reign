@@ -15,7 +15,7 @@ from app.db.session import create_engine_for_settings
 ALEMBIC_INI = Path(__file__).parents[2] / "alembic.ini"
 BASELINE_REVISION = "20260713_0001"
 ATTACHMENT_INTEGRITY_REVISION = "20260713_0002"
-KNOWLEDGE_ATTEMPT_REVISION = "20260714_0003"
+LATEST_REVISION = "20260716_0004"
 MIGRATION_DATABASE_SUFFIX = "_migration_test"
 EXPECTED_TABLES = {
     "attachments",
@@ -159,7 +159,7 @@ def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
         # CI prepares the empty schema at head. Repeating upgrade keeps local runs safe
         # and establishes the known starting point before entering the tested lifecycle.
         command.upgrade(config, "head")
-        assert _current_revision(engine) == KNOWLEDGE_ATTEMPT_REVISION
+        assert _current_revision(engine) == LATEST_REVISION
         _assert_knowledge_attempt_columns(engine, present=True)
 
         command.downgrade(config, ATTACHMENT_INTEGRITY_REVISION)
@@ -184,7 +184,7 @@ def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
         assert _index_names(inspect(engine), "attachments") == baseline_indexes
 
         command.upgrade(config, "head")
-        assert _current_revision(engine) == KNOWLEDGE_ATTEMPT_REVISION
+        assert _current_revision(engine) == LATEST_REVISION
         _assert_attachment_integrity_columns(engine, present=True)
         _assert_knowledge_attempt_columns(engine, present=True)
         assert _index_names(inspect(engine), "attachments") == baseline_indexes

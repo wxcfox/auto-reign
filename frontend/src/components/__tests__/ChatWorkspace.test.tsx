@@ -144,6 +144,11 @@ async function chooseModel(name: string | RegExp) {
   fireEvent.click(await screen.findByRole("option", { name }));
 }
 
+async function chooseGlobalAgent() {
+  fireEvent.click(await screen.findByRole("button", { name: /choose agent/i }));
+  fireEvent.click(await screen.findByRole("option", { name: globalAgent.name }));
+}
+
 describe("ChatWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -191,20 +196,20 @@ describe("ChatWorkspace", () => {
       default: { provider: "qwen", model: "qwen3.7-plus" },
     });
 
-    expect(await screen.findByRole("button", { name: globalAgent.name })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /choose agent/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /select model/i })).toHaveTextContent(
       /follow agent default/i,
     );
     expect(getConversation).not.toHaveBeenCalled();
   });
 
-  it("requires an agent before send while keeping the real attachment action available", async () => {
+  it("allows plain LLM send while keeping the real attachment action available", async () => {
     vi.mocked(listAgents).mockResolvedValue({ agents: [] });
     renderWorkspace();
 
     await enterMessage();
 
-    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /^attach files$/i })).toBeEnabled();
     expect(sendConversationStream).not.toHaveBeenCalled();
   });
@@ -230,7 +235,7 @@ describe("ChatWorkspace", () => {
     window.addEventListener("auto-reign:conversations-changed", historyChanged);
     const view = renderWorkspace();
     const { container } = view;
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Explain Python context managers.");
 
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -282,7 +287,7 @@ describe("ChatWorkspace", () => {
       .mockResolvedValueOnce(attachment("attachment-1", "one.txt"))
       .mockResolvedValueOnce(attachment("attachment-2", "two.png"));
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
 
     fireEvent.change(screen.getByLabelText(/^attach files$/i), {
       target: {
@@ -325,7 +330,6 @@ describe("ChatWorkspace", () => {
       .mockReturnValueOnce(firstRecovery.promise)
       .mockResolvedValueOnce([attachment("attachment-retried", "retried.txt")]);
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
     await enterMessage("Wait for recovery");
 
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
@@ -412,7 +416,7 @@ describe("ChatWorkspace", () => {
     const upload = deferred<Attachment>();
     vi.mocked(uploadAttachment).mockReturnValue(upload.promise);
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Wait for upload");
 
     fireEvent.change(screen.getByLabelText(/^attach files$/i), {
@@ -430,6 +434,7 @@ describe("ChatWorkspace", () => {
   it("keeps composer actions ordered and grouped at narrow widths", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     renderWorkspace();
+    await chooseGlobalAgent();
     const toolbar = await screen.findByRole("toolbar", { name: /message actions/i });
     const attachmentButton = within(toolbar).getByRole("button", { name: /^attach files$/i });
     const agentButton = within(toolbar).getByRole("button", { name: globalAgent.name });
@@ -458,7 +463,7 @@ describe("ChatWorkspace", () => {
 
   it("includes a selected model override only when creating a conversation", async () => {
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await chooseModel("custom-chat");
     await enterMessage("Use the local model.");
 
@@ -550,7 +555,7 @@ describe("ChatWorkspace", () => {
     const sendRequest = deferred<{ conversation_id: string; message: ConversationMessage }>();
     vi.mocked(sendConversationStream).mockReturnValue(sendRequest.promise);
     const { container, unmount } = renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Only once");
     const form = screen.getByRole("form", { name: /chat composer/i });
 
@@ -581,7 +586,7 @@ describe("ChatWorkspace", () => {
     const historyChanged = vi.fn();
     window.addEventListener("auto-reign:conversations-changed", historyChanged);
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Keep my source text");
 
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -605,7 +610,7 @@ describe("ChatWorkspace", () => {
       });
     });
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Keep this in one conversation");
 
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -631,7 +636,7 @@ describe("ChatWorkspace", () => {
       }),
     );
     renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Try the selected Agent");
 
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -744,7 +749,7 @@ describe("ChatWorkspace", () => {
     const request = deferred<{ conversation_id: string; message: ConversationMessage }>();
     vi.mocked(sendConversationStream).mockReturnValue(request.promise);
     const view = renderWorkspace();
-    await screen.findByRole("button", { name: globalAgent.name });
+    await chooseGlobalAgent();
     await enterMessage("Unmount me");
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
 

@@ -2051,17 +2051,6 @@ def test_stream_error_protocol_preserves_http_error_and_hides_unknown_failure(
             del observer
             raise self.error
 
-    validation_failure = client.post(
-        "/api/conversations/stream",
-        headers=ordinary_user_headers,
-        json={"text": "first"},
-    )
-    assert _sse_error(validation_failure) == {
-        "code": "agent_required",
-        "message": "Agent is required for a new conversation.",
-        "status_code": 400,
-    }
-
     agent = _create_api_agent(client, ordinary_user_headers)
     service = client.app.state.generation_service
     service.runtime = FailingRuntime(

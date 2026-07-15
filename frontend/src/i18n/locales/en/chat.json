@@ -12,6 +12,7 @@
   "generation_in_progress": "Generation in progress. Wait for it to finish before making another change.",
   "no_agents": "No Agents are available for a new conversation.",
   "agentPicker": {
+    "none": "No agent",
     "choose": "Choose agent",
     "listbox": "Agents",
     "search": "Search agents",
@@ -58,7 +59,7 @@
     "options_load": "Agent or model options could not be refreshed. Existing history is still available.",
     "send": "The message could not be sent.",
     "model_update": "The conversation model could not be changed.",
-    "agent_required": "Choose an Agent before sending the first message.",
+    "agent_required": "The message could not be sent.",
     "agent_unavailable": "This Agent is unavailable.",
     "agent_locked": "The Agent cannot be changed after a conversation starts.",
     "chat_message_empty": "Enter a message before sending.",

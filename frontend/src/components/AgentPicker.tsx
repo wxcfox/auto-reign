@@ -10,6 +10,7 @@ import type { Agent } from "@/lib/types";
 type AgentPickerProps = {
   agents: Agent[];
   disabled: boolean;
+  onClear?: () => void;
   onSelect: (agent: Agent) => void;
   selectedAgentId: string | null;
 };
@@ -17,6 +18,7 @@ type AgentPickerProps = {
 export function AgentPicker({
   agents,
   disabled,
+  onClear,
   onSelect,
   selectedAgentId,
 }: AgentPickerProps) {
@@ -40,6 +42,13 @@ export function AgentPicker({
       return;
     }
     onSelect(agent);
+    setOpen(false);
+    setQuery("");
+  };
+
+  const clearAgent = () => {
+    if (disabled) return;
+    onClear?.();
     setOpen(false);
     setQuery("");
   };
@@ -79,6 +88,16 @@ export function AgentPicker({
             value={query}
           />
           <div aria-label={listboxLabel} id={listboxId} role="listbox">
+            <button
+              aria-selected={selectedAgentId === null}
+              data-active={selectedAgentId === null}
+              disabled={disabled}
+              onClick={clearAgent}
+              role="option"
+              type="button"
+            >
+              {t("agentPicker.none", { defaultValue: "No agent" })}
+            </button>
             <AgentGroup
               agents={globalAgents}
               disabled={disabled}

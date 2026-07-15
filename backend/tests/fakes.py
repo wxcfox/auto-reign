@@ -37,7 +37,13 @@ class StableTestEmbeddings(Embeddings):
 
 class FakeOpenAIEmbeddings(StableTestEmbeddings):
     def __init__(self, **_kwargs) -> None:
+        self.embeddings = self
         super().__init__()
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(data=[SimpleNamespace(embedding=self.embed_query(kwargs["input"]))])
 
 
 class FakeChatStream(list[SimpleNamespace]):

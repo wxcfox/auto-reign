@@ -96,6 +96,11 @@
     "downloadError": "The original document could not be downloaded.",
     "reindexError": "The document could not be queued for reindexing.",
     "deleteError": "The document could not be deleted.",
+    "embeddingAuthFailed": "Embedding service authentication failed. Check the API key.",
+    "embeddingRateLimited": "Embedding service rate limit exceeded. Try again later.",
+    "embeddingInvalidRequest": "Embedding service rejected the request. Check the model configuration.",
+    "embeddingProviderUnavailable": "Embedding service is temporarily unavailable. Try again later.",
+    "knowledgeUnavailable": "Knowledge indexing service is temporarily unavailable. Reindex later.",
     "previewTitle": "Parsed content: {{name}}",
     "previewLoading": "Loading parsed content…"
   },

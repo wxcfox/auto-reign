@@ -20,13 +20,26 @@ from app.services.knowledge_document_service import (
 from app.services.knowledge_index_worker import (
     KnowledgeIndexWorker,
     KnowledgeWorkerStopTimeout,
+    map_index_error,
+    safe_error_message,
 )
+from app.services.embedding_service import EmbeddingProviderError
 from app.storage import ObjectMetadata, ObjectStoreUnavailable, StoredObject
 from tests.fake_object_store import FakeObjectStore
 from tests.fakes import FakeKnowledgeVectorStore
 
 
 NOW = datetime(2026, 7, 14, 8, 0, tzinfo=UTC)
+
+
+def test_embedding_provider_failures_keep_safe_specific_index_error() -> None:
+    error = EmbeddingProviderError(
+        "embedding_invalid_request",
+        "provider details are intentionally hidden",
+    )
+
+    assert map_index_error(error) == "embedding_invalid_request"
+    assert safe_error_message(error) == "Embedding provider rejected the request."
 
 
 @pytest.fixture

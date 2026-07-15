@@ -106,7 +106,7 @@ def _create_conversations() -> None:
         "conversations",
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("agent_id", sa.String(length=36), nullable=False),
+        sa.Column("agent_id", sa.String(length=36), nullable=True),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("model_override_json", sa.JSON(), nullable=True),

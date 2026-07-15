@@ -17,6 +17,7 @@ from app.repositories.knowledge_document_repository import (
 from app.repositories.vector_store import VectorStoreUnavailable
 from app.schemas.knowledge_collections import KnowledgeCollectionConfig
 from app.services.document_operation_coordinator import DocumentOperationCoordinator
+from app.services.embedding_service import EmbeddingProviderError
 from app.services.extraction_service import ExtractionError, ExtractionService
 from app.services.knowledge_chunk_service import KnowledgeChunkService
 from app.services.knowledge_document_service import KnowledgeDocumentService
@@ -46,6 +47,8 @@ class _KnowledgeWorkerVectorStore(Protocol):
 def map_index_error(error: Exception) -> str:
     if isinstance(error, (KnowledgeParseError, ExtractionError)):
         return "knowledge_parse_failed"
+    if isinstance(error, EmbeddingProviderError):
+        return error.code
     if isinstance(error, VectorStoreUnavailable):
         return "knowledge_unavailable"
     if isinstance(error, ObjectStoreError):
@@ -59,6 +62,10 @@ def safe_error_message(error: Exception) -> str:
         "knowledge_unavailable": "Knowledge vector service is unavailable.",
         "knowledge_storage_unavailable": "Knowledge object storage is unavailable.",
         "knowledge_index_failed": "Knowledge indexing failed.",
+        "embedding_auth_failed": "Embedding provider authentication failed.",
+        "embedding_rate_limited": "Embedding provider rate limit was exceeded.",
+        "embedding_invalid_request": "Embedding provider rejected the request.",
+        "embedding_provider_unavailable": "Embedding provider is unavailable.",
     }[map_index_error(error)]
 
 

@@ -96,6 +96,11 @@
     "downloadError": "原始文档下载失败。",
     "reindexError": "文档重新索引排队失败。",
     "deleteError": "文档删除失败。",
+    "embeddingAuthFailed": "Embedding 服务认证失败，请检查 API Key。",
+    "embeddingRateLimited": "Embedding 服务请求过于频繁，请稍后重试。",
+    "embeddingInvalidRequest": "Embedding 服务拒绝了请求，请检查模型配置。",
+    "embeddingProviderUnavailable": "Embedding 服务暂时不可用，请稍后重试。",
+    "knowledgeUnavailable": "知识库索引服务暂时不可用，请稍后重新索引。",
     "previewTitle": "解析内容：{{name}}",
     "previewLoading": "正在加载解析内容…"
   },

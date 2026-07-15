@@ -53,7 +53,7 @@ def client(
     from app import main as main_module
 
     monkeypatch.setattr("app.services.model_service.OpenAI", FakeOpenAIClient)
-    monkeypatch.setattr("app.services.embedding_service.OpenAIEmbeddings", FakeOpenAIEmbeddings)
+    monkeypatch.setattr("app.services.embedding_service.OpenAI", FakeOpenAIEmbeddings)
     monkeypatch.setattr(
         main_module,
         "build_object_store",

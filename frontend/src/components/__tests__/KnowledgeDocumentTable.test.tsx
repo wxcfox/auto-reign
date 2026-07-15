@@ -91,6 +91,20 @@ describe("KnowledgeDocumentTable", () => {
     expect(await screen.findByText("Queued")).toBeInTheDocument();
   });
 
+  it("localizes safe embedding failure codes", async () => {
+    const failed = {
+      ...documentFixture,
+      status: "failed" as const,
+      error_code: "embedding_invalid_request",
+      error_message: "Embedding provider rejected the request.",
+    };
+    vi.mocked(listKnowledgeDocuments).mockResolvedValue({ documents: [failed] });
+
+    render(<KnowledgeDocumentTable collectionId="collection-1" canManage />);
+
+    expect(await screen.findByText("Embedding service rejected the request. Check the model configuration.")).toBeInTheDocument();
+  });
+
   it("keeps cleanup_failed rows visible and retries explicit delete", async () => {
     vi.mocked(listKnowledgeDocuments).mockResolvedValue({
       documents: [

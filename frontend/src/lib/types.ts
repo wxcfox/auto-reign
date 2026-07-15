@@ -211,7 +211,7 @@ export interface ConversationHistoryItem {
   title: string;
   href: string;
   agent: {
-    id: string;
+    id: string | null;
     name: string;
     is_available: boolean;
   };
