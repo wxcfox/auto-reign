@@ -9,7 +9,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Auto Reign",
-  description: "Local mock interview workspace",
+  description: "Local-first Agent chat platform",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -1,42 +1,45 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import commonEn from "@/i18n/locales/en/common.json";
+import adminEn from "@/i18n/locales/en/admin.json";
+import agentsEn from "@/i18n/locales/en/agents.json";
 import chatEn from "@/i18n/locales/en/chat.json";
-import dashboardEn from "@/i18n/locales/en/dashboard.json";
-import interviewEn from "@/i18n/locales/en/interview.json";
-import learningEn from "@/i18n/locales/en/learning.json";
-import libraryEn from "@/i18n/locales/en/library.json";
-import reviewEn from "@/i18n/locales/en/review.json";
-import commonZh from "@/i18n/locales/zh-CN/common.json";
+import commonEn from "@/i18n/locales/en/common.json";
+import knowledgeEn from "@/i18n/locales/en/knowledge.json";
+import workspacesEn from "@/i18n/locales/en/workspaces.json";
+import adminZh from "@/i18n/locales/zh-CN/admin.json";
+import agentsZh from "@/i18n/locales/zh-CN/agents.json";
 import chatZh from "@/i18n/locales/zh-CN/chat.json";
-import dashboardZh from "@/i18n/locales/zh-CN/dashboard.json";
-import interviewZh from "@/i18n/locales/zh-CN/interview.json";
-import learningZh from "@/i18n/locales/zh-CN/learning.json";
-import libraryZh from "@/i18n/locales/zh-CN/library.json";
-import reviewZh from "@/i18n/locales/zh-CN/review.json";
+import commonZh from "@/i18n/locales/zh-CN/common.json";
+import knowledgeZh from "@/i18n/locales/zh-CN/knowledge.json";
+import workspacesZh from "@/i18n/locales/zh-CN/workspaces.json";
 
 export const supportedLanguages = ["en", "zh-CN"] as const;
-export const namespaces = ["chat", "common", "dashboard", "library", "interview", "learning", "review"] as const;
+export const namespaces = [
+  "admin",
+  "agents",
+  "chat",
+  "common",
+  "knowledge",
+  "workspaces",
+] as const;
 
 const resources = {
   en: {
+    admin: adminEn,
+    agents: agentsEn,
     chat: chatEn,
     common: commonEn,
-    dashboard: dashboardEn,
-    interview: interviewEn,
-    learning: learningEn,
-    library: libraryEn,
-    review: reviewEn,
+    knowledge: knowledgeEn,
+    workspaces: workspacesEn,
   },
   "zh-CN": {
+    admin: adminZh,
+    agents: agentsZh,
     chat: chatZh,
     common: commonZh,
-    dashboard: dashboardZh,
-    interview: interviewZh,
-    learning: learningZh,
-    library: libraryZh,
-    review: reviewZh,
+    knowledge: knowledgeZh,
+    workspaces: workspacesZh,
   },
 };
 

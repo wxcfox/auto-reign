@@ -1,0 +1,14 @@
+resources:
+  - key: growth-home
+    name: 成长助手工作区
+    config:
+      workspace_type: agent_home
+      initial_agents_md: |-
+        # 成长助手工作区
+
+        本目录保存用户明确要求长期沉淀的个人学习、练习与成长资料。
+
+        - 用户未要求长期保存时，只使用当前会话上下文。
+        - 保存原文时保留来源，不把模型生成内容伪装成用户原文。
+        - 写入前先读取相关文件；同主题优先合并，避免制造重复文件。
+        - 不在文件中保存密码、Token、API Key 或其他 Secret。

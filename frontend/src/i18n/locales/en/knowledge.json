@@ -1,0 +1,143 @@
+{
+  "page": {
+    "eyebrow": "Knowledge",
+    "title": "Knowledge bases",
+    "description": "Upload reference documents that Agents can search when a collection is explicitly bound.",
+    "createTitle": "Create a knowledge base",
+    "createDescription": "Private knowledge bases and their documents are visible only to your account.",
+    "listTitle": "Available knowledge bases",
+    "listDescription": "Shared and private knowledge bases remain read-only sources for Agent retrieval.",
+    "detailTitle": "Knowledge base",
+    "detailDescription": "Manage source documents, indexing status, preview, and cleanup.",
+    "back": "Back to knowledge bases",
+    "loading": "Loading knowledge base…",
+    "loadError": "Could not load this knowledge base."
+  },
+  "personal": {
+    "title": "Knowledge bases",
+    "summary": "Manage your private reference collections and browse active shared collections.",
+    "ownedTitle": "My knowledge bases",
+    "ownedSummary": "Your active and inactive collections and their private source documents.",
+    "sharedTitle": "Shared knowledge bases",
+    "sharedSummary": "Active global collections are shared, read-only reference sources for ordinary users."
+  },
+  "global": {
+    "title": "Global knowledge bases",
+    "summary": "Manage collections and source documents shared with every user.",
+    "listTitle": "Global collections",
+    "listSummary": "Documents uploaded to an active global collection are shared content, not per-user copies."
+  },
+  "states": {
+    "loading": "Loading knowledge bases…",
+    "empty": "No knowledge bases yet.",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "editor": {
+    "createTitle": "Create knowledge base",
+    "createGlobalTitle": "Create global knowledge base",
+    "editTitle": "Edit {{name}}"
+  },
+  "scope": {
+    "global": "Shared",
+    "private": "Private"
+  },
+  "list": {
+    "loading": "Loading knowledge bases…",
+    "loadError": "Could not load knowledge bases.",
+    "empty": "No knowledge bases yet.",
+    "open": "Open {{name}}"
+  },
+  "form": {
+    "name": "Name",
+    "retrievalConfig": "Indexing and retrieval settings",
+    "chunkSize": "Chunk size",
+    "chunkOverlap": "Chunk overlap",
+    "topK": "Top K",
+    "scoreThreshold": "Score threshold (optional)",
+    "indexingHint": "Chunk size and overlap apply only to future uploads or documents you explicitly reindex.",
+    "retrievalHint": "Top K and score threshold apply to subsequent retrievals.",
+    "nameTaken": "A knowledge base with this name already exists.",
+    "saveError": "Could not save the knowledge base."
+  },
+  "validation": {
+    "nameRequired": "Enter a name.",
+    "chunkSize": "Chunk size must be an integer from 200 to 4000.",
+    "chunkOverlap": "Chunk overlap must be an integer from 0 to 1000.",
+    "chunkOverlapHalf": "Chunk overlap cannot exceed half of the chunk size.",
+    "topK": "Top K must be an integer from 1 to 30.",
+    "scoreThreshold": "Score threshold must be empty or a number from -1 to 1."
+  },
+  "uploader": {
+    "title": "Upload documents",
+    "description": "Supported formats: TXT, Markdown, PDF, and DOCX.",
+    "select": "Upload document",
+    "uploading": "Uploading {{name}}…",
+    "success": "{{name}} was uploaded and queued for indexing.",
+    "error": "The document could not be uploaded."
+  },
+  "documents": {
+    "title": "Documents",
+    "loading": "Loading documents…",
+    "loadError": "Could not load documents.",
+    "empty": "No documents in this knowledge base.",
+    "name": "Document",
+    "status": "Status",
+    "size": "Size",
+    "generation": "Generation",
+    "actions": "Actions",
+    "inactive": "Inactive",
+    "cleanupPending": "Cleanup pending. Retry the explicit delete to finish cleanup.",
+    "cleanupFailed": "Cleanup failed. Retry the explicit delete to finish cleanup.",
+    "cleanupComplete": "Deleted and cleaned.",
+    "resourceInUse": "This document is still referenced by an Agent.",
+    "operationError": "The document operation failed.",
+    "previewError": "The parsed document could not be loaded.",
+    "downloadError": "The original document could not be downloaded.",
+    "reindexError": "The document could not be queued for reindexing.",
+    "deleteError": "The document could not be deleted.",
+    "previewTitle": "Parsed content: {{name}}",
+    "previewLoading": "Loading parsed content…"
+  },
+  "status": {
+    "uploaded": "Uploaded",
+    "queued": "Queued",
+    "processing": "Processing",
+    "ready": "Ready",
+    "failed": "Failed"
+  },
+  "actions": {
+    "create": "Create knowledge base",
+    "createGlobal": "Create global knowledge base",
+    "creating": "Creating…",
+    "saving": "Saving…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "open": "Open",
+    "openDocuments": "Open documents",
+    "openDocumentsLabel": "Open documents in {{name}}",
+    "edit": "Edit",
+    "editLabel": "Edit {{name}}",
+    "enable": "Enable",
+    "enableLabel": "Enable {{name}}",
+    "disable": "Disable",
+    "disableLabel": "Disable {{name}}",
+    "working": "Working…",
+    "deleteDefinition": "Delete",
+    "deleteLabel": "Delete {{name}}",
+    "deleteConfirm": "Delete the knowledge base \"{{name}}\"? Its documents must already be fully cleaned up.",
+    "preview": "Preview {{name}}",
+    "download": "Download {{name}}",
+    "reindex": "Reindex {{name}}",
+    "delete": "Delete {{name}}",
+    "retryCleanup": "Retry cleanup for {{name}}",
+    "closePreview": "Close preview"
+  },
+  "errors": {
+    "loadFailed": "Could not load knowledge bases.",
+    "statusFailed": "Could not change the knowledge base status.",
+    "deleteFailed": "Could not delete the knowledge base.",
+    "resourceInUse": "This knowledge base still has an active Agent reference, an active document, or unfinished document cleanup."
+  }
+}

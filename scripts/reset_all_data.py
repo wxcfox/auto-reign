@@ -10,7 +10,8 @@ from pathlib import Path
 
 PROJECT_NAME = "auto-reign"
 BASELINE_RUNTIME_PATHS = ("data", ".pids", "logs")
-ENV_PATH_KEYS = ("DATA_DIR",)
+ENV_PATH_KEYS = ("DATA_DIR", "OBJECT_STORE_LOCAL_ROOT")
+REMOTE_OBJECT_WARNING = "Remote S3/OSS objects are never purged."
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ def reset_all_data(
     if not yes and not dry_run:
         raise SystemExit("Refusing to reset data without --yes.")
 
+    candidate_paths = _candidate_paths(root)
     runner = command_runner or _run_command
     if not skip_docker:
         _run_or_print(["./start.sh", "--stop"], root=root, dry_run=dry_run, runner=runner)
@@ -43,7 +45,7 @@ def reset_all_data(
 
     removed_paths: list[Path] = []
     skipped_paths: list[Path] = []
-    for path in _candidate_paths(root):
+    for path in candidate_paths:
         if not path.exists():
             skipped_paths.append(path)
             continue
@@ -124,7 +126,10 @@ def _repo_root() -> Path:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Remove all local Auto Reign runtime data and Docker volumes."
+        description=(
+            "Remove local Auto Reign runtime data and Docker MySQL/Qdrant volumes. "
+            + REMOTE_OBJECT_WARNING
+        )
     )
     parser.add_argument("--yes", action="store_true", help="Actually remove data.")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be removed.")
@@ -147,11 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     verb = "Would remove" if args.dry_run else "Removed"
-    user_data_verb = "Would delete" if args.dry_run else "Deleted"
-    print(
-        f"{user_data_verb} local user data under DATA_DIR/users and legacy "
-        "DATA_DIR/workspace when present."
-    )
+    print(REMOTE_OBJECT_WARNING)
     for path in result.removed_paths:
         print(f"{verb}: {path.relative_to(_repo_root())}")
     if not result.removed_paths:

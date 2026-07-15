@@ -9,6 +9,11 @@ class VectorStoreUnavailable(VectorStoreError):
     pass
 
 
-def stable_vector_id(source_type: str, source_id: str, chunk_index: int) -> str:
-    name = f"auto-reign:{source_type}:{source_id}:{chunk_index}"
+def stable_vector_id(
+    source_type: str,
+    source_id: str,
+    generation: int,
+    chunk_index: int,
+) -> str:
+    name = f"auto-reign:{source_type}:{source_id}:{generation}:{chunk_index}"
     return str(uuid5(NAMESPACE_URL, name))

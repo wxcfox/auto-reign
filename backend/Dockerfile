@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-ins
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+COPY init_data ./init_data
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
 RUN groupadd --gid 10001 auto-reign \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /app --shell /usr/sbin/nologin auto-reign \

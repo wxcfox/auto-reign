@@ -1,0 +1,56 @@
+{
+  "title": "用户管理",
+  "summary": "创建普通用户、管理账号状态并重置密码。",
+  "table": {
+    "caption": "用户账号"
+  },
+  "fields": {
+    "username": "用户名",
+    "display_name": "显示名称",
+    "password": "密码",
+    "new_password": "新密码",
+    "status": "状态",
+    "created_at": "创建时间",
+    "actions": "操作"
+  },
+  "states": {
+    "loading": "正在加载用户…",
+    "load_failed": "用户加载失败。",
+    "empty": "暂无用户。",
+    "active": "已启用",
+    "inactive": "已停用",
+    "fixed_admin": "固定管理员不能在这里修改。"
+  },
+  "create": {
+    "title": "创建用户"
+  },
+  "reset": {
+    "title": "重置 {{name}} 的密码"
+  },
+  "actions": {
+    "retry": "重试",
+    "create_user": "创建用户",
+    "create": "创建",
+    "creating": "正在创建…",
+    "cancel": "取消",
+    "enable": "启用",
+    "disable": "停用",
+    "enable_label": "启用 {{name}}",
+    "disable_label": "停用 {{name}}",
+    "enable_confirm": "启用 {{name}}？",
+    "disable_confirm": "停用 {{name}}？",
+    "reset_password": "重置密码",
+    "resetting": "正在重置…",
+    "reset_label": "重置 {{name}} 的密码",
+    "working": "处理中…"
+  },
+  "errors": {
+    "username_length": "用户名必须包含 3 到 80 个字符。",
+    "username_format": "用户名只能包含 ASCII 字母、数字、句点、下划线和连字符。",
+    "display_name_length": "显示名称不能超过 120 个字符。",
+    "password_length": "密码必须包含 6 到 256 个字符。",
+    "create_failed": "用户创建失败。",
+    "reset_failed": "密码重置失败。",
+    "status_failed": "用户状态修改失败。"
+  }
+}

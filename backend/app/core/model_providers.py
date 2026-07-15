@@ -48,11 +48,10 @@ def configured_chat_providers(settings: Settings) -> tuple[ChatProvider, ...]:
 
 def default_chat_provider(settings: Settings) -> ChatProvider | None:
     configured = configured_chat_providers(settings)
-    preferred = next(
+    return next(
         (provider for provider in configured if provider.name == settings.default_chat_provider),
         None,
     )
-    return preferred or next(iter(configured), None)
 
 
 def preferred_chat_provider(settings: Settings) -> ChatProvider:

@@ -1,226 +1,272 @@
-# Auto Reign 工作台架构
+# Auto Reign 通用 Agent 平台架构
 
-本文是 Auto Reign 当前工作台架构的长期说明，描述产品边界、数据职责、文件协议、检索策略、LLM 边界和主要 UI 信息架构。一次性实施计划不应写入本文；已经落地的运行方式以 `README.md` 为准，资料库入库与检索细节以 `docs/knowledge-data-flow.md` 为准。
+本文是 Auto Reign 的长期架构权威。当前可运行方式见[项目说明](../README.md)，Knowledge Document 的入库和检索细节见[Knowledge Collection 数据流](knowledge-data-flow.md)，生产配置与运维边界见[生产部署](production-deployment.md)。
 
-## 产品定位
+## 产品边界
 
-Auto Reign 是本地优先、本地单机多账号的 AI 面试学习工作台。它的目标不是做通用知识管理，而是帮助每个本地用户把真实资料、学习笔记和模拟面试表现转化为更稳定的面试表达。
+Auto Reign 是本地优先、多账号严格隔离的通用 Agent 聊天平台。普通问答、模拟面试、学习记录、客服或其他应用都使用同一套 Conversation、Message 和 Runtime；差异来自 Agent 配置与用户自然语言输入，而不是平台级会话类型、专用页面或业务状态机。
 
-核心路径保持简单：
+Agent 的 `system_prompt` 定义角色、交互方式和业务行为。平台运行时代码不能根据“面试”“学习”等业务名称进入特殊分支，也不保留业务 Prompt fallback。
 
-```text
-上传资料 -> 参加面试 -> 查看复盘和下一步重点
+当前核心能力包括：
+
+- global/private Agent、Workspace 和 Knowledge Collection 的类型化管理；
+- 单一 `/chat?session=...` 会话入口、动态模型覆盖和可靠 SSE；
+- Message 绑定的聊天附件；
+- 可选 Agent Home 文件能力；
+- 可选 Knowledge 原文与 RAG 检索；
+- fixed `admin` 一次性初始化和普通用户管理。
+
+认证上下文中的 `user_id` 是租户隔离边界。数据库 scope、ObjectStore Key 前缀、Agent Home 实例与 Knowledge filter 都由后端从当前用户派生；客户端不能通过提交 `user_id` 切换数据域。
+
+## 核心资源
+
+| 概念 | 配置或身份 | 生命周期 |
+| --- | --- | --- |
+| Agent | `system_prompt`、可选 `default_model`、可选 `home_workspace_id`、`knowledge_scopes` | global 或 private；Conversation 固定引用，配置每个新轮次实时解析 |
+| Workspace | `workspace_type=agent_home`、`initial_agents_md` | 多个 Agent 可共享定义；物理实例按 `(workspace_id, effective_user_id)` 隔离 |
+| Knowledge Collection | chunk、overlap、`top_k`、score threshold 等检索策略 | 显式包含 Document；Agent 可绑定整库或精确 Document 子集 |
+| Knowledge Document | Collection、owner、对象 Key、状态、内容 hash、`index_generation` | 原文显式上传；解析和 Qdrant 投影可重建 |
+| Conversation | `user_id + agent_id + model_override` | Agent 首轮后锁定；Agent 停用或删除后历史可读、不能继续生成 |
+| Message | Conversation 内单调 sequence、角色、正文、生成状态和审计 metadata | User Message 在模型调用前提交；Assistant 支持 checkpoint、失败和 retry |
+| Attachment | 一条 User Message 的来源，未绑定时是当前用户草稿 | 草稿可删；发送准备事务成功后绑定并固定，不自动进入 Home 或 Knowledge |
+
+Agent、Workspace 和 Knowledge Collection 共用 `resources` 表中的 owner、名称、active、tombstone 和审计列，但不采用 CRD，也不公开万能 `/resources` CRUD。后端分别提供 Agent、Workspace 和 Knowledge Collection 的领域 schema、service 与 API。
+
+Agent 对 Workspace 和 Knowledge 的引用直接保存在 Agent 配置中，不创建绑定表。平台也不创建 Workspace 文件表、Workspace 实例表、Knowledge Job 表或工具执行表。
+
+## 数据权威与投影
+
+| 存储 | 权威职责 |
+| --- | --- |
+| MySQL | 用户、typed resource、Knowledge Document 状态、Conversation、Message、Attachment metadata 和绑定关系 |
+| ObjectStore | 聊天附件、Agent Home 文件、Knowledge 原文和 generation 专属解析文本 |
+| Qdrant | 从 Knowledge 当前解析文本生成、可重建的原文 chunk 向量投影 |
+
+平台共有六张业务表：
+
+- `users`：账号、密码哈希、角色、启停、`token_version` 和 fixed admin bootstrap 状态；
+- `resources`：Agent、Workspace、Knowledge Collection 的 typed config、owner、active 和 tombstone；
+- `knowledge_documents`：对象引用、处理与清理状态、错误、内容 hash 和当前 `index_generation`；
+- `conversations`：固定 Agent、模型覆盖、`idle/generating` 状态和 soft delete；
+- `messages`：正文、生成状态、实际 provider/model 和非正文审计 metadata；
+- `attachments`：owner、Message 绑定、对象 Key、大小和内容 hash。
+
+Qdrant、stdout 日志和 Assistant audit metadata 都不是正文权威。Qdrant 可以从 ObjectStore 与 MySQL 当前 generation 重建；平台不另外保存包含完整 Prompt、历史、附件、文件或 RAG chunk 的模型请求副本。
+
+## 每轮 Runtime
+
+```mermaid
+flowchart TD
+    A[认证用户并绑定请求 ID] --> B[短事务：锁定已有会话或创建首轮]
+    B --> C[解析最新 Agent、引用资源与模型]
+    C --> D[校验并锁定附件草稿]
+    D --> E[写入用户消息、待生成回复并绑定附件]
+    E --> F[提交事务并发送 accepted]
+    F --> G[读取入选附件并确定性组装平台 Prompt 与历史]
+    G --> H[主聊天 LLM]
+    H --> I{是否调用已授予工具}
+    I -->|Agent Home| J[文件工具：服务端路径、ETag 与权限校验]
+    I -->|Knowledge| K[检索工具：服务端 scope 与 generation 过滤]
+    I -->|否| L[流式回答]
+    J --> H
+    K --> H
+    L --> M[MySQL checkpoint 与完成状态]
 ```
 
-系统内部自动完成资料保存、文本提取、知识整理、检索索引、面试选题、动态追问、点评、练习归档和复盘沉淀。普通用户不需要理解目录、标签、RAG、embedding、Qdrant collection 或数据库投影。
+### 准备事务与 receipt
 
-多账号隔离边界是 `user_id`。后端只从 JWT 当前用户派生工作区路径、数据库查询条件和 Qdrant collection 前缀；前端不能通过传入 `user_id` 切换数据域。JWT 签名密钥可以通过 `JWT_SECRET_KEY` 显式配置；未配置时，后端在 `DATA_DIR/.secrets/jwt_secret` 生成当前安装专用的本地密钥。
+已有 Conversation 必须锁定并处于 `idle`；首轮校验所选 Agent 后创建 Conversation。应用在同一短事务中：
 
-本地开发默认允许注册账号。公网生产部署在创建首个账号后通过 `REGISTRATION_ENABLED=false` 关闭公开注册；该配置只限制新账号创建，不改变现有账号和 `user_id` 隔离边界。
+1. 读取最新 Agent 配置，锁定并校验引用资源与有效 Knowledge Document；
+2. 按“会话覆盖 > 最新 Agent 默认 > 系统默认”解析模型；
+3. 锁定附件草稿并校验 owner、未绑定状态与确定性顺序；
+4. 保存 completed User Message 和 pending Assistant；
+5. 把附件绑定 User Message，选取 completed 历史并执行预算裁剪；
+6. 提交后发送首个 SSE `accepted`。
 
-## 设计原则
+`accepted` 只是准备事务已经提交的 receipt，不表示附件对象已经读到、模型已经开始或生成会成功。ObjectStore 只在 receipt 之后读取最终入选窗口中的附件，并校验 Key、大小和 hash。附件损坏、存储故障、Provider/Runtime 失败或连接取消会保留已提交的用户消息与附件绑定，并把 Assistant 尽力标为 `failed`。
 
-- 文件系统保存长期学习资产，MySQL 保存运行状态和可重建投影，Qdrant 保存可重建向量索引。
-- 原始资料、用户回答、AI 推导和真实练习证据必须保留不同 provenance。
-- 原始资料不得被 LLM 或应用内编辑覆盖；修正和整理写入受管 Markdown 资产。
-- LLM 不直接写文件或数据库，只返回经过校验的结构化建议，确定性应用代码负责落盘和更新索引。
-- 用户上传内容一律视为不可信数据，不能覆盖系统 prompt、工具权限或内部配置。
-- 用户上传的学习笔记只表示“用户准备过什么”，不能被当作通用知识正确答案。
-- 掌握状态只能由真实练习证据改变；上传、阅读或编辑资料不能直接证明掌握。
-- 自动化失败不能丢失已保存的原始资料或用户真实回答。
+已有 Conversation 处于 `generating` 时，后端拒绝并发发送、retry 和模型覆盖修改，返回 `generation_in_progress`。该门闩由数据库行锁和状态保证，不依赖前端按钮。
 
-## 工作区结构
+### Agent 配置与模型
 
-每个用户的默认工作区位于 `DATA_DIR/users/{user_id}/workspace/`：
+Conversation 只保存 `agent_id`，不保存 Agent 配置快照。每个新轮次都读取 Agent 最新的 `system_prompt`、`default_model`、`home_workspace_id` 和 `knowledge_scopes`；管理员修改 global Agent 后，所有用户已有会话的后续轮次同样实时生效。已经开始的生成继续使用本轮冻结配置，不在流中切换。
 
-```text
-DATA_DIR/users/{user_id}/workspace/
-  workspace.md
-  manifest.md
-  raw/
-  extracted/
-  profile/
-    candidate.md
-    target.md
-  knowledge/
-  questions/
-  projects/
-  practice/
-  review/
-    high-frequency.md
-    status.md
-  state/
-    mastery.md
-  reports/
-  .revisions/
-```
-
-目录职责：
-
-- `workspace.md`：工作区版本、语言和基础说明，不保存敏感配置。
-- `manifest.md`：用户可编辑的工作区清单，说明推荐阅读顺序、文件职责和上下文偏好。它是给用户和 LLM 使用的工作区地图，不是安全策略；路径安全、用户隔离、写入权限、删除和索引规则仍由应用代码控制。默认正文来自 `DATA_DIR/default_manifest.md`；该运行时全局默认值首次由随包种子 `backend/app/templates/default_manifest.example.md` 创建，语义类似 `.env.example -> .env`。
-- `raw/`：用户原始输入，包括上传资料、新学习记录和真实面试记录。原文不可被 AI 覆盖；来源用途通过 sidecar 元数据或 Markdown front matter 标明。
-- `extracted/`：PDF、DOCX 等资料解析出的可读文本，是可从 `raw/` 原始资料重新生成的派生产物。
-- `profile/candidate.md`：简历事实、项目经历、技术栈和面试表达素材。
-- `profile/target.md`：目标岗位、公司、JD、准备重点和语言偏好。
-- `knowledge/`：按主题合并的面试知识短卡片；新学习输入优先追加到同主题卡片，而不是创建大量碎片文件。
-- `questions/`：答差或高频问题沉淀出的题库条目，包含考察点、标准回答、项目表达、追问、易错点和复习状态。
-- `projects/`：可直接用于项目深挖的项目表达素材；项目深挖出题优先读取该目录。
-- `practice/`：每次练习的完整证据，包括问题、回答、追问、反馈和结果。
-- `review/high-frequency.md`：真实面试复盘抽出的高频问题和暴露问题。
-- `review/status.md`：当前复习重点、最近整理和最近练习，用于出题前上下文。
-- `state/mastery.md`：当前掌握状态和支持结论的练习引用。
-- `reports/`：面试结束后的短复盘；它是展示产物，不作为新的事实来源。报告正文以该目录下的 artifact 为权威，列表展示需要的摘要保存在对应会话投影中。
-- `.revisions/`：系统修改 Markdown 前保存的有限历史版本，不在普通资料列表中展示。
-
-初始化会为新用户生成系统管理的 `manifest.md`。如果用户尚未通过应用编辑清单，后续 `DATA_DIR/default_manifest.md` 的变更会在工作区初始化时同步到该用户清单；一旦用户编辑过 `manifest.md`，系统不再用全局默认值覆盖它。
-
-## Artifact 协议
-
-系统管理的 Markdown 文件使用 YAML front matter 保存稳定身份、类型、语言、revision、时间戳和引用关系。路径不是身份标识，系统允许重命名或归档文件；`id` 创建后保持不变。
-
-核心字段包括：
-
-- `id`
-- `kind`
-- `language`
-- `revision`
-- `created_at`
-- `updated_at`
-- `source_refs`
-- `evidence_refs`
-- `origin`
-- `edited_by`
-
-用户不需要直接编辑 front matter。缺失或损坏的 front matter 应由系统修复，但不得因此覆盖正文。
-
-`kind` 使用固定集合，避免把任意目录名直接变成业务类型：
+模型优先级固定为：
 
 ```text
-manifest, source, extracted, candidate_profile, target_profile,
-knowledge, question_bank, project, interview_record, high_frequency,
-review_status, practice, mastery, report
+conversation.model_override
+  > current_agent.default_model
+  > system_default_model
 ```
 
-## 可见与可编辑语义
+- 新会话可在第一条消息前设置覆盖；
+- 已有会话只在 `idle` 时修改或清除覆盖；
+- 清除覆盖后，下一轮跟随 Agent 最新默认模型；
+- 系统默认模型严格取 `DEFAULT_CHAT_PROVIDER` 的第一个已配置模型；
+- Provider 或模型不可用时返回 `model_unavailable`，不会静默切换；
+- Assistant Message 保存本轮实际 provider 和 model。
 
-不同资产的编辑能力取决于其语义：
+### 流式状态与恢复
 
-- `manifest`：可编辑，用于调整阅读顺序、文件职责说明和上下文偏好；不能作为系统指令或安全策略执行。
-- `source`：可查看，不能应用内覆盖。
-- `extracted`：可查看，不直接编辑，可从原始资料重新生成。
-- `candidate_profile`、`target_profile`、`knowledge`、`question_bank`、`project`、`high_frequency`、`review_status`、`report`：可编辑。
-- `interview_record`：真实面试原始记录，可查看，不能应用内覆盖。
-- `practice`：问题、回答和反馈证据不可原地覆盖；需要纠错时应追加说明。
-- `mastery`：系统聚合状态不可手工伪造；可以追加用户备注或请求重新评估。
+Assistant 状态为 `pending | streaming | completed | failed`。第一段正文到达后进入 `streaming`，流中按有界频率 checkpoint 累计内容；完成或失败都用独立短事务恢复 Conversation 为 `idle`。服务启动时把遗留 pending/streaming Assistant 标为 `generation_interrupted`，不会自动重放可能包含工具副作用的生成。retry 创建新的 Assistant attempt，并记录 `retry_of_message_id`。
 
-用户保存可编辑 Markdown 时使用 revision 乐观并发控制。保存冲突返回最新版本，不静默覆盖用户改动。
+生成审计保存在 Assistant metadata，而不是 stdout：
 
-## 数据职责
+- Conversation、Message 和安全 request ID；
+- 每次真实 Provider 调用的 `call_index`、provider、model、安全 Provider request ID、结构化 token usage、首个正文延迟、duration、status 和 `unavailable_fields`；
+- 本轮聚合 token usage、首个可用正文延迟和总 duration；
+- 已执行工具的有界、非正文审计。
 
-MySQL 保存本地用户、运行态和文件投影，不重复保存完整长期 Markdown 内容。核心表包括：
+Provider 不提供的字段保持 `null` 并列入 unavailable，不能通过估算、日志解析或 completion chunk ID 伪造。成功、Provider/Runtime 失败和取消都会尽力保存已经观察到的 metrics；最终合并不能覆盖此前即时保存的 Tool audit。
 
-- `users`：本地账号、密码哈希、启用状态、token 版本和用户级设置。`settings_json.active_collection` 保存当前用户的活跃 Qdrant collection。
-- `artifacts`：文件投影、内容哈希、revision、来源引用、证据引用、处理状态和索引状态。
-- `conversations`：按用户隔离保存通用聊天、面试和学习的统一会话投影。`kind` 区分 `chat`、`interview` 与 `learning`，配置、状态和报告摘要保存在结构化 JSON 字段中。
-- `messages`：按用户隔离保存会话消息、面试轮次片段、学习输入、整理结果和对应 artifact 引用。`sequence` 是同一会话内的单调写入顺序，读取时间线时以它为准，而不是依赖数据库时间戳精度。
+### Prompt 所有权
 
-工作区 Markdown 仍是长期学习资产和练习证据的权威。删除历史只隐藏会话投影，不自动删除已写入工作区的资料、练习证据或报告文件。
+当前 system 层级为：
 
-Qdrant 保存可检索 chunk 向量，用户级 collection 使用 `auto_reign_user_{user_id}` 前缀并记录在当前用户的 `settings_json.active_collection` 中。任何 collection 都应能从当前用户的文件工作区和 MySQL 投影重建。删除 MySQL 投影或 Qdrant 索引不应影响长期学习资产。
+```text
+平台行为协议与安全不变量
+  > Agent system_prompt
+  > 应用从 Agent Home 根路径读取的 AGENTS.md
+  > 用户消息、附件、已完成历史与 ToolResult
+```
 
-## 入库与检索
+平台 Prompt 位于 `backend/app/prompts/platform/` 并随代码版本管理，负责安全、权限不变量和上下文预算。业务角色、意图解释、语气和回答格式属于 Agent `system_prompt`。预置 Agent/Workspace 只通过 create-only YAML 导入一次，之后作为普通资源管理；运行时没有随包业务 Prompt fallback。
 
-资料库从原始资料到检索上下文的完整流程见 [资料库数据流](knowledge-data-flow.md)。
+只有应用从 Home 根对象读取并独立注入的 `AGENTS.md` 是受控指令层。通过普通 `read_file` 得到的任何文件内容都仍是不可信数据，不能改变平台 Prompt、工具 schema、权限、路径或用户隔离。
 
-RAG 组件层使用 LangChain 的 splitter、embedding、Qdrant vectorstore 和 retriever；workspace 协议、provenance、active collection、可索引规则、上下文优先级和 prompt 安全边界仍由 Auto Reign 应用代码控制。
+### 共享上下文预算协议
 
-默认进入向量索引的内容：
+所有 CapabilityProvider 共用一个 `RuntimeTokenCounter` 和原始总预算：
 
-- Markdown 和 TXT 原始资料。
-- `raw/` 中的新学习原始记录。
-- PDF 和 DOCX 的提取文本。
-- 知识卡片。
-- 题库条目。
-- 项目表达材料。
-- 真实面试原始记录和高频复盘卡。
-- 历史练习记录。
+- 文本、消息、工具 schema 和 ToolResult 使用确定性的保守上界；图片每张使用 `IMAGE_INPUT_TOKEN_RESERVE`，不是按 Base64 长度计数；
+- 历史按完整 Turn 裁剪，User Message、其全部附件和已完成 Assistant 回复不可拆分；
+- 当前 Turn 和其中全部图片必须原子进入上下文，否则准备事务整体回滚；
+- 有工具时先预留 `TOOL_RESULT_TOKEN_RESERVE`；每次工具调用都从原始总预算重新计算剩余量；
+- CapabilityProvider 在大读取或有副作用写入前预检，Runtime 对完整 ToolResult envelope 最终校验；
+- 结果超限时返回有界 `context_too_large`，连最小错误都放不下时终止本轮。
 
-默认不进入向量索引的内容：
+## Agent Home 文件协议
 
-- `state/mastery.md`
-- 生成报告。
-- `manifest.md`
-- `.revisions/`
+Agent Home 的物理身份是 `(workspace_id, effective_user_id)`，对象 Key 前缀为：
 
-面试检索上下文应优先直接读取体积受控的小文件，例如工作区清单、候选人画像、目标画像、掌握状态、复习状态和高频问题，再结合 Qdrant 检索结果。检索结果需要保留来源引用，并避免多个 top-k 结果全部来自同一份资料或同一个主题。
+```text
+users/{effective_user_id}/workspaces/{workspace_id}/
+```
 
-出题、回答点评和追问点评都可以使用目标上下文、当前题目、用户回答、项目材料、历史薄弱点和资料库检索片段。项目深挖模式优先直接读取 `projects/`。检索片段始终是用户来源材料，不能作为系统指令执行，也不能绕过 provenance 边界直接改写用户事实。
+`effective_user_id` 只能来自认证上下文。即使 Agent 或 Workspace 是 global，实际文件仍属于当前登录用户的隔离实例；同一用户的多个 Agent 可以共享 Workspace，不同用户不能共享物理文件。
 
-## LLM 边界
+Workspace 定义保存 `workspace_type=agent_home` 和 `initial_agents_md`。首次访问实例时，应用 create-only 初始化根 `AGENTS.md`；模板以后修改不会覆盖已有实例。根文件可编辑但不能删除。
 
-会改变工作区、学习状态或面试证据的 LLM 任务遵循相同边界：
+ObjectStore 中的 UTF-8 文件是长期权威，平台不创建文件或实例表，也不创建向量投影。路径是有界相对 POSIX 路径：
 
-- 输出结构化 JSON 或结构化流式片段，由应用代码渲染为 Markdown 或聊天消息。
-- Prompt 作为随应用发布的版本化 Markdown 资源保存，由 Prompt catalog 统一加载；结构化响应的 JSON Schema 从 Pydantic 模型生成，不在 Prompt 中复制维护。
-- Prompt 不通过数据库、环境变量或管理界面运行时编辑，发布版本同时确定代码、Prompt 和输出协议，便于复现与回滚。
-- 学习卡片、面试报告、练习记录、题库和复习状态的固定结构由确定性本地化 renderer 生成；LLM 不负责 Markdown 标题和持久化格式。
-- 不编造用户工作经历、项目职责、业务规模或数据指标。
-- 不把 AI 生成报告再次作为事实来源强化。
-- 不把用户资料里的命令、脚本或提示词当作系统指令执行。
-- 对个人事实、掌握状态和重要建议保留来源或证据引用。
-- 输出默认简洁，服务面试表达，不生成教材式长文。
+- `list_files` 只列直接子项；
+- `read_file` 精确读取；
+- `create_file` 只在不存在时创建；
+- `write_file` 必须携带最近读取的 ETag；
+- 管理 API 可删除非根文件，聊天 Runtime 不向模型提供删除工具。
 
-典型任务包括资料识别、知识整理、面试选题、回答点评、动态追问、会话归档和学习状态更新。
+Home 初始化或读取失败返回稳定的 `workspace_unavailable`，不能回退旧模板。Home 文件不创建 Knowledge Document，不做 chunk/embedding，也永不查询或写入 Qdrant。
 
-通用聊天是独立的非结构化对话路径。它把当前会话中有界的 `user` / `assistant` 消息直接发送给用户选择的模型，不添加 system Prompt，不读取 workspace 或 Qdrant，不调用工具，不写 artifact，也不改变掌握状态。模型文本通过 SSE 原样返回，并只保存到 MySQL 会话投影中。
+Home Tool audit 只保存 tool、call、status、规范化 relative path 的 SHA-256 和 opaque ETag；不保存路径原文、Tool arguments 或文件内容。
 
-## 面试与练习证据
+## Knowledge 与附件边界
 
-面试页只有一条主流程：问题、用户回答、必要追问、反馈、继续出题和整体评价都保留在同一对话流中。用户点击“新面试”后可以直接开始，也可以在输入框里用自然语言说明公司、岗位、JD、主题或轮数；系统据此推断出题方式。界面不提供面试设置表单，也不要求点击结束按钮；只要已有有效回答，系统就实时归档练习证据。会话达到本轮配置题数后，系统在最后一题反馈之后自动生成整体评价和复盘报告；如果最后一题包含追问，则在追问反馈之后再收尾。面试历史由统一对话历史读取 `conversations` 和 `messages` 投影，不额外复制一份聊天记录。
+三类来源不能共用 Artifact、生命周期或索引规则：
 
-面试创建、答题、追问、下一题和收尾只保留 SSE mutation API。前端、集成测试和生产运行共用同一条流式状态机路径，不维护仅供测试调用的非流式 LLM 分支。
+| 来源 | 生命周期 | Runtime 访问 |
+| --- | --- | --- |
+| 聊天附件 | 一条 User Message 的来源；草稿显式删除，发送后固定绑定 | 内建消息上下文，不是 Capability 工具 |
+| Agent Home | 可写、可演进的用户长期文件 | 精确 list/read/create/write 工具 |
+| Knowledge | 显式维护的只读参考 Document | `search_knowledge(query)`，直接原文或 Qdrant 原文 chunk |
 
-出题前读取候选人画像、目标画像、掌握状态、复习状态、高频问题和资料库检索结果。回答点评和追问点评都返回结构化结果，包括更好的面试说法、掌握状态变化、是否写入薄弱点、是否写入高频题和本题考察点；主回答和追问的结构化结果分别归档，避免互相覆盖。只要点评暴露薄弱点或缺失点，系统会在 `questions/` 中创建或更新对应题库条目。
+附件原文与解析文本保存在 ObjectStore，但不创建 Knowledge Document、不 chunk、不 embedding、不写 Qdrant，也不自动写入 Home。附件只有在所属消息进入当前有界历史窗口时才会读取。
 
-每次回答或追问点评后具有有效回答的会话应沉淀为 practice 记录。归档顺序遵循：
+Agent Home 与 Knowledge 可以同时绑定。主 LLM 可以按来源语义先读 Home 再检索 Knowledge，或反过来；平台不做关键词硬路由，也不在两类来源之间复制内容。
 
-1. 保存完整 practice 文件。
-2. 根据本轮证据更新 `state/mastery.md`。
-3. 必要时更新相关 knowledge 文件中的易错点和追问。
-4. 更新 `review/status.md` 中的当前重点、最近整理和最近练习。
-5. 必要时更新 `review/high-frequency.md`。
-6. 更新 MySQL 投影和 Qdrant 索引。
+Knowledge 的 `document_ids=null` 表示整库，非空数组表示精确子集，空数组拒绝保存。直接原文与 RAG、generation 隔离、删除和恢复的完整契约以[Knowledge Collection 数据流](knowledge-data-flow.md)为权威。
 
-任何后续步骤失败都不得导致 practice 证据丢失。归档和索引任务应可幂等重试。
+## LLM 与确定性代码边界
 
-## 真实面试复盘
+| 环节 | 主聊天 LLM | 确定性应用代码 |
+| --- | --- | --- |
+| 回答和是否调用已授予工具 | 是 | 提供受控能力和终止边界 |
+| 生成 Knowledge query | 是 | 校验 schema、长度、scope 和预算 |
+| 身份认证、租户和资源可见性 | 否 | 是 |
+| Agent、Workspace、Collection、Document 解析 | 否 | 是 |
+| 文件路径、ETag、对象 Key 和大小/hash 校验 | 否 | 是 |
+| Document 状态、generation 和 Qdrant filter | 否 | 是 |
+| 历史裁剪和 Token 预算 | 否 | 是 |
+| 数据库、ObjectStore 与 Qdrant 读写 | 否 | 是 |
+| 文档解析、chunk 和索引发布 | 否 | 是；Embedding 模型只生成向量 |
 
-复盘页允许用户粘贴真实面试原始记录。系统不要求用户整理格式，也不调用 LLM 改写原文；确定性应用代码会保存 `raw/<timestamp>-real-interview.md`，抽取问题和薄弱线索，更新 `review/high-frequency.md`，并更新 `review/status.md` 中的当前重点。
+LLM 永远不持有 DB Session、ObjectStore client、Qdrant client 或 Secret。它只能提出经过 schema 校验的工具调用；所有权限、状态机、预算和持久化由应用代码执行。
 
-## 前端信息架构
+用户消息、附件、Home 文件、Knowledge 原文和检索 chunk 都是不可信来源，不能提升自身为 system 指令。Prompt injection 防护不能只依赖 Prompt；真正的隔离必须由服务端 scope、filter 和写入协议保证。
 
-界面优先暴露用户能理解的概念：
+## 可见性、生命周期与安全
 
-- 登录与注册：本地用户名密码账号，默认必须登录；用户菜单显示注册用户名并提供登出。
-- 左侧侧边栏：新聊天、新面试、新学习、资料库、历史会话和工作台入口；新聊天位于首项。
-- 工作台首页：通过只读文件树接口展示当前用户 `DATA_DIR/users/{user_id}/workspace` 下的真实目录和文件。左侧直接显示 workspace 下的一级文件夹和根目录文件，不展示 workspace 根节点，也不默认展开子目录；点击文件夹后右侧用资料库式表格显示该目录的直接子文件夹和文件，点击右侧子文件夹可逐层进入。能匹配到 artifact 投影的文件可跳转到资料详情页，并使用与资料库一致的编辑、删除操作；普通 UTF-8 文本文件可只读预览，非文本或过大文件不在首页展开。首页不展示健康检查、collection、embedding 或抽检任务等诊断/推导信息。
-- 面试页：居中的聊天流、输入框内模型选择、固定输入框、loading、streaming、错误重试和自动整体评价；出题意图通过自然语言输入表达。面试达到指定轮次后，只在最后一次回答评价之后给出整体评价和复盘报告。
-- 学习页：自由文本输入、模型选择、streaming、错误重试和学习卡片结果。历史学习对话从侧边栏重新打开后可以继续追加。
-- 通用聊天页：选择模型后直接提问，保留多轮会话历史；不展示业务设置，不进入资料库或学习沉淀流程。
-- 面试、学习和通用聊天输入框均随多行内容自动增高；达到最大高度后在输入框内部滚动，`Enter` 发送，`Shift+Enter` 换行。
-- 历史会话：侧边栏通过统一对话接口合并通用聊天、面试和学习，列表只展示标题、最近内容和时间，不展示“已完成”或“处理中”这类状态标记。每条历史右侧提供三点菜单，支持重命名和删除；删除只隐藏历史会话投影，不自动删除本地资料、练习证据或报告文件。
-- 复盘页：真实面试原始记录粘贴入口、抽题结果、薄弱线索和历史报告展示。
-- 资料库：分类、分页文件列表、原始文件名、归属、时间、编辑和删除操作。
-- 资料详情：优先展示可读内容和编辑入口，不要求用户理解内部路径。
-- 工作台：只展示当前用户工作区文件结构，不把健康检查、collection、embedding 等诊断信息放进主流程；前端不能通过传入路径或用户 id 切换数据域。
+### global/private 资源
 
-普通学习流程不暴露 Qdrant、embedding、collection 和数据库概念。workspace 文件投影由确定性应用流程维护，不公开测试专用重建入口；Qdrant 重建索引保留为诊断 API，不放在资料库主流程中。
+- `resources.user_id=0` 是 global owner sentinel，不对应可登录账号；
+- global 资源由管理员管理，对所有用户可见；
+- 正整数 owner 表示 private，只对所有者可管理；
+- global Agent 只能引用 global Workspace 和 Collection；
+- private Agent 可以引用自己的 private 资源或 global 资源，不能引用其他用户的 private 资源；
+- 表单入口固定 private/global scope，不能修改 owner；
+- 管理查询可发现未删除的 inactive 资源，聊天和普通可见查询只返回 active 资源；tombstone 永远不重新出现。
 
-## 运行与发布边界
+### 实时配置与删除
 
-`./start.sh` 是唯一的本地开发入口：根目录 Compose 只启动 MySQL 和 Qdrant，FastAPI 与 Next.js 由脚本作为宿主机进程管理，本地文件统一写入 `./data`。生产运行使用版本化容器镜像，不在服务器从源码构建应用。代码合并到 `main` 只运行 CI；需要发布时，由 GitHub Actions 从 `main` 构建镜像，并在成功后创建同一个 SemVer 对应的 Git Tag 和 GitHub Release。
+Agent 更新对已有会话的下一轮实时生效。Agent 停用或 tombstone 后：
 
-生产入口由反向代理统一提供同域 HTTPS，浏览器通过 `/api` 访问后端。MySQL、Qdrant、FastAPI 和 Next.js 不直接暴露公网端口。管理员在服务器上手工选择已发布 Tag 并执行部署；仓库不通过 GitHub Actions 连接生产主机。生产部署、备份、回滚和阿里云资源配置的权威流程见 [生产部署](production-deployment.md)。
+- 不再出现在新会话选择器；
+- 已有 Conversation 和 Message 仍可读取；
+- 输入区禁用，后端发送返回 `agent_unavailable`；
+- 不因历史外键仍存在而继续执行 Agent；
+- 不级联删除 Conversation、Message、Workspace、Collection 或 Document。
 
-生产升级在应用切换前显式执行 Alembic，并先备份 MySQL 与 `DATA_DIR`。应用回滚不自动降级数据库 schema；迁移采用 expand-contract 策略以维持相邻版本兼容。Qdrant 仍是可从工作区和 MySQL 投影重建的索引，不取代对原始资料、工作区和 MySQL 的备份。
+被 active Agent 引用的 Workspace 或 Collection 不能停用或删除。被精确 `document_ids` 引用的 Document 不能删除；整库绑定不阻止删除单个 Document。用户必须先解除引用，平台不能静默改写 Agent 配置。
+
+### MySQL 并发契约
+
+应用 MySQL connection 固定使用 `READ COMMITTED`。Agent/Workspace/Collection/Document 的绑定、停用、删除和生成准备必须按 canonical 顺序锁行，再做反向引用扫描：
+
+```text
+Agent -> referenced Resources -> Documents
+Knowledge 子流程：Collection -> Document
+```
+
+认证查询不能先建立被后续授权判断复用的旧 `REPEATABLE READ` snapshot。真实 MySQL race tests 是该锁顺序和“绑定或删除只能一方成功”语义的验收来源；SQLite 单元测试不能代替。
+
+### 账号初始化
+
+空库启动在事务中创建 fixed `admin` 和 create-only seed。`admin` 没有默认密码；只有 `credential_bootstrap_status=pending` 时，未认证 `/setup` 才能完成一次性设置。完成后状态单向变为 `completed`，endpoint 永久返回 409，重启或配置开关不能重新开放。
+
+系统没有公开注册。管理员通过 `/admin/users` 创建普通用户、启停账号和重置密码；停用或重置递增 `token_version` 使旧 Token 失效。fixed admin 不由普通用户管理接口启停或重置。
+
+## 运行和扩展边界
+
+当前生产只允许一个 FastAPI service、一个 Uvicorn 进程：
+
+- 当前进程承载 SSE、取消、Knowledge worker 和 Agent Home 同 Key 串行化；
+- MySQL 是 Message 和 Document 状态权威；
+- production 必须使用单一 S3-compatible ObjectStore 和应用独占 `(bucket, key_prefix)` namespace；
+- Qdrant 只用于 Knowledge 当前 generation 的投影、检索和清理；
+- 当前不部署 Redis、Elasticsearch、Kibana、Celery 或独立消息队列。
+
+只有确实需要跨进程流、取消、队列或锁时才设计 Redis 等协调设施；任何协调层只能保存可丢失、可重建的状态，不能成为 Message 或文件唯一权威。Elasticsearch 不是聊天审计依赖，应用不依赖日志索引才能运行。
+
+HTTP 默认输出 allowlist JSON 日志，并以安全 `X-Request-ID` 关联完整请求/SSE 生命周期；正文与 Secret 不进入 stdout。详细日志保留、Provider audit、备份、reset 和 report-only orphan audit 见[生产部署](production-deployment.md)。
+
+当前前端路由包括：
+
+- `/setup`、`/login`；
+- `/chat?session={conversation_id}`；
+- `/agents`、`/workspaces`、`/knowledge` 及 Workspace/Collection 详情；
+- `/admin/agents`、`/admin/workspaces`、`/admin/knowledge`、`/admin/users`。
+
+未来代码能力使用独立 execution Workspace：活跃代码目录采用 Git、POSIX 文件系统和 Executor。Agent Home 继续保存长期偏好与经验；ObjectStore 可以保存上传包和运行归档，但不是活跃 Git 工作树，`execution_workspace_id` 与 `home_workspace_id` 必须保持不同语义。
+
+当前 baseline 不兼容旧表、旧文件协议或旧 Prompt 分支；不双读、双写或保留兼容字段。Schema guard 检测到旧 revision、旧业务表或非空未版本化 schema 时拒绝启动，要求操作者显式处理。应用不会自动 DROP、迁移或删除本地及远端用户数据。

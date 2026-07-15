@@ -1,0 +1,110 @@
+{
+  "page": {
+    "title": "Agent workspaces",
+    "description": "Manage Agent Home definitions and open the files isolated to your account.",
+    "createTitle": "Create a workspace",
+    "createDescription": "The initial AGENTS.md template is used only when this workspace is first opened for your account.",
+    "listTitle": "Available workspaces",
+    "listDescription": "Shared and private definitions both open your own isolated Agent Home files.",
+    "homeTitle": "Agent Home",
+    "homeDescription": "Browse and edit this workspace's authoritative long-term files.",
+    "back": "Back to workspaces",
+    "loading": "Loading workspace…"
+  },
+  "personal": {
+    "title": "Agent workspaces",
+    "summary": "Manage your Agent Home definitions and open the files isolated to your account.",
+    "ownedTitle": "My workspaces",
+    "ownedSummary": "Your active and inactive definitions. Files remain isolated to your account.",
+    "sharedTitle": "Shared workspaces",
+    "sharedSummary": "Shared definitions open a separate Agent Home instance for your account."
+  },
+  "global": {
+    "title": "Global workspaces",
+    "summary": "Manage definitions available to every user. Each user still receives an isolated file instance.",
+    "listTitle": "Global definitions",
+    "listSummary": "Changing the initial template never overwrites AGENTS.md files that users already initialized."
+  },
+  "states": {
+    "loading": "Loading workspaces…",
+    "empty": "No workspaces yet.",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "managementEditor": {
+    "createTitle": "Create workspace",
+    "createGlobalTitle": "Create global workspace",
+    "editTitle": "Edit {{name}}"
+  },
+  "list": {
+    "loading": "Loading workspaces…",
+    "loadError": "Could not load workspaces.",
+    "empty": "No workspaces yet.",
+    "open": "Open {{name}}"
+  },
+  "scope": {
+    "global": "Shared",
+    "private": "Private"
+  },
+  "form": {
+    "name": "Name",
+    "initialAgentsMd": "Initial AGENTS.md",
+    "initialAgentsMdHint": "This template is used only when your instance is initialized for the first time. It never overwrites an existing AGENTS.md.",
+    "initialAgentsMdHintGlobal": "Changes affect only users who initialize this workspace for the first time in the future. Existing AGENTS.md files are never overwritten.",
+    "editTitle": "Edit workspace",
+    "nameTaken": "A workspace with this name already exists.",
+    "saveError": "Could not save workspace."
+  },
+  "browser": {
+    "breadcrumb": "Workspace folders",
+    "root": "Workspace root",
+    "rootShort": "Root",
+    "loading": "Loading files…",
+    "loadError": "Could not load files.",
+    "empty": "This folder is empty.",
+    "selectFile": "Select a file to open it.",
+    "delete": "Delete {{name}}",
+    "deleteConfirm": "Delete {{name}}? This cannot be undone.",
+    "deleteError": "Could not delete the file.",
+    "agentsMdProtected": "The root AGENTS.md manages this Agent Home and cannot be deleted."
+  },
+  "editor": {
+    "loading": "Loading file…",
+    "loadError": "Could not load the file.",
+    "fileContent": "File content",
+    "conflict": "This file changed since you opened it. Your draft is preserved.",
+    "reloadError": "Could not reload the file. Your draft is preserved.",
+    "saveError": "Could not save the file."
+  },
+  "actions": {
+    "retry": "Retry",
+    "open": "Open",
+    "openFiles": "Open my files",
+    "openFilesLabel": "Open files for {{name}}",
+    "create": "Create workspace",
+    "createGlobal": "Create global workspace",
+    "edit": "Edit",
+    "editLabel": "Edit {{name}}",
+    "save": "Save",
+    "saving": "Saving…",
+    "working": "Working…",
+    "cancel": "Cancel",
+    "enable": "Enable",
+    "enableLabel": "Enable {{name}}",
+    "disable": "Disable",
+    "disableLabel": "Disable {{name}}",
+    "reload": "Reload",
+    "delete": "Delete",
+    "deleteLabel": "Delete {{name}}",
+    "deleteConfirm": "Delete the workspace definition \"{{name}}\"? Stored user files are not automatically deleted."
+  },
+  "errors": {
+    "loadFailed": "Could not load workspaces.",
+    "statusFailed": "Could not change the workspace status.",
+    "deleteFailed": "Could not delete the workspace.",
+    "resourceInUse": "This workspace is still referenced by an active Agent.",
+    "accessDenied": "You do not have access to this workspace.",
+    "workspaceUnavailable": "This Agent Home is temporarily unavailable.",
+    "workspaceConflict": "The file changed. Reload it before saving again."
+  }
+}

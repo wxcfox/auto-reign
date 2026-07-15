@@ -1,10 +1,12 @@
 from logging.config import fileConfig
 
 from alembic import context
+from alembic.script import ScriptDirectory
 from sqlalchemy import engine_from_config, pool
 
 from app.core.config import Settings
 from app.db.models import Base
+from app.db.schema_guard import assert_schema_compatible
 
 config = context.config
 
@@ -37,8 +39,13 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
+        known_revisions = {
+            item.revision
+            for item in ScriptDirectory.from_config(config).walk_revisions()
+        }
 
         with context.begin_transaction():
+            assert_schema_compatible(connection, known_revisions)
             context.run_migrations()
 
 

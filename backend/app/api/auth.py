@@ -2,21 +2,23 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user, get_session
+from app.api.dependencies import (
+    SessionDep,
+    get_current_user,
+    get_optional_current_user,
+)
 from app.core.auth import create_access_token
-from app.core.config import Settings, get_settings
 from app.core.passwords import hash_password, verify_password
 from app.db import models
 from app.schemas.auth import (
+    AdminPasswordSetupRequest,
     ChangePasswordRequest,
     LoginRequest,
-    RegisterRequest,
     TokenResponse,
     UserResponse,
 )
+from app.services.bootstrap_service import BootstrapService, INITIAL_ADMIN_USERNAME
 
 router = APIRouter(prefix="/api/auth")
 
@@ -43,54 +45,10 @@ def _invalid_credentials() -> HTTPException:
     )
 
 
-@router.post("/register", response_model=TokenResponse)
-def register(
-    request: RegisterRequest,
-    session: Session = Depends(get_session),
-    settings: Settings = Depends(get_settings),
-) -> TokenResponse:
-    if not settings.registration_enabled:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "registration_disabled",
-                "message": "Public registration is disabled.",
-            },
-        )
-    user = models.User(
-        username=request.username,
-        password_hash=hash_password(request.password),
-        display_name=request.display_name or request.username,
-        settings_json={
-            "schema_version": 1,
-            "language": "zh-CN",
-            "active_collection": "",
-        },
-    )
-    session.add(user)
-    try:
-        session.flush()
-    except IntegrityError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "username_taken",
-                "message": "Username is already registered.",
-            },
-        ) from exc
-
-    user.settings_json = {
-        **user.settings_json,
-        "active_collection": f"auto_reign_user_{user.id}",
-    }
-    session.flush()
-    return _token_response(user)
-
-
 @router.post("/login", response_model=TokenResponse)
 def login(
     request: LoginRequest,
-    session: Session = Depends(get_session),
+    session: SessionDep,
 ) -> TokenResponse:
     user = session.scalar(
         select(models.User).where(models.User.username == request.username)
@@ -102,8 +60,44 @@ def login(
     return _token_response(user)
 
 
+@router.post("/admin-password/setup", response_model=TokenResponse)
+def setup_admin_password(
+    payload: AdminPasswordSetupRequest,
+    session: SessionDep,
+) -> TokenResponse:
+    user = BootstrapService().setup_initial_admin_password(
+        session,
+        password=payload.password,
+    )
+    return _token_response(user)
+
+
 @router.get("/me", response_model=UserResponse)
-def me(current_user: models.User = Depends(get_current_user)) -> models.User:
+def me(
+    session: SessionDep,
+    current_user: models.User | None = Depends(get_optional_current_user),
+) -> models.User:
+    if current_user is None:
+        admin = session.scalar(
+            select(models.User).where(models.User.username == INITIAL_ADMIN_USERNAME)
+        )
+        if admin is not None and admin.credential_bootstrap_status == "pending":
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "admin_password_setup_required",
+                    "message": "The initial administrator password must be set.",
+                    "admin_username": INITIAL_ADMIN_USERNAME,
+                },
+            )
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth_required",
+                "message": "Authentication is required.",
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return current_user
 
 
