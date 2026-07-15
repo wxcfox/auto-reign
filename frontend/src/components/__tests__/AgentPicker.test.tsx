@@ -89,6 +89,24 @@ describe("AgentPicker", () => {
     expect(screen.queryByRole("listbox", { name: /agents/i })).not.toBeInTheDocument();
   });
 
+  it("offers an explicit no-Agent option", () => {
+    const onClear = vi.fn();
+    render(
+      <AgentPicker
+        agents={[globalAgent]}
+        disabled={false}
+        onClear={onClear}
+        onSelect={vi.fn()}
+        selectedAgentId={globalAgent.id}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: globalAgent.name }));
+    fireEvent.click(screen.getByRole("option", { name: /no agent/i }));
+
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
   it("disables search and selection together", () => {
     const onSelect = vi.fn();
     render(

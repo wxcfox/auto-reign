@@ -161,7 +161,7 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
         setAgents(agentResponse.agents);
         setProviders(modelResponse.providers);
         setPlatformDefault(modelResponse.default);
-        setSelectedAgentId(agentResponse.agents[0]?.id ?? null);
+        setSelectedAgentId(null);
       } catch (loadError) {
         if (viewGenerationRef.current === viewGeneration) {
           setLoadFailed(true);
@@ -222,9 +222,11 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
   );
   const resolvedAgentDefault = selectedAgentDefinition
     ? selectedAgentDefinition.config.default_model ?? platformDefault
-    : lockedAgent?.is_available
+    : lockedAgent === null
       ? platformDefault
-      : null;
+      : lockedAgent.is_available
+        ? platformDefault
+        : null;
   const agentUnavailable = lockedAgent !== null && !lockedAgent.is_available;
   const generationInProgress = conversationStatus === "generating";
   const mutationPending = sending || modelUpdating;
@@ -243,8 +245,7 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
     Boolean(composerValue.trim()) &&
     draftAttachments.length <= 10 &&
     resolvedModel !== null &&
-    !interactionDisabled &&
-    (conversationId !== null ? lockedAgent !== null : selectedAgent !== null);
+    !interactionDisabled;
   const currentModelLabel =
     modelLabel(resolvedModel) ?? t("modelPicker.modelUnavailable");
 
@@ -327,7 +328,6 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
       : null);
     if (
       !text ||
-      !turnAgent ||
       resolvedModel === null ||
       interactionDisabled ||
       sendOperationRef.current ||
@@ -371,7 +371,7 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
         {
           text,
           conversation_id: requestConversationId ?? undefined,
-          agent_id: requestConversationId ? undefined : turnAgent.id,
+          agent_id: requestConversationId ? undefined : (turnAgent?.id ?? undefined),
           model_override: requestConversationId ? undefined : selectedModelOverride,
           attachment_ids: submittedAttachmentIds,
         },
@@ -447,7 +447,9 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
         if (requestConversationId) {
           setLockedAgent((current) => current ? { ...current, is_available: false } : current);
         } else {
-          const availableAgents = agents.filter((agent) => agent.id !== turnAgent.id);
+          const availableAgents = turnAgent
+            ? agents.filter((agent) => agent.id !== turnAgent.id)
+            : agents;
           setAgents(availableAgents);
           setSelectedAgentId(availableAgents[0]?.id ?? null);
         }
@@ -592,16 +594,17 @@ export function ChatWorkspace({ sessionId }: ChatWorkspaceProps = {}) {
                   recoveryError={attachmentRecoveryError}
                   value={draftAttachments}
                 >
-                  {conversationId && lockedAgent ? (
+                  {conversationId ? (
                     <span className="agent-summary" aria-label={t("agentPicker.current", {
-                      name: lockedAgent.name,
+                      name: lockedAgent?.name ?? t("agentPicker.none", { defaultValue: "No agent" }),
                     })}>
-                      {lockedAgent.name}
+                      {lockedAgent?.name ?? t("agentPicker.none", { defaultValue: "No agent" })}
                     </span>
                   ) : (
                     <AgentPicker
                       agents={agents}
                       disabled={interactionDisabled}
+                      onClear={() => setSelectedAgentId(null)}
                       onSelect={(agent) => setSelectedAgentId(agent.id)}
                       selectedAgentId={selectedAgentId}
                     />

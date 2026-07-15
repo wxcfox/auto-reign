@@ -150,7 +150,9 @@ class Conversation(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    agent_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
+    agent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resources.id"), index=True, nullable=True
+    )
     title: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(16), default="idle")
     model_override_json: Mapped[dict[str, object] | None] = mapped_column(

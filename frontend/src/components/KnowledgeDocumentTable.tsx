@@ -23,6 +23,14 @@ export type KnowledgeDocumentTableProps = {
 
 type CleanupState = "complete" | "pending";
 
+const DOCUMENT_ERROR_KEYS: Record<string, string> = {
+  embedding_auth_failed: "documents.embeddingAuthFailed",
+  embedding_rate_limited: "documents.embeddingRateLimited",
+  embedding_invalid_request: "documents.embeddingInvalidRequest",
+  embedding_provider_unavailable: "documents.embeddingProviderUnavailable",
+  knowledge_unavailable: "documents.knowledgeUnavailable",
+};
+
 function visibleDocuments(documents: KnowledgeDocument[]): KnowledgeDocument[] {
   return documents.filter(
     (document) =>
@@ -30,6 +38,14 @@ function visibleDocuments(documents: KnowledgeDocument[]): KnowledgeDocument[] {
       document.error_code === "knowledge_cleanup_pending" ||
       document.error_code === "knowledge_cleanup_failed",
   );
+}
+
+function documentErrorMessage(
+  document: KnowledgeDocument,
+  translate: (key: string) => string,
+): string | null {
+  const key = document.error_code ? DOCUMENT_ERROR_KEYS[document.error_code] : undefined;
+  return key ? translate(key) : document.error_message;
 }
 
 export function KnowledgeDocumentTable(props: KnowledgeDocumentTableProps) {
@@ -259,9 +275,9 @@ function KnowledgeDocumentTableInstance({
                           {t("documents.inactive")}
                         </span>
                       ) : null}
-                      {document.error_message ? (
+                      {documentErrorMessage(document, t) ? (
                         <span className="knowledge-document__error" role="alert">
-                          {document.error_message}
+                          {documentErrorMessage(document, t)}
                         </span>
                       ) : null}
                       {cleanupPending ? (

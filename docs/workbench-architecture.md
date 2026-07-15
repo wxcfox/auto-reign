@@ -23,11 +23,11 @@ Agent 的 `system_prompt` 定义角色、交互方式和业务行为。平台运
 
 | 概念 | 配置或身份 | 生命周期 |
 | --- | --- | --- |
-| Agent | `system_prompt`、可选 `default_model`、可选 `home_workspace_id`、`knowledge_scopes` | global 或 private；Conversation 固定引用，配置每个新轮次实时解析 |
+| Agent | `system_prompt`、可选 `default_model`、可选 `home_workspace_id`、`knowledge_scopes` | global 或 private；Conversation 可选引用，绑定 Agent 的会话配置每个新轮次实时解析 |
 | Workspace | `workspace_type=agent_home`、`initial_agents_md` | 多个 Agent 可共享定义；物理实例按 `(workspace_id, effective_user_id)` 隔离 |
 | Knowledge Collection | chunk、overlap、`top_k`、score threshold 等检索策略 | 显式包含 Document；Agent 可绑定整库或精确 Document 子集 |
 | Knowledge Document | Collection、owner、对象 Key、状态、内容 hash、`index_generation` | 原文显式上传；解析和 Qdrant 投影可重建 |
-| Conversation | `user_id + agent_id + model_override` | Agent 首轮后锁定；Agent 停用或删除后历史可读、不能继续生成 |
+| Conversation | `user_id + 可选 agent_id + model_override` | 新聊天默认不绑定 Agent；首轮选择后锁定，纯 LLM 会话不启用 Agent 能力 |
 | Message | Conversation 内单调 sequence、角色、正文、生成状态和审计 metadata | User Message 在模型调用前提交；Assistant 支持 checkpoint、失败和 retry |
 | Attachment | 一条 User Message 的来源，未绑定时是当前用户草稿 | 草稿可删；发送准备事务成功后绑定并固定，不自动进入 Home 或 Knowledge |
 

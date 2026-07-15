@@ -78,6 +78,7 @@ class ConversationService:
             include_unavailable=True,
             resource_ids={
                 item.conversation.agent_id for item in conversations
+                if item.conversation.agent_id is not None
             },
         )
         agents_by_id = {agent.id: agent for agent in agents}
@@ -124,12 +125,16 @@ class ConversationService:
                 attachments_by_message.setdefault(attachment.message_id, []).append(
                     attachment
                 )
-        agent = self.resource_repository.get_visible(
-            session,
-            user_id=conversation.user_id,
-            resource_id=conversation.agent_id,
-            resource_type="agent",
-            include_unavailable=True,
+        agent = (
+            self.resource_repository.get_visible(
+                session,
+                user_id=conversation.user_id,
+                resource_id=conversation.agent_id,
+                resource_type="agent",
+                include_unavailable=True,
+            )
+            if conversation.agent_id is not None
+            else None
         )
         history_item = self._history_item(
             conversation,
@@ -168,12 +173,16 @@ class ConversationService:
             user_id=user_id,
             conversation_id=conversation.id,
         )
-        agent = self.resource_repository.get_visible(
-            session,
-            user_id=conversation.user_id,
-            resource_id=conversation.agent_id,
-            resource_type="agent",
-            include_unavailable=True,
+        agent = (
+            self.resource_repository.get_visible(
+                session,
+                user_id=conversation.user_id,
+                resource_id=conversation.agent_id,
+                resource_type="agent",
+                include_unavailable=True,
+            )
+            if conversation.agent_id is not None
+            else None
         )
         return self._history_item(
             conversation,
@@ -203,11 +212,18 @@ class ConversationService:
     ) -> ConversationHistoryItemResponse:
         agent_response = ConversationAgentResponse(
             id=conversation.agent_id,
-            name=agent.name if agent is not None else "Unavailable agent",
+            name=(
+                agent.name
+                if agent is not None
+                else "No agent" if conversation.agent_id is None else "Unavailable agent"
+            ),
             is_available=(
-                agent is not None
-                and agent.is_active
-                and agent.deleted_at is None
+                conversation.agent_id is None
+                or (
+                    agent is not None
+                    and agent.is_active
+                    and agent.deleted_at is None
+                )
             ),
         )
         model_override = (

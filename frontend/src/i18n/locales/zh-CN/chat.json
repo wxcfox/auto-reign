@@ -12,6 +12,7 @@
   "generation_in_progress": "正在生成回答，请等待完成后再进行其他操作。",
   "no_agents": "当前没有可用于新会话的智能体。",
   "agentPicker": {
+    "none": "不使用智能体",
     "choose": "选择智能体",
     "listbox": "智能体",
     "search": "搜索智能体",
@@ -58,7 +59,7 @@
     "options_load": "无法刷新智能体或模型选项，已有历史消息仍可阅读。",
     "send": "消息发送失败。",
     "model_update": "无法切换当前会话的模型。",
-    "agent_required": "发送第一条消息前请选择智能体。",
+    "agent_required": "消息发送失败。",
     "agent_unavailable": "该智能体已不可用。",
     "agent_locked": "会话开始后不能更换智能体。",
     "chat_message_empty": "请输入消息后再发送。",

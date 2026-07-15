@@ -1481,7 +1481,7 @@ def test_whitespace_only_text_is_rejected_before_any_write(
     assert runtime.calls == []
 
 
-def test_new_turn_requires_agent_and_existing_turn_locks_agent(
+def test_new_turn_allows_plain_chat_and_existing_turn_locks_agent(
     session_factory: sessionmaker[Session], tmp_path
 ) -> None:
     user_id, agent_id = _seed_user_and_agent(session_factory)
@@ -1500,9 +1500,13 @@ def test_new_turn_requires_agent_and_existing_turn_locks_agent(
         settings=_settings(tmp_path),
     )
 
-    with pytest.raises(HTTPException) as missing:
-        list(service.stream_turn(user_id=user_id, request=ConversationSendRequest(text="x")))
-    assert _error_code(missing.value) == "agent_required"
+    plain_events = list(
+        service.stream_turn(
+            user_id=user_id,
+            request=ConversationSendRequest(text="x"),
+        )
+    )
+    assert plain_events[0].event == "accepted"
 
     with pytest.raises(HTTPException) as changed:
         list(

@@ -180,15 +180,14 @@ class GenerationService:
 
         with session_scope(self.session_factory) as session:
             if request.conversation_id is None:
-                if request.agent_id is None:
-                    raise bad_request(
-                        "agent_required",
-                        "Agent is required for a new conversation.",
+                agent = (
+                    self.agent_service.resolve_for_turn(
+                        session,
+                        user_id=user_id,
+                        agent_id=request.agent_id,
                     )
-                agent = self.agent_service.resolve_for_turn(
-                    session,
-                    user_id=user_id,
-                    agent_id=request.agent_id,
+                    if request.agent_id is not None
+                    else None
                 )
                 model = self.agent_service.resolve_model(
                     agent=agent,
@@ -197,7 +196,7 @@ class GenerationService:
                 conversation = self.repository.create_generating(
                     session,
                     user_id=user_id,
-                    agent_id=agent.id,
+                    agent_id=agent.id if agent is not None else None,
                     title=_conversation_title(text),
                     model_override=request.model_override,
                 )
@@ -227,10 +226,14 @@ class GenerationService:
                         "model_override_not_allowed",
                         "Use the conversation model setting before sending a message.",
                     )
-                agent = self.agent_service.resolve_for_turn(
-                    session,
-                    user_id=user_id,
-                    agent_id=conversation.agent_id,
+                agent = (
+                    self.agent_service.resolve_for_turn(
+                        session,
+                        user_id=user_id,
+                        agent_id=conversation.agent_id,
+                    )
+                    if conversation.agent_id is not None
+                    else None
                 )
                 model = self.agent_service.resolve_model(
                     agent=agent,
@@ -253,7 +256,9 @@ class GenerationService:
                 text=text,
                 provider=model.provider,
                 model=model.model,
-                metadata=self._generation_metadata(agent),
+                metadata=self._generation_metadata(
+                    agent or self.agent_service.plain_chat_agent()
+                ),
             )
             self.attachments.bind_to_message(
                 session,
@@ -272,7 +277,7 @@ class GenerationService:
                 user_message_id=user_message.id,
                 assistant_message_id=assistant.id,
                 attachment_ids=tuple(request.attachment_ids),
-                agent=agent,
+                agent=agent or self.agent_service.plain_chat_agent(),
                 provider=model.provider,
                 model=model.model,
                 turns=turns,
@@ -316,10 +321,14 @@ class GenerationService:
                     "Failed assistant message not found.",
                 )
 
-            agent = self.agent_service.resolve_for_turn(
-                session,
-                user_id=user_id,
-                agent_id=conversation.agent_id,
+            agent = (
+                self.agent_service.resolve_for_turn(
+                    session,
+                    user_id=user_id,
+                    agent_id=conversation.agent_id,
+                )
+                if conversation.agent_id is not None
+                else None
             )
             model = self.agent_service.resolve_model(
                 agent=agent,
@@ -345,7 +354,9 @@ class GenerationService:
                 model=model.model,
                 metadata_json={
                     "retry_of_message_id": failed_message_id,
-                    **self._generation_metadata(agent),
+                    **self._generation_metadata(
+                        agent or self.agent_service.plain_chat_agent()
+                    ),
                 },
             )
             conversation.status = "generating"
@@ -363,7 +374,7 @@ class GenerationService:
                 user_message_id=None,
                 assistant_message_id=assistant.id,
                 attachment_ids=(),
-                agent=agent,
+                agent=agent or self.agent_service.plain_chat_agent(),
                 provider=model.provider,
                 model=model.model,
                 turns=turns,

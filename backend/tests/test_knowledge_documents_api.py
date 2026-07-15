@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
@@ -134,6 +136,44 @@ def test_upload_lists_gets_downloads_and_reindexes_document(
         assert document is not None
         assert document.parsed_object_key is None
     assert parsed_key in client.app.state.object_store.keys()
+
+
+def test_reindex_does_not_duplicate_active_generation_but_recovers_stale_processing(
+    client,
+    ordinary_user_headers,
+) -> None:
+    collection = _collection(client, ordinary_user_headers, name="状态测试库")
+    uploaded = _upload(client, ordinary_user_headers, collection["id"])
+    document_id = uploaded.json()["id"]
+
+    with client.app.state.session_factory() as session:
+        document = session.get(models.KnowledgeDocument, document_id)
+        assert document is not None
+        document.status = "processing"
+        document.updated_at = models._now()
+        session.commit()
+
+    active = client.post(
+        f"/api/knowledge-collections/{collection['id']}/documents/{document_id}/reindex",
+        headers=ordinary_user_headers,
+    )
+    assert active.status_code == 200
+    assert active.json()["status"] == "processing"
+    assert active.json()["index_generation"] == 1
+
+    with client.app.state.session_factory() as session:
+        document = session.get(models.KnowledgeDocument, document_id)
+        assert document is not None
+        document.updated_at = models._now() - timedelta(minutes=10)
+        session.commit()
+
+    stale = client.post(
+        f"/api/knowledge-collections/{collection['id']}/documents/{document_id}/reindex",
+        headers=ordinary_user_headers,
+    )
+    assert stale.status_code == 200
+    assert stale.json()["status"] == "queued"
+    assert stale.json()["index_generation"] == 2
 
 
 def test_upload_endpoint_offloads_object_store_and_db_work(

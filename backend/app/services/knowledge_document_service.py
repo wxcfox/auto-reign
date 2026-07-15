@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 import hashlib
 import logging
 from typing import Protocol
@@ -275,6 +276,7 @@ class KnowledgeDocumentService:
         *,
         actor: models.User,
         document_id: str,
+        processing_timeout_seconds: int = 300,
     ) -> models.KnowledgeDocument:
         document = self._require_manageable(
             session,
@@ -283,6 +285,15 @@ class KnowledgeDocumentService:
             for_update=True,
             require_active=True,
         )
+        if document.status in {"queued", "processing"}:
+            is_stale = (
+                document.status == "processing"
+                and document.updated_at
+                < models._now() - timedelta(seconds=processing_timeout_seconds)
+            )
+            if not is_stale:
+                return document
+
         document.index_generation += 1
         document.parsed_object_key = None
         document.indexed_at = None

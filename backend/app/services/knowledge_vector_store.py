@@ -21,7 +21,7 @@ from qdrant_client.http.models import (
 
 from app.core.config import Settings, get_settings
 from app.repositories.vector_store import VectorStoreUnavailable, stable_vector_id
-from app.services.embedding_service import EmbeddingService
+from app.services.embedding_service import EmbeddingProviderError, EmbeddingService
 from app.services.knowledge_chunk_service import KnowledgeChunk
 
 
@@ -154,6 +154,8 @@ class KnowledgeVectorStore:
     def _external(operation: str, callback: Callable[[], _Result]) -> _Result:
         try:
             return callback()
+        except EmbeddingProviderError:
+            raise
         except VectorStoreUnavailable:
             raise
         except Exception as error:

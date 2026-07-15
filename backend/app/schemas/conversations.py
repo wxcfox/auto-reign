@@ -26,7 +26,7 @@ class ConversationMessageResponse(BaseModel):
 
 
 class ConversationAgentResponse(BaseModel):
-    id: str
+    id: str | None
     name: str
     is_available: bool
 

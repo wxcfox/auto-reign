@@ -106,6 +106,28 @@ class AgentService:
         )
         self.settings = settings or get_settings()
 
+    @staticmethod
+    def plain_chat_agent() -> ResolvedAgent:
+        """Return the capability-free configuration used by plain LLM chats."""
+        config = ResolvedAgentConfig(
+            agent_id="",
+            owner_user_id=0,
+            system_prompt="",
+            default_model=None,
+            home_workspace=None,
+            knowledge_scopes=(),
+            config_json=MappingProxyType({}),
+            updated_at=datetime.min,
+            config_hash="plain-chat-v1",
+        )
+        return ResolvedAgent(
+            id="",
+            name="No agent",
+            config=config,
+            updated_at=datetime.min,
+            config_hash=config.config_hash,
+        )
+
     def list_agents(
         self,
         session: Session,
@@ -348,10 +370,10 @@ class AgentService:
     def resolve_model(
         self,
         *,
-        agent: ResolvedAgent,
+        agent: ResolvedAgent | None,
         conversation_override: ModelRef | None,
     ) -> ModelRef:
-        selected = conversation_override or agent.config.default_model
+        selected = conversation_override or (agent.config.default_model if agent else None)
         if selected is None:
             default = default_chat_model(self.settings)
             if default is None:
