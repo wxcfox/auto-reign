@@ -157,6 +157,13 @@ users/{effective_user_id}/workspaces/{workspace_id}/
 
 `effective_user_id` 只能来自认证上下文。即使 Agent 或 Workspace 是 global，实际文件仍属于当前登录用户的隔离实例；同一用户的多个 Agent 可以共享 Workspace，不同用户不能共享物理文件。
 
+Agent Home 的保存语义由用户意图触发，而不是由聊天轮次触发：
+
+- 普通聊天、答题和讨论不会自动写入 Agent Home；只有用户明确要求长期保存、记录或更新时，模型才可以使用文件工具；
+- 用户明确要求保存时，模型先读取相关文件，再按同主题合并，避免重复创建内容；
+- 已有文件只能使用最近一次 `read_file` 返回的 ETag 调用 `write_file`，创建新文件使用 `create_file`；
+- 只有文件工具成功返回后，模型才能向用户确认保存完成；未调用工具、工具不可用或工具返回错误时，必须如实说明保存未完成。
+
 Workspace 定义保存 `workspace_type=agent_home` 和 `initial_agents_md`。首次访问实例时，应用 create-only 初始化根 `AGENTS.md`；模板以后修改不会覆盖已有实例。根文件可编辑但不能删除。
 
 ObjectStore 中的 UTF-8 文件是长期权威，平台不创建文件或实例表，也不创建向量投影。路径是有界相对 POSIX 路径：

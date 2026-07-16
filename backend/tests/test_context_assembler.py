@@ -306,6 +306,32 @@ def test_tool_schema_reserve_keeps_current_turn_atomic_and_prunes_history() -> N
     ]
 
 
+def test_default_sized_budget_keeps_chinese_history_available_for_home_save() -> None:
+    definition = ToolDefinition(
+        name="write_file",
+        description="Save one file.",
+        input_schema={"type": "object", "properties": {"content": {"type": "string"}}},
+    )
+    prior = _turn(
+        "quiz",
+        "请回答 Java 题目",
+        assistants=("学习记录：" + "HashMap 扩容与并发分析。" * 300,),
+    )
+    save_request = _turn("save", "先不继续了。当前学习抽检，请记录一下。")
+
+    selection = _assembler(32_000).select_turns(
+        history=(prior, save_request),
+        base_system_prompt="platform",
+        attachment_system_prompt=None,
+        agent_prompt="agent",
+        agents_md="# 成长助手工作区",
+        tool_definitions=(definition,),
+        tool_result_token_reserve=4_096,
+    )
+
+    assert selection.turns == (prior, save_request)
+
+
 def test_current_turn_with_too_many_images_is_rejected_without_dropping_any() -> None:
     refs = tuple(_image_ref(f"image-{index}") for index in range(3))
     current = _turn("current", "inspect all", refs=refs)

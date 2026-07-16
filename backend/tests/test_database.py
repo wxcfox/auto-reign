@@ -41,7 +41,7 @@ def _mock_app_settings(init_data_dir: Path) -> Mock:
     return Mock(
         init_data_dir=init_data_dir,
         log_level="INFO",
-        chat_context_token_budget=16_000,
+        chat_context_token_budget=32_000,
         tool_result_token_reserve=4_096,
         image_input_token_reserve=4_096,
         attachment_max_bytes=20 * 1024 * 1024,
@@ -196,7 +196,7 @@ def test_app_bootstraps_before_startup_and_shutdown_disposes_engine(
             app.state.attachment_runtime_loader.object_store
             is sentinel.object_store
         )
-        assert app.state.context_assembler.token_budget == 16_000
+        assert app.state.context_assembler.token_budget == 32_000
         runtime.stream_turn.assert_not_called()
 
     assert calls == ["bootstrap", "recover", "yield", "dispose"]
