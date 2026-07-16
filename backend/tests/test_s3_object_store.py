@@ -544,4 +544,6 @@ def test_factory_builds_virtual_hosted_oss_request_url_without_network() -> None
     )
 
     assert store.client.meta.config.s3["addressing_style"] == "virtual"
+    assert store.client.meta.config.request_checksum_calculation == "when_required"
+    assert store.client.meta.config.response_checksum_validation == "when_required"
     assert url.startswith("https://exclusive-bucket.oss-cn-hangzhou.aliyuncs.com/probe?")

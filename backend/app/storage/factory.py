@@ -42,7 +42,11 @@ def build_object_store(settings: Settings) -> ObjectStore:
         aws_access_key_id=settings.s3_access_key_id,
         aws_secret_access_key=settings.s3_secret_access_key,
         aws_session_token=settings.s3_session_token,
-        config=Config(s3={"addressing_style": settings.s3_addressing_style}),
+        config=Config(
+            s3={"addressing_style": settings.s3_addressing_style},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
     return S3ObjectStore(
         client=client,
