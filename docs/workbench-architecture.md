@@ -64,7 +64,7 @@ flowchart TD
     D --> E[写入用户消息、待生成回复并绑定附件]
     E --> F[提交事务并发送 accepted]
     F --> G[读取入选附件并确定性组装平台 Prompt 与历史]
-    G --> H[主聊天 LLM]
+    G --> H[LangGraph create_react_agent 与主聊天 LLM]
     H --> I{是否调用已授予工具}
     I -->|Agent Home| J[文件工具：服务端路径、ETag 与权限校验]
     I -->|Knowledge| K[检索工具：服务端 scope 与 generation 过滤]
@@ -135,6 +135,20 @@ Provider 不提供的字段保持 `null` 并列入 unavailable，不能通过估
 平台 Prompt 位于 `backend/app/prompts/platform/` 并随代码版本管理，负责安全、权限不变量和上下文预算。业务角色、意图解释、语气和回答格式属于 Agent `system_prompt`。预置 Agent/Workspace 只通过 create-only YAML 导入一次，之后作为普通资源管理；运行时没有随包业务 Prompt fallback。
 
 只有应用从 Home 根对象读取并独立注入的 `AGENTS.md` 是受控指令层。通过普通 `read_file` 得到的任何文件内容都仍是不可信数据，不能改变平台 Prompt、工具 schema、权限、路径或用户隔离。
+
+### 工具注册与 ReAct 执行
+
+每轮 Runtime 使用统一的 Tool Registry 把当前用户可用的 CapabilityProvider 绑定为工具集合。注册阶段把工具 schema 和执行 provider 组合成不可变 `ToolSpec`，收集 Prompt module 并拒绝重复工具名；准备完成后，当前轮冻结工具集合。这里不使用进程级可变 global registry，避免不同用户或不同 Agent 的动态能力互相泄漏。
+
+`AgentRuntime` 负责 Agent Home 初始化、附件读取和上下文组装，独立 `ReactLoop` 每轮构建 LangGraph `create_react_agent`。`ModelServiceChatModel` 把现有 Provider 流适配为 LangChain `BaseChatModel`，继续采集原有 provider metrics；LangGraph ToolNode 执行 ToolCall，把 ToolMessage 追加到 graph state 后再次调用模型。一次模型调用最多接受一个工具调用，并受 `runtime_max_tool_rounds`、上下文预算和 SSE 生命周期约束。
+
+工具执行通过 LangChain `BaseTool` 契约：使用模型生成的真实 `tool_call_id`，并把完整 `ToolResult` 作为 ToolMessage artifact 保留，供 Tool audit 使用。pre-model context guard 限制工具轮数并复核模型输入预算；ToolNode wrapper 在执行前计算剩余预算、在执行后约束结果大小；graph message stream 被适配回现有正文 chunk 和 Tool audit，因此 API 与 SSE event schema 不变。Graph state 只存在于当前请求内，不启用 checkpointer，也不成为 Message 正文权威。
+
+### 执行 sandbox 边界
+
+Auto Reign 当前没有远程代码执行 sandbox。Agent Home 是 ObjectStore 上按用户和 Workspace 隔离的长期文件能力，具备相对路径、ETag、大小和权限校验，但不提供 shell、Python 或任意代码执行能力，不能作为 sandbox 使用。
+
+只有产品明确增加代码执行、命令执行或不可信计算工具时，才单独引入 E2B/容器类执行服务，并配套资源限额、超时、网络策略、生命周期回收和执行审计。sandbox 的状态与运行时编排是独立问题，不因引入 LangGraph 自动增加 Redis 或 sandbox。
 
 ### 共享上下文预算协议
 

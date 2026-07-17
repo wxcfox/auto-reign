@@ -38,7 +38,6 @@ from app.services.runtime_types import (
     ToolResult,
 )
 from app.services.token_counter import RuntimeTokenCounter
-from app.tools.knowledge import KnowledgeCapabilityProvider
 from tests.fake_object_store import FakeObjectStore
 
 
@@ -80,38 +79,6 @@ class FakeModelService:
         yield from self.chunks
         if self.error is not None:
             raise self.error
-
-    @staticmethod
-    def tool_result_messages(
-        call: ToolCall,
-        result: ToolResult,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        return (
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(
-                                call.arguments,
-                                ensure_ascii=False,
-                                separators=(",", ":"),
-                            ),
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": result.content,
-            },
-        )
-
 
 def _ignore_provider_metrics(_metrics: ProviderCallMetrics) -> None:
     return None
@@ -480,7 +447,6 @@ def test_agent_runtime_streams_platform_agent_and_ordered_history_without_tools(
     assert list(
         runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
     ) == ["你好", "，继续学习。"]
-    assert runtime.capability_providers == ()
     assert len(model.calls) == 1
     call = model.calls[0]
     messages = call["messages"]
@@ -548,8 +514,6 @@ def test_prepare_turn_does_not_load_objects_and_stream_loads_only_selected_refs(
     prepared = runtime.prepare_turn(turn)
 
     assert loader.calls == []
-    assert prepared.selection.turns == (turn.turns[-1],)
-    assert prepared.selection.includes_attachments is True
     assert list(
         runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
     ) == ["done"]
@@ -573,7 +537,6 @@ def test_runtime_without_attachment_candidates_never_loads_attachment_module() -
     ) == ["done"]
 
     assert "attachments" not in prompt.loaded_module_names
-    assert prepared.selection.includes_attachments is False
 
 
 def test_pruned_historical_attachment_is_not_loaded_or_injected() -> None:
@@ -608,7 +571,6 @@ def test_pruned_historical_attachment_is_not_loaded_or_injected() -> None:
         runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
     ) == ["done"]
 
-    assert prepared.selection.includes_attachments is False
     assert loader.calls == []
     system_prompt = model.calls[0]["messages"][0]["content"]
     assert isinstance(system_prompt, str)
@@ -668,17 +630,15 @@ def test_application_composes_one_store_and_one_runtime_graph(
     assert state.agent_runtime.context_assembler is state.context_assembler
     assert state.attachment_runtime_loader.object_store is fake_object_store
     assert state.attachment_service.store is fake_object_store
-    assert len(state.agent_runtime.capability_providers) == 2
-    home_provider, knowledge_provider = state.agent_runtime.capability_providers
-    assert home_provider.service is state.agent_home_service
-    assert home_provider.token_counter is state.agent_runtime.token_counter
-    assert isinstance(knowledge_provider, KnowledgeCapabilityProvider)
-    assert knowledge_provider.scope_service is state.knowledge_scope_service
-    assert knowledge_provider.retrieval is state.knowledge_retrieval_service
-    assert knowledge_provider.retrieval.object_store is fake_object_store
-    assert knowledge_provider.retrieval.vector_store is state.knowledge_vector_store
-    assert knowledge_provider.retrieval.token_counter is state.agent_runtime.token_counter
-    assert state.context_assembler.token_counter is state.agent_runtime.token_counter
+    assert state.knowledge_retrieval_service.object_store is fake_object_store
+    assert (
+        state.knowledge_retrieval_service.vector_store
+        is state.knowledge_vector_store
+    )
+    assert (
+        state.knowledge_retrieval_service.token_counter
+        is state.context_assembler.token_counter
+    )
 
 
 def test_application_runtime_registers_knowledge_and_prompt_only_for_bound_agent(
@@ -686,19 +646,19 @@ def test_application_runtime_registers_knowledge_and_prompt_only_for_bound_agent
 ) -> None:
     runtime = client.app.state.agent_runtime
     model = FakeModelService(chunks=("done",))
-    runtime.model_service = model
+    runtime.react_loop.model_service = model
 
     without = runtime.prepare_turn(runtime_turn())
     with_knowledge = runtime.prepare_turn(runtime_turn(with_knowledge=True))
 
     assert "search_knowledge" not in {
-        definition.name for definition in without.tool_definitions
+        definition.name for definition in without.tool_registry.definitions
     }
-    assert "knowledge_base" not in without.provider_modules
+    assert "knowledge_base" not in without.tool_registry.prompt_modules
     assert "search_knowledge" in {
-        definition.name for definition in with_knowledge.tool_definitions
+        definition.name for definition in with_knowledge.tool_registry.definitions
     }
-    assert with_knowledge.provider_modules.count("knowledge_base") == 1
+    assert with_knowledge.tool_registry.prompt_modules.count("knowledge_base") == 1
 
     assert list(
         runtime.stream_turn(without, observer=_ignore_provider_metrics)
@@ -810,7 +770,8 @@ def test_two_knowledge_calls_recompute_budget_from_original_total_with_all_schem
     )
 
     assert [call["call_index"] for call in model.calls] == [1, 2, 3]
-    assert [definition.name for definition in prepared.tool_definitions] == [
+    definitions = prepared.tool_registry.definitions
+    assert [definition.name for definition in definitions] == [
         "list_files",
         "read_file",
         "create_file",
@@ -818,14 +779,15 @@ def test_two_knowledge_calls_recompute_budget_from_original_total_with_all_schem
         "search_knowledge",
     ]
     assert len(knowledge.contexts) == 2
-    first_expected = original_total - runtime.token_counter.count_model_input(
+    counter = runtime.context_assembler.token_counter
+    first_expected = original_total - counter.count_model_input(
         model.calls[0]["messages"],
-        tools=prepared.tool_definitions,
-    ) - runtime.token_counter.count_assistant_tool_call(first_call)
-    second_expected = original_total - runtime.token_counter.count_model_input(
+        tools=definitions,
+    ) - counter.count_assistant_tool_call(first_call)
+    second_expected = original_total - counter.count_model_input(
         model.calls[1]["messages"],
-        tools=prepared.tool_definitions,
-    ) - runtime.token_counter.count_assistant_tool_call(second_call)
+        tools=definitions,
+    ) - counter.count_assistant_tool_call(second_call)
     assert knowledge.contexts[0].token_budget == first_expected
     assert knowledge.contexts[1].token_budget == second_expected
     assert 0 < second_expected < first_expected < original_total
@@ -947,7 +909,6 @@ def test_agent_runtime_collects_prompt_modules_from_a_provider_without_tools(
     assert isinstance(messages, list)
     assert "module:agent_home" in messages[0]["content"]
     assert seen_contexts == [turn.context, turn.context]
-    assert runtime.capability_providers == (provider,)
     assert model.calls[0]["tools"] is None
 
 

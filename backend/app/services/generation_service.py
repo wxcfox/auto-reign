@@ -25,7 +25,6 @@ from app.schemas.modeling import ModelRef
 from app.services.agent_runtime import (
     AgentRuntime,
     PreparedRuntimeTurn,
-    RuntimeTerminalError,
     RuntimeTurn,
 )
 from app.services.agent_service import AgentService, ResolvedAgent
@@ -40,6 +39,7 @@ from app.services.runtime_types import (
     RuntimeAssistantTurn,
     RuntimeConversationTurn,
     RuntimeObserver,
+    RuntimeTerminalError,
     RuntimeUserTurn,
     ToolResult,
 )

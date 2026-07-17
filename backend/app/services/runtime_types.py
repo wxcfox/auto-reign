@@ -49,6 +49,14 @@ class ProviderCallMetrics:
 RuntimeObserver = Callable[[ProviderCallMetrics], None]
 
 
+class RuntimeTerminalError(RuntimeError):
+    def __init__(self, *, code: str, message: str, status_code: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.public_message = message
+        self.status_code = status_code
+
+
 @dataclass(frozen=True)
 class CapabilityContext:
     user_id: int

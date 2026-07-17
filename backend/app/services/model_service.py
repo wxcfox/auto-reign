@@ -18,7 +18,6 @@ from app.services.runtime_types import (
     RuntimeObserver,
     ToolCall,
     ToolDefinition,
-    ToolResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -210,39 +209,6 @@ class ModelService:
                     unavailable_fields=unavailable_fields,
                 ),
             )
-
-    def tool_result_messages(
-        self,
-        call: ToolCall,
-        result: ToolResult,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        if result.call_id != call.id:
-            raise ValueError("tool result call id does not match tool call")
-        return (
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(
-                                call.arguments,
-                                ensure_ascii=False,
-                                separators=(",", ":"),
-                            ),
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": result.content,
-            },
-        )
 
     @staticmethod
     def _validate_messages(

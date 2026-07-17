@@ -26,8 +26,7 @@ from app.schemas.conversations import (
 from app.schemas.modeling import ModelRef
 from app.services.knowledge_document_service import KnowledgeDocumentService
 from app.services.knowledge_vector_store import KnowledgeVectorHit
-from app.services.model_service import ModelService
-from app.services.runtime_types import ToolCall, ToolResult
+from app.services.runtime_types import ToolCall
 from app.services.conversation_service import (
     ConversationService,
     conversation_message_response,
@@ -1432,7 +1431,7 @@ def test_real_sse_uses_one_runtime_for_agent_home_and_attachment(
 
     runtime = client.app.state.agent_runtime
     recorder = RecordingModel()
-    runtime.model_service = recorder
+    runtime.react_loop.model_service = recorder
     response = client.post(
         "/api/conversations/stream",
         headers=ordinary_user_headers,
@@ -1513,13 +1512,6 @@ def test_real_sse_uses_attachment_home_and_knowledge_in_one_runtime(
                 }
             )
             return iter(self.responses.pop(0))
-
-        def tool_result_messages(
-            self,
-            call: ToolCall,
-            result: ToolResult,
-        ) -> tuple[dict[str, object], dict[str, object]]:
-            return ModelService.tool_result_messages(self, call, result)  # type: ignore[arg-type]
 
     workspace = client.post(
         "/api/workspaces",
@@ -1629,7 +1621,7 @@ def test_real_sse_uses_attachment_home_and_knowledge_in_one_runtime(
 
     runtime = client.app.state.agent_runtime
     model = QueuedModel()
-    runtime.model_service = model
+    runtime.react_loop.model_service = model
     response = client.post(
         "/api/conversations/stream",
         headers=ordinary_user_headers,
@@ -2038,7 +2030,7 @@ def test_stream_error_protocol_preserves_http_error_and_hides_unknown_failure(
     ordinary_user_headers,
 ) -> None:
     from fastapi import HTTPException
-    from app.services.agent_runtime import RuntimeTerminalError
+    from app.services.runtime_types import RuntimeTerminalError
 
     class FailingRuntime:
         def __init__(self, error: Exception) -> None:
