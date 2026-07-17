@@ -66,6 +66,10 @@ cp .env.example .env
 
 同一个 Agent 可以同时绑定 Agent Home 和一个或多个 Knowledge Collection。主聊天 LLM 决定是否调用已经授予的工具；用户隔离、路径、ETag、Collection/Document 范围、Qdrant filter、预算和持久化均由服务端确定性代码执行。
 
+每轮聊天会先通过统一 Tool Registry 注册并绑定当前可用的能力工具，再由 LangGraph `create_react_agent` 执行受最大轮数和上下文预算约束的 ReAct loop。现有 `ModelService` 通过 `BaseChatModel` adapter 接入，Agent Home 文件工具和 Knowledge 的 `search_knowledge` 由 ToolNode 调用；权限校验和副作用仍由各自 provider 负责。
+
+平台暂不提供 shell、Python 或任意代码执行 sandbox。Agent Home 只是隔离的长期文件存储，不能替代 E2B/容器执行环境。
+
 用户明确要求保存 Agent Home 内容时，模型应先读取相关文件，再按同主题合并；已有文件必须使用最近一次读取返回的 ETag 调用 `write_file`。只有文件工具成功返回后才能向用户确认已保存；工具未调用、不可用或返回错误时，必须如实说明尚未完成。
 
 Knowledge 的入库、generation、直接原文与 RAG 检索规则见 [Knowledge Collection 数据流](docs/knowledge-data-flow.md)。

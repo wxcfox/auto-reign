@@ -14,7 +14,6 @@ from app.services.runtime_types import (
     ProviderCallMetrics,
     ToolCall,
     ToolDefinition,
-    ToolResult,
 )
 
 
@@ -534,61 +533,6 @@ def test_stream_turn_rejects_multiple_or_malformed_tool_calls(tmp_path) -> None:
         assert captured.value.detail["code"] == "provider_call_failed"
 
 
-def test_tool_result_messages_are_deterministic_and_valid_provider_messages(
-    tmp_path,
-) -> None:
-    settings = _settings(tmp_path, openai_api_key="provider-secret")
-    completions = RecordingCompletions([_chunk("done")])
-    service = ModelService(
-        settings=settings,
-        client_factory=lambda **_kwargs: _client(completions),
-    )
-    call = ToolCall(
-        id="call-1",
-        name="read_file",
-        arguments={"path": "资料/今天.md", "limit": 20},
-    )
-    result = ToolResult(call_id="call-1", content='{"content":"原文"}')
-
-    messages = service.tool_result_messages(call, result)
-
-    assert messages == (
-        {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {
-                        "name": "read_file",
-                        "arguments": '{"path":"资料/今天.md","limit":20}',
-                    },
-                }
-            ],
-        },
-        {
-            "role": "tool",
-            "tool_call_id": "call-1",
-            "content": '{"content":"原文"}',
-        },
-    )
-    conversation_messages: list[dict[str, object]] = [
-        {"role": "user", "content": "read it"},
-        *messages,
-    ]
-    assert list(
-        service.stream_turn(
-            conversation_messages,
-            provider="openai",
-            model="gpt-4.1-mini",
-            call_index=1,
-            observer=_ignore_provider_metrics,
-        )
-    ) == ["done"]
-    assert completions.calls[0]["messages"] == conversation_messages
-
-
 @pytest.mark.parametrize(
     "messages",
     [
@@ -1069,4 +1013,4 @@ def test_model_service_exposes_only_runtime_chat_methods() -> None:
         if not name.startswith("_") and callable(getattr(ModelService, name))
     }
 
-    assert public_methods == {"stream_turn", "tool_result_messages"}
+    assert public_methods == {"stream_turn"}

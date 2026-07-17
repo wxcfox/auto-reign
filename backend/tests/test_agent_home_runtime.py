@@ -16,7 +16,7 @@ from app.services.agent_home_capability import (
     path_sha256,
 )
 from app.services.agent_home_service import AgentHomeService
-from app.services.agent_runtime import AgentRuntime, RuntimeTerminalError, RuntimeTurn
+from app.services.agent_runtime import AgentRuntime, RuntimeTurn
 from app.services.agent_service import (
     ResolvedAgentConfig,
     ResolvedAgentHome,
@@ -28,6 +28,7 @@ from app.services.runtime_types import (
     CapabilityContext,
     ProviderCallMetrics,
     RuntimeObserver,
+    RuntimeTerminalError,
     RuntimeConversationTurn,
     RuntimeUserTurn,
     ToolCall,
@@ -91,38 +92,6 @@ class ScriptedModel:
                 raise event
             assert isinstance(event, (str, ToolCall))
             yield event
-
-    @staticmethod
-    def tool_result_messages(
-        call: ToolCall,
-        result: ToolResult,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        return (
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(
-                                call.arguments,
-                                ensure_ascii=False,
-                                separators=(",", ":"),
-                            ),
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": result.content,
-            },
-        )
-
 
 def _ignore_provider_metrics(_metrics: ProviderCallMetrics) -> None:
     return None

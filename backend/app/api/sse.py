@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Send
 
-from app.services.agent_runtime import RuntimeTerminalError
+from app.services.runtime_types import RuntimeTerminalError
 from app.services.attachment_runtime_loader import AttachmentRuntimeError
 from app.services.generation_service import PreparedGenerationError
 

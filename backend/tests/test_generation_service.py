@@ -29,7 +29,7 @@ from app.schemas.conversations import ConversationSendRequest
 from app.schemas.modeling import ModelRef
 from app.schemas.workspaces import WorkspaceConfig
 from app.services.agent_home_service import AgentHomeService
-from app.services.agent_runtime import AgentRuntime, RuntimeTerminalError, RuntimeTurn
+from app.services.agent_runtime import AgentRuntime, RuntimeTurn
 from app.services.attachment_runtime_loader import (
     AttachmentRuntimeError,
     AttachmentRuntimeLoader,
@@ -45,7 +45,12 @@ from app.services.generation_service import (
 )
 from app.services.model_service import ModelService
 from app.services.platform_prompt_service import PlatformPromptService
-from app.services.runtime_types import ProviderCallMetrics, RuntimeObserver, ToolResult
+from app.services.runtime_types import (
+    ProviderCallMetrics,
+    RuntimeObserver,
+    RuntimeTerminalError,
+    ToolResult,
+)
 from app.services.token_counter import RuntimeTokenCounter
 from app.storage.object_store import ObjectStoreUnavailable
 from tests.fake_object_store import FakeObjectStore
