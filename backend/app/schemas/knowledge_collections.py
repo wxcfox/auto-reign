@@ -1,12 +1,15 @@
 from datetime import datetime
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.limits import (
     DEFAULT_KNOWLEDGE_CHUNK_OVERLAP,
     DEFAULT_KNOWLEDGE_CHUNK_SIZE,
+    DEFAULT_KNOWLEDGE_KEYWORD_WEIGHT,
+    DEFAULT_KNOWLEDGE_SCORE_THRESHOLD,
     DEFAULT_KNOWLEDGE_TOP_K,
+    DEFAULT_KNOWLEDGE_VECTOR_WEIGHT,
     MAX_KNOWLEDGE_CHUNK_OVERLAP,
     MAX_KNOWLEDGE_CHUNK_SIZE,
     MAX_KNOWLEDGE_COLLECTION_NAME_LENGTH,
@@ -20,9 +23,11 @@ from app.core.limits import (
 from app.schemas.resources import ResourceScope
 
 
-class KnowledgeCollectionConfig(BaseModel):
+class KnowledgeCollectionConfigInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    retriever_type: Literal["elasticsearch", "qdrant"] = "elasticsearch"
+    retrieval_mode: Literal["vector", "keyword", "hybrid"] = "vector"
     chunk_size: int = Field(
         default=DEFAULT_KNOWLEDGE_CHUNK_SIZE,
         ge=MIN_KNOWLEDGE_CHUNK_SIZE,
@@ -38,17 +43,44 @@ class KnowledgeCollectionConfig(BaseModel):
         ge=MIN_KNOWLEDGE_TOP_K,
         le=MAX_KNOWLEDGE_TOP_K,
     )
-    score_threshold: float | None = Field(
-        default=None,
+    score_threshold: float = Field(
+        default=DEFAULT_KNOWLEDGE_SCORE_THRESHOLD,
         ge=MIN_KNOWLEDGE_SCORE_THRESHOLD,
         le=MAX_KNOWLEDGE_SCORE_THRESHOLD,
     )
+    vector_weight: float = Field(
+        default=DEFAULT_KNOWLEDGE_VECTOR_WEIGHT,
+        ge=0.0,
+        le=1.0,
+    )
+    keyword_weight: float = Field(
+        default=DEFAULT_KNOWLEDGE_KEYWORD_WEIGHT,
+        ge=0.0,
+        le=1.0,
+    )
 
     @model_validator(mode="after")
-    def validate_overlap(self) -> Self:
+    def validate_common_constraints(self) -> Self:
         if self.chunk_overlap * 2 > self.chunk_size:
             raise ValueError("chunk_overlap must not exceed half of chunk_size")
+        if self.vector_weight + self.keyword_weight <= 0:
+            raise ValueError("vector_weight and keyword_weight must have a positive sum")
         return self
+
+
+class KnowledgeCollectionConfig(KnowledgeCollectionConfigInput):
+    @model_validator(mode="after")
+    def validate_retrieval_capability(self) -> Self:
+        if self.retriever_type == "qdrant" and self.retrieval_mode != "vector":
+            raise ValueError(
+                "Qdrant supports only vector retrieval; use Elasticsearch for "
+                "keyword or hybrid retrieval"
+            )
+        return self
+
+
+class KnowledgeCollectionPutConfig(KnowledgeCollectionConfigInput):
+    """Full update input whose Retriever capability is validated after immutability."""
 
 
 class KnowledgeCollectionCreateRequest(BaseModel):
@@ -64,6 +96,9 @@ class KnowledgeCollectionCreateRequest(BaseModel):
 
 
 class KnowledgeCollectionPutRequest(KnowledgeCollectionCreateRequest):
+    config: KnowledgeCollectionPutConfig = Field(
+        default_factory=KnowledgeCollectionPutConfig
+    )
     is_active: bool = True
 
 

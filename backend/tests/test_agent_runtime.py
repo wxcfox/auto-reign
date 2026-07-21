@@ -632,8 +632,8 @@ def test_application_composes_one_store_and_one_runtime_graph(
     assert state.attachment_service.store is fake_object_store
     assert state.knowledge_retrieval_service.object_store is fake_object_store
     assert (
-        state.knowledge_retrieval_service.vector_store
-        is state.knowledge_vector_store
+        state.knowledge_retrieval_service.retriever_factory
+        is state.knowledge_retriever_factory
     )
     assert (
         state.knowledge_retrieval_service.token_counter

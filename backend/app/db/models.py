@@ -128,6 +128,9 @@ class KnowledgeDocument(Base):
     content_hash: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32), default="uploaded")
     index_generation: Mapped[int] = mapped_column(Integer, default=1)
+    retriever_type: Mapped[str] = mapped_column(
+        String(32), default="elasticsearch"
+    )
     processing_attempt_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True
     )

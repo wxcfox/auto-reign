@@ -18,9 +18,14 @@ from app.repositories.knowledge_document_repository import (
 )
 from app.repositories.resource_repository import ResourceRepository
 from app.schemas.agents import AgentConfig
+from app.schemas.knowledge_collections import KnowledgeCollectionConfig
 from app.services.document_operation_coordinator import DocumentOperationCoordinator
 from app.services.knowledge_collection_service import KnowledgeCollectionService
-from app.services.knowledge_vector_store import DocumentVectorScope
+from app.services.knowledge_retrievers.base import (
+    DocumentIndexScope,
+    KnowledgeRetriever,
+    RetrieverType,
+)
 from app.services.upload_validation_service import ValidatedUpload
 from app.storage.object_store import (
     ObjectConflict,
@@ -46,10 +51,11 @@ class InactiveDocumentCleanup:
     id: str
     user_id: int
     collection_id: str
+    retriever_type: RetrieverType
 
 
-class _KnowledgeCleanupVectorStore(Protocol):
-    def delete_document(self, scope: DocumentVectorScope) -> None: ...
+class _KnowledgeCleanupRetrieverFactory(Protocol):
+    def get(self, retriever_type: RetrieverType) -> KnowledgeRetriever: ...
 
 
 def read_parsed_text(
@@ -96,7 +102,7 @@ class KnowledgeDocumentService:
         self,
         object_store: ObjectStore,
         *,
-        vector_store: _KnowledgeCleanupVectorStore | None = None,
+        retriever_factory: _KnowledgeCleanupRetrieverFactory | None = None,
         coordinator: DocumentOperationCoordinator | None = None,
         repository: KnowledgeDocumentRepository | None = None,
         collection_service: KnowledgeCollectionService | None = None,
@@ -105,7 +111,7 @@ class KnowledgeDocumentService:
         if max_parsed_chars <= 0:
             raise ValueError("max_parsed_chars must be positive")
         self.object_store = object_store
-        self.vector_store = vector_store
+        self.retriever_factory = retriever_factory
         self.coordinator = coordinator or DocumentOperationCoordinator()
         self.repository = repository or KnowledgeDocumentRepository()
         self.collection_service = collection_service or KnowledgeCollectionService()
@@ -116,13 +122,13 @@ class KnowledgeDocumentService:
             self._cleanup_inactive_locked(document)
 
     def _cleanup_inactive_locked(self, document: InactiveDocumentCleanup) -> None:
-        if self.vector_store is None:
-            raise RuntimeError("knowledge vector store is required for cleanup")
+        if self.retriever_factory is None:
+            raise RuntimeError("knowledge retriever factory is required for cleanup")
 
         errors: list[Exception] = []
         try:
-            self.vector_store.delete_document(
-                DocumentVectorScope(
+            self.retriever_factory.get(document.retriever_type).delete_document(
+                DocumentIndexScope(
                     collection_id=document.collection_id,
                     owner_user_id=document.user_id,
                     document_id=document.id,
@@ -243,6 +249,9 @@ class KnowledgeDocumentService:
                     content_hash=upload.content_hash,
                     status="uploaded",
                     index_generation=1,
+                    retriever_type=KnowledgeCollectionConfig.model_validate(
+                        collection.config_json
+                    ).retriever_type,
                     is_active=True,
                 )
                 write_session.add(document)
@@ -295,6 +304,12 @@ class KnowledgeDocumentService:
                 return document
 
         document.index_generation += 1
+        collection = session.get(models.Resource, document.collection_id)
+        if collection is None:
+            raise not_found("knowledge_collection_not_found", "Collection not found.")
+        document.retriever_type = KnowledgeCollectionConfig.model_validate(
+            collection.config_json
+        ).retriever_type
         document.parsed_object_key = None
         document.indexed_at = None
         self.repository.queue(session, document)

@@ -357,10 +357,14 @@ function projectKnowledgeCollectionWrite(
   return {
     name: payload.name,
     config: {
+      retriever_type: payload.config.retriever_type,
+      retrieval_mode: payload.config.retrieval_mode,
       chunk_size: payload.config.chunk_size,
       chunk_overlap: payload.config.chunk_overlap,
       top_k: payload.config.top_k,
       score_threshold: payload.config.score_threshold,
+      vector_weight: payload.config.vector_weight,
+      keyword_weight: payload.config.keyword_weight,
     },
   };
 }

@@ -678,6 +678,7 @@ def _cleanup_snapshot(factory, state: _State) -> InactiveDocumentCleanup:
             id=document.id,
             user_id=document.user_id,
             collection_id=document.collection_id,
+            retriever_type=document.retriever_type,  # type: ignore[arg-type]
         )
 
 
@@ -689,7 +690,7 @@ def test_cleanup_success_commit_releases_collection_delete(
     assert state.document_id is not None
     store = FakeObjectStore()
     vectors = FakeKnowledgeVectorStore()
-    service = KnowledgeDocumentService(store, vector_store=vectors)
+    service = KnowledgeDocumentService(store, retriever_factory=vectors)
     isolated_commit = Event()
     allow_cleanup = Event()
     cleanup_attempt_id = "cleanup-success-attempt"
@@ -740,7 +741,7 @@ def test_cleanup_failure_blocks_collection_until_explicit_retry_succeeds(
     store = FakeObjectStore()
     vectors = FakeKnowledgeVectorStore()
     vectors.fail("delete_document")
-    service = KnowledgeDocumentService(store, vector_store=vectors)
+    service = KnowledgeDocumentService(store, retriever_factory=vectors)
     isolated_commit = Event()
     allow_cleanup = Event()
     first_cleanup_attempt_id = "cleanup-failure-attempt"

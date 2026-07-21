@@ -21,9 +21,11 @@ from app.services.knowledge_scope_service import (
     ReadyDocumentScope,
     ResolvedCollectionScope,
 )
-from app.services.knowledge_vector_store import (
+from app.services.knowledge_retrievers import (
     DocumentGeneration,
-    KnowledgeVectorHit,
+    KnowledgeRetriever,
+    KnowledgeRetrieverHit,
+    RetrieverType,
 )
 from app.services.token_counter import RuntimeTokenCounter
 from app.storage.object_store import ObjectStore
@@ -39,6 +41,10 @@ class KnowledgeSource:
     chunk_index: int | None
     score: float | None
     content: str
+    retrieval_mode: str | None = None
+    vector_score: float | None = None
+    keyword_score: float | None = None
+    fused_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -56,14 +62,8 @@ class _Candidate:
     source_end: int
 
 
-class _KnowledgeSearchVectorStore(Protocol):
-    def search(
-        self,
-        query: str,
-        *,
-        scopes: list[DocumentGeneration],
-        limit: int,
-    ) -> list[KnowledgeVectorHit]: ...
+class _KnowledgeSearchRetrieverFactory(Protocol):
+    def get(self, retriever_type: RetrieverType) -> KnowledgeRetriever: ...
 
 
 def serialize_knowledge_result(
@@ -83,6 +83,10 @@ def serialize_knowledge_result(
                     "content_hash": source.content_hash,
                     "chunk_index": source.chunk_index,
                     "score": source.score,
+                    "retrieval_mode": source.retrieval_mode,
+                    "vector_score": source.vector_score,
+                    "keyword_score": source.keyword_score,
+                    "fused_score": source.fused_score,
                     "content": source.content,
                 }
                 for source in sources
@@ -99,7 +103,7 @@ class KnowledgeRetrievalService:
         self,
         *,
         object_store: ObjectStore,
-        vector_store: _KnowledgeSearchVectorStore,
+        retriever_factory: _KnowledgeSearchRetrieverFactory,
         token_counter: RuntimeTokenCounter,
         max_results: int = DEFAULT_KNOWLEDGE_MAX_RESULTS,
         max_query_chars: int = DEFAULT_KNOWLEDGE_MAX_QUERY_CHARS,
@@ -112,7 +116,7 @@ class KnowledgeRetrievalService:
         if type(max_parsed_chars) is not int or max_parsed_chars < 1:
             raise ValueError("max_parsed_chars must be positive")
         self.object_store = object_store
-        self.vector_store = vector_store
+        self.retriever_factory = retriever_factory
         self.token_counter = token_counter
         self.max_results = max_results
         self.max_query_chars = max_query_chars
@@ -205,18 +209,24 @@ class KnowledgeRetrievalService:
             generations = [self._generation(item) for item in group.documents]
             documents_by_scope = {self._document_key(item): item for item in group.documents}
             try:
-                hits = self.vector_store.search(
+                hits = self.retriever_factory.get(group.config.retriever_type).retrieve(
                     query,
                     scopes=generations,
+                    mode=group.config.retrieval_mode,
                     limit=group.config.top_k,
+                    vector_weight=group.config.vector_weight,
+                    keyword_weight=group.config.keyword_weight,
                 )
                 if len(hits) > group.config.top_k:
-                    raise VectorStoreUnavailable("Knowledge vector result count exceeded limit")
+                    raise VectorStoreUnavailable(
+                        "Knowledge retriever result count exceeded limit"
+                    )
                 for hit in hits:
                     candidate = self._validate_hit(
                         hit,
                         documents_by_scope=documents_by_scope,
                         score_threshold=group.config.score_threshold,
+                        expected_mode=group.config.retrieval_mode,
                         parsed_cache=parsed_cache,
                     )
                     if candidate is None:
@@ -234,7 +244,7 @@ class KnowledgeRetrievalService:
                     )
                     if chunk_key in seen_chunks:
                         raise VectorStoreUnavailable(
-                            "Knowledge vector result contained a duplicate chunk"
+                            "Knowledge retriever result contained a duplicate chunk"
                         )
                     seen_chunks.add(chunk_key)
                     candidates.append(candidate)
@@ -244,10 +254,11 @@ class KnowledgeRetrievalService:
 
     def _validate_hit(
         self,
-        hit: KnowledgeVectorHit,
+        hit: KnowledgeRetrieverHit,
         *,
         documents_by_scope: dict[tuple[str, int, str, int, str], ReadyDocumentScope],
-        score_threshold: float | None,
+        score_threshold: float,
+        expected_mode: str,
         parsed_cache: dict[tuple[str, int, str, int, str], str],
     ) -> _Candidate | None:
         try:
@@ -255,9 +266,13 @@ class KnowledgeRetrievalService:
             hit_content = hit.content
             raw_score = hit.score
         except AttributeError as error:
-            raise VectorStoreUnavailable("Knowledge vector result payload is invalid") from error
+            raise VectorStoreUnavailable(
+                "Knowledge retriever result payload is invalid"
+            ) from error
         if not isinstance(metadata, dict):
-            raise VectorStoreUnavailable("Knowledge vector result payload is invalid")
+            raise VectorStoreUnavailable("Knowledge retriever result payload is invalid")
+        if hit.retrieval_mode != expected_mode:
+            raise VectorStoreUnavailable("Knowledge retriever returned the wrong mode")
         string_fields = (
             "collection_id",
             "document_id",
@@ -287,10 +302,28 @@ class KnowledgeRetrievalService:
             or isinstance(raw_score, bool)
             or not isinstance(raw_score, (int, float))
         ):
-            raise VectorStoreUnavailable("Knowledge vector result payload is invalid")
+            raise VectorStoreUnavailable("Knowledge retriever result payload is invalid")
         score = float(raw_score)
-        if not math.isfinite(score):
-            raise VectorStoreUnavailable("Knowledge vector score is invalid")
+        if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+            raise VectorStoreUnavailable("Knowledge retriever score is invalid")
+        component_scores = (hit.vector_score, hit.keyword_score, hit.fused_score)
+        if any(
+            value is not None
+            and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or not 0.0 <= float(value) <= 1.0
+            )
+            for value in component_scores
+        ):
+            raise VectorStoreUnavailable("Knowledge retriever component score is invalid")
+        if (
+            (expected_mode == "vector" and hit.vector_score != score)
+            or (expected_mode == "keyword" and hit.keyword_score != score)
+            or (expected_mode == "hybrid" and hit.fused_score != score)
+        ):
+            raise VectorStoreUnavailable("Knowledge retriever score provenance is invalid")
         document_key = (
             metadata["collection_id"],
             metadata["owner_user_id"],
@@ -300,13 +333,17 @@ class KnowledgeRetrievalService:
         )
         document = documents_by_scope.get(document_key)
         if document is None or metadata["filename"] != document.filename:
-            raise VectorStoreUnavailable("Knowledge vector result escaped the resolved scope")
+            raise VectorStoreUnavailable(
+                "Knowledge retriever result escaped the resolved scope"
+            )
         text = self._read_authoritative(document, parsed_cache)
         start = metadata["source_start"]
         end = metadata["source_end"]
         if end > len(text) or hit_content != text[start:end]:
-            raise VectorStoreUnavailable("Knowledge vector result does not match its source")
-        if score_threshold is not None and score < score_threshold:
+            raise VectorStoreUnavailable(
+                "Knowledge retriever result does not match its source"
+            )
+        if score < score_threshold:
             return None
         return _Candidate(
             source=self._source(
@@ -314,6 +351,10 @@ class KnowledgeRetrievalService:
                 content=text[start:end],
                 chunk_index=metadata["chunk_index"],
                 score=score,
+                retrieval_mode=hit.retrieval_mode,
+                vector_score=hit.vector_score,
+                keyword_score=hit.keyword_score,
+                fused_score=hit.fused_score,
             ),
             owner_user_id=document.owner_user_id,
             source_start=start,
@@ -438,6 +479,10 @@ class KnowledgeRetrievalService:
         content: str,
         chunk_index: int | None = None,
         score: float | None = None,
+        retrieval_mode: str | None = None,
+        vector_score: float | None = None,
+        keyword_score: float | None = None,
+        fused_score: float | None = None,
     ) -> KnowledgeSource:
         return KnowledgeSource(
             document_id=document.document_id,
@@ -447,6 +492,10 @@ class KnowledgeRetrievalService:
             content_hash=document.content_hash,
             chunk_index=chunk_index,
             score=score,
+            retrieval_mode=retrieval_mode,
+            vector_score=vector_score,
+            keyword_score=keyword_score,
+            fused_score=fused_score,
             content=content,
         )
 

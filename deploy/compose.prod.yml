@@ -14,6 +14,11 @@ x-backend-environment: &backend-environment
   DATA_DIR: /app/data
   DATABASE_URL: mysql+pymysql://${MYSQL_USER:?Set MYSQL_USER}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:?Set MYSQL_DATABASE}
   QDRANT_URL: http://qdrant:6333
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  ELASTICSEARCH_URL: http://elasticsearch:9200
+  ELASTICSEARCH_INDEX: ${ELASTICSEARCH_INDEX:-auto_reign_knowledge}
+  ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
+  ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:?Set ELASTICSEARCH_PASSWORD}
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
   OBJECT_STORE_BACKEND: s3
   OBJECT_STORE_MAX_READ_BYTES: ${OBJECT_STORE_MAX_READ_BYTES:-33554432}
@@ -51,16 +56,38 @@ services:
   qdrant:
     image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.17.0}
     restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
     volumes:
       - ${AUTO_REIGN_QDRANT_DIR:?Set AUTO_REIGN_QDRANT_DIR}:/qdrant/storage
     networks:
       - data
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6333/readyz', timeout=5)"]
+      test: ["CMD", "bash", "-c", 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf "GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && IFS= read -r status <&3 && [[ "$$status" == *" 200 "* ]]']
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 20s
+    logging: *default-logging
+
+  elasticsearch:
+    image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.19.3}
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD:?Set ELASTICSEARCH_PASSWORD}
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms1g -Xmx1g}
+    volumes:
+      - ${AUTO_REIGN_ELASTICSEARCH_DIR:?Set AUTO_REIGN_ELASTICSEARCH_DIR}:/usr/share/elasticsearch/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u elastic:$${ELASTIC_PASSWORD} 'http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
     logging: *default-logging
 
   migrate:
@@ -95,6 +122,8 @@ services:
       mysql:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     networks:
       - app

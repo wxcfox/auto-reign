@@ -21,10 +21,14 @@ _SNAPSHOT_TIME = datetime(2026, 7, 14, tzinfo=UTC)
 
 def _config(**overrides: object) -> dict[str, object]:
     values: dict[str, object] = {
+        "retriever_type": "elasticsearch",
+        "retrieval_mode": "vector",
         "chunk_size": 900,
         "chunk_overlap": 120,
-        "top_k": 8,
-        "score_threshold": None,
+        "top_k": 5,
+        "score_threshold": 0.5,
+        "vector_weight": 0.7,
+        "keyword_weight": 0.3,
     }
     values.update(overrides)
     return KnowledgeCollectionConfig.model_validate(values).model_dump(mode="json")
@@ -78,6 +82,7 @@ def _add_document(
     parsed_object_key: str | None = None,
     content_hash: str | None = None,
     filename: str | None = None,
+    retriever_type: str = "elasticsearch",
 ) -> models.KnowledgeDocument:
     canonical_key = KnowledgeDocumentService.parsed_key(
         owner_user_id,
@@ -101,11 +106,49 @@ def _add_document(
         content_hash=(f"sha256-{document_id}" if content_hash is None else content_hash),
         status=status,
         index_generation=generation,
+        retriever_type=retriever_type,
         is_active=is_active,
     )
     session.add(document)
     session.flush()
     return document
+
+
+def test_ready_document_retriever_must_match_the_collection_snapshot(
+    client,
+    create_user,
+    session_factory,
+) -> None:
+    del client
+    user, _headers = create_user("scope-retriever")
+    owner_id = int(user["id"])
+    collection_id = "collection-retriever"
+    with session_factory() as session:
+        _add_collection(
+            session,
+            collection_id=collection_id,
+            owner_user_id=owner_id,
+        )
+        _add_document(
+            session,
+            document_id="doc-wrong-backend",
+            collection_id=collection_id,
+            owner_user_id=owner_id,
+            retriever_type="qdrant",
+        )
+        session.commit()
+
+        with pytest.raises(HTTPException) as captured:
+            KnowledgeScopeService().resolve(
+                session,
+                user_id=owner_id,
+                knowledge_scopes=(
+                    _snapshot(collection_id, owner_user_id=owner_id),
+                ),
+            )
+
+    assert captured.value.status_code == 503
+    assert captured.value.detail["code"] == "knowledge_unavailable"
 
 
 def test_whole_collection_scope_includes_documents_that_became_ready_later(
@@ -146,7 +189,7 @@ def test_whole_collection_scope_includes_documents_that_became_ready_later(
             collection_id=collection_id,
             owner_user_id=owner_id,
         )
-        collection.config_json = _config(top_k=30)
+        collection.config_json = _config(top_k=10)
         collection.is_active = False
         session.commit()
 

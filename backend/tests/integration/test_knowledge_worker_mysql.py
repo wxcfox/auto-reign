@@ -149,6 +149,7 @@ def test_mysql_claim_identity_can_publish_and_rejects_late_claim(
             generation=1,
             processing_attempt_id=claim.processing_attempt_id,
             parsed_object_key="users/7/knowledge/parsed/1",
+            retriever_type=claim.retriever_type,
         ) is True
     with session_scope(mysql_session_factory) as session:
         assert repository.complete_generation(
@@ -157,6 +158,7 @@ def test_mysql_claim_identity_can_publish_and_rejects_late_claim(
             generation=1,
             processing_attempt_id=claim.processing_attempt_id,
             parsed_object_key="users/7/knowledge/parsed/late",
+            retriever_type=claim.retriever_type,
         ) is False
 
 
@@ -172,7 +174,7 @@ def test_worker_publishes_against_real_mysql_state_machine(
         repository=KnowledgeDocumentRepository(),
         object_store=store,
         extraction=ExtractionService(),
-        vector_store=vectors,
+        retriever_factory=vectors,
         coordinator=DocumentOperationCoordinator(),
         clock=models._now,
         processing_timeout=timedelta(minutes=5),

@@ -23,6 +23,7 @@ class ClaimedDocument:
     content_hash: str
     config_json: dict[str, object]
     processing_attempt_id: str
+    retriever_type: str = "elasticsearch"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class KnowledgeDocumentRepository:
             size_bytes=document.size_bytes,
             content_hash=document.content_hash,
             config_json=dict(collection.config_json or {}),
+            retriever_type=document.retriever_type,
             processing_attempt_id=processing_attempt_id,
         )
 
@@ -110,6 +112,7 @@ class KnowledgeDocumentRepository:
         generation: int,
         processing_attempt_id: str,
         parsed_object_key: str,
+        retriever_type: str,
     ) -> bool:
         result = session.execute(
             update(models.KnowledgeDocument)
@@ -120,6 +123,7 @@ class KnowledgeDocumentRepository:
                 models.KnowledgeDocument.is_active.is_(True),
                 models.KnowledgeDocument.processing_attempt_id
                 == processing_attempt_id,
+                models.KnowledgeDocument.retriever_type == retriever_type,
             )
             .values(
                 status="ready",

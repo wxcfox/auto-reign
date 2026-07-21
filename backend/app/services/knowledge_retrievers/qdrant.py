@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 import math
 from typing import TypeVar
 
@@ -21,35 +20,22 @@ from qdrant_client.http.models import (
 
 from app.core.config import Settings, get_settings
 from app.repositories.vector_store import VectorStoreUnavailable, stable_vector_id
-from app.services.embedding_service import EmbeddingProviderError, EmbeddingService
+from app.services.embedding_service import EmbeddingProviderError
 from app.services.knowledge_chunk_service import KnowledgeChunk
+from app.services.knowledge_retrievers.base import (
+    DocumentGeneration,
+    DocumentIndexScope,
+    KnowledgeRetrieverHit,
+    RetrievalMode,
+)
+from app.services.knowledge_retrievers.embedding import build_knowledge_embeddings
 
 
-@dataclass(frozen=True)
-class KnowledgeVectorHit:
-    content: str
-    score: float
-    metadata: dict[str, object]
-
-
-@dataclass(frozen=True)
-class DocumentGeneration:
-    collection_id: str
-    owner_user_id: int
-    document_id: str
-    index_generation: int
-    content_hash: str
-
-
-@dataclass(frozen=True)
-class DocumentVectorScope:
-    collection_id: str
-    owner_user_id: int
-    document_id: str
+_COSINE_SCORE_EPSILON = 1e-6
 
 
 def document_scope_conditions(
-    scope: DocumentVectorScope | DocumentGeneration,
+    scope: DocumentIndexScope | DocumentGeneration,
 ) -> list[FieldCondition]:
     if (
         not isinstance(scope.collection_id, str)
@@ -111,26 +97,23 @@ def build_qdrant_client(settings: Settings) -> QdrantClient:
     try:
         if settings.qdrant_url == ":memory:":
             return QdrantClient(location=":memory:")
-        return QdrantClient(url=settings.qdrant_url)
+        return QdrantClient(
+            url=settings.qdrant_url,
+            api_key=getattr(settings, "qdrant_api_key", None),
+        )
     except Exception as error:
         raise VectorStoreUnavailable(
             "Knowledge vector client construction failed"
         ) from error
 
 
-def build_knowledge_embeddings(settings: Settings) -> Embeddings:
-    try:
-        return EmbeddingService(settings).embeddings
-    except Exception as error:
-        raise VectorStoreUnavailable(
-            "Knowledge embedding construction failed"
-        ) from error
-
-
 _Result = TypeVar("_Result")
 
 
-class KnowledgeVectorStore:
+class QdrantRetriever:
+    retriever_type = "qdrant"
+    supported_retrieval_methods = frozenset({"vector"})
+
     def __init__(
         self,
         *,
@@ -218,6 +201,8 @@ class KnowledgeVectorStore:
             "content_hash",
             "filename",
             "chunk_index",
+            "source_start",
+            "source_end",
         }
         documents: list[Document] = []
         ids: list[str] = []
@@ -263,13 +248,31 @@ class KnowledgeVectorStore:
             lambda: self._store().add_documents(documents=documents, ids=ids),
         )
 
+    def retrieve(
+        self,
+        query: str,
+        *,
+        scopes: list[DocumentGeneration],
+        mode: RetrievalMode,
+        limit: int,
+        vector_weight: float,
+        keyword_weight: float,
+    ) -> list[KnowledgeRetrieverHit]:
+        del vector_weight, keyword_weight
+        if mode != "vector":
+            raise ValueError(
+                f"Qdrant does not support '{mode}' retrieval mode; "
+                "supported modes: vector"
+            )
+        return self.search(query, scopes=scopes, limit=limit)
+
     def search(
         self,
         query: str,
         *,
         scopes: list[DocumentGeneration],
         limit: int,
-    ) -> list[KnowledgeVectorHit]:
+    ) -> list[KnowledgeRetrieverHit]:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("knowledge vector query must not be empty")
         if type(limit) is not int or limit < 1:
@@ -298,8 +301,8 @@ class KnowledgeVectorStore:
             for scope in scopes
         }
 
-        def normalize_results() -> list[KnowledgeVectorHit]:
-            normalized: list[KnowledgeVectorHit] = []
+        def normalize_results() -> list[KnowledgeRetrieverHit]:
+            normalized: list[KnowledgeRetrieverHit] = []
             for document, score in results:
                 if not isinstance(document.metadata, dict):
                     raise ValueError("invalid knowledge vector result")
@@ -314,6 +317,8 @@ class KnowledgeVectorStore:
                     "owner_user_id",
                     "index_generation",
                     "chunk_index",
+                    "source_start",
+                    "source_end",
                 )
                 if (
                     not isinstance(document.page_content, str)
@@ -331,8 +336,14 @@ class KnowledgeVectorStore:
                 ):
                     raise ValueError("invalid knowledge vector result")
                 score_value = float(score)
-                if not math.isfinite(score_value):
+                if (
+                    not math.isfinite(score_value)
+                    or score_value < -1.0 - _COSINE_SCORE_EPSILON
+                    or score_value > 1.0 + _COSINE_SCORE_EPSILON
+                ):
                     raise ValueError("invalid knowledge vector score")
+                cosine_score = min(1.0, max(-1.0, score_value))
+                normalized_score = (cosine_score + 1.0) / 2.0
                 returned_scope = (
                     metadata["collection_id"],
                     metadata["owner_user_id"],
@@ -343,10 +354,12 @@ class KnowledgeVectorStore:
                 if returned_scope not in allowed:
                     raise ValueError("knowledge vector result escaped scope")
                 normalized.append(
-                    KnowledgeVectorHit(
+                    KnowledgeRetrieverHit(
                         content=document.page_content,
-                        score=score_value,
+                        score=normalized_score,
                         metadata=metadata,
+                        retrieval_mode="vector",
+                        vector_score=normalized_score,
                     )
                 )
             return normalized
@@ -393,7 +406,7 @@ class KnowledgeVectorStore:
             ),
         )
 
-    def delete_document(self, scope: DocumentVectorScope) -> None:
+    def delete_document(self, scope: DocumentIndexScope) -> None:
         conditions = document_scope_conditions(scope)
         if not self._collection_exists():
             return
@@ -407,3 +420,41 @@ class KnowledgeVectorStore:
                 wait=True,
             ),
         )
+
+    def purge_collection(self, *, collection_id: str, owner_user_id: int) -> None:
+        scope = DocumentIndexScope(
+            collection_id=collection_id,
+            owner_user_id=owner_user_id,
+            document_id="purge-validation",
+        )
+        document_scope_conditions(scope)
+        if not self._collection_exists():
+            return
+        self._external(
+            "purge collection",
+            lambda: self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="metadata.collection_id",
+                                match=MatchValue(value=collection_id),
+                            ),
+                            FieldCondition(
+                                key="metadata.owner_user_id",
+                                match=MatchValue(value=owner_user_id),
+                            ),
+                        ]
+                    )
+                ),
+                wait=True,
+            ),
+        )
+
+    def test_connection(self) -> bool:
+        try:
+            self.client.get_collections()
+            return True
+        except Exception:
+            return False

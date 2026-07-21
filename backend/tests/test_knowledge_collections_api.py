@@ -5,10 +5,14 @@ from app.db import models
 
 
 DEFAULT_KNOWLEDGE_CONFIG = {
+    "retriever_type": "elasticsearch",
+    "retrieval_mode": "vector",
     "chunk_size": 900,
     "chunk_overlap": 120,
-    "top_k": 8,
-    "score_threshold": None,
+    "top_k": 5,
+    "score_threshold": 0.5,
+    "vector_weight": 0.7,
+    "keyword_weight": 0.3,
 }
 
 
@@ -91,6 +95,35 @@ def _add_knowledge_document(
         return document.id
 
 
+def _add_ready_document(
+    client,
+    *,
+    collection_id: str,
+    retriever_type: str,
+    generation: int = 2,
+) -> str:
+    with client.app.state.session_factory() as session:
+        collection = session.get(models.Resource, collection_id)
+        assert collection is not None
+        document = models.KnowledgeDocument(
+            user_id=collection.user_id,
+            collection_id=collection_id,
+            name="document.txt",
+            source_object_key="source",
+            parsed_object_key="parsed",
+            mime_type="text/plain",
+            size_bytes=4,
+            content_hash="hash",
+            status="ready",
+            index_generation=generation,
+            retriever_type=retriever_type,
+            is_active=True,
+        )
+        session.add(document)
+        session.commit()
+        return document.id
+
+
 @pytest.mark.parametrize("config", [{"unknown": True}, {"top_k": 99}])
 def test_collection_rejects_invalid_config(
     client,
@@ -123,6 +156,255 @@ def test_private_collection_is_visible_only_to_owner(client, create_user) -> Non
         f"/api/knowledge-collections/{created.json()['id']}",
         headers=bob_headers,
     ).status_code == 404
+
+
+@pytest.mark.parametrize("retrieval_mode", ["vector", "keyword", "hybrid"])
+def test_elasticsearch_accepts_every_supported_retrieval_mode(
+    client,
+    ordinary_user_headers,
+    retrieval_mode: str,
+) -> None:
+    response = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json={
+            "name": f"Elasticsearch {retrieval_mode}",
+            "config": {
+                "retriever_type": "elasticsearch",
+                "retrieval_mode": retrieval_mode,
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["config"]["retrieval_mode"] == retrieval_mode
+
+
+def test_qdrant_vector_is_persisted(client, ordinary_user_headers) -> None:
+    response = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json={
+            "name": "Qdrant vectors",
+            "config": {"retriever_type": "qdrant", "retrieval_mode": "vector"},
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["config"]["retriever_type"] == "qdrant"
+
+
+@pytest.mark.parametrize("retrieval_mode", ["keyword", "hybrid"])
+def test_qdrant_rejects_non_vector_modes(
+    client,
+    ordinary_user_headers,
+    retrieval_mode: str,
+) -> None:
+    response = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json={
+            "name": f"Invalid {retrieval_mode}",
+            "config": {
+                "retriever_type": "qdrant",
+                "retrieval_mode": retrieval_mode,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Qdrant supports only vector retrieval" in response.text
+
+
+@pytest.mark.parametrize(
+    ("original_retriever", "requested_retriever", "requested_mode"),
+    [
+        ("elasticsearch", "qdrant", "vector"),
+        ("qdrant", "elasticsearch", "vector"),
+        ("elasticsearch", "qdrant", "hybrid"),
+        ("qdrant", "elasticsearch", "hybrid"),
+    ],
+)
+def test_retriever_change_is_rejected_without_mutating_collection_or_document(
+    client,
+    ordinary_user_headers,
+    original_retriever: str,
+    requested_retriever: str,
+    requested_mode: str,
+) -> None:
+    created = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json={
+            "name": "Immutable Retriever",
+            "config": {
+                "retriever_type": original_retriever,
+                "retrieval_mode": "vector",
+            },
+        },
+    )
+    assert created.status_code == 201
+    collection = created.json()
+    document_id = _add_ready_document(
+        client,
+        collection_id=collection["id"],
+        retriever_type=original_retriever,
+    )
+
+    updated = client.put(
+        f"/api/knowledge-collections/{collection['id']}",
+        headers=ordinary_user_headers,
+        json={
+            "name": "Should not be saved",
+            "config": {
+                "retriever_type": requested_retriever,
+                "retrieval_mode": requested_mode,
+                "top_k": 9,
+            },
+            "is_active": True,
+        },
+    )
+
+    assert updated.status_code == 409
+    assert updated.json()["detail"] == {
+        "code": "knowledge_retriever_immutable",
+        "message": "Knowledge Retriever cannot be changed after creation.",
+    }
+    with client.app.state.session_factory() as session:
+        resource = session.get(models.Resource, collection["id"])
+        document = session.get(models.KnowledgeDocument, document_id)
+        assert resource is not None and document is not None
+        assert resource.name == collection["name"]
+        assert resource.config_json == collection["config"]
+        assert document.status == "ready"
+        assert document.index_generation == 2
+        assert document.retriever_type == original_retriever
+        assert document.parsed_object_key == "parsed"
+
+
+def test_qdrant_update_rejects_non_vector_mode_after_immutability_check(
+    client,
+    ordinary_user_headers,
+) -> None:
+    collection = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json={
+            "name": "Qdrant capability",
+            "config": {"retriever_type": "qdrant", "retrieval_mode": "vector"},
+        },
+    ).json()
+
+    updated = client.put(
+        f"/api/knowledge-collections/{collection['id']}",
+        headers=ordinary_user_headers,
+        json={
+            "name": collection["name"],
+            "config": {
+                "retriever_type": "qdrant",
+                "retrieval_mode": "hybrid",
+            },
+            "is_active": True,
+        },
+    )
+
+    assert updated.status_code == 400
+    assert updated.json()["detail"] == {
+        "code": "knowledge_retrieval_mode_unsupported",
+        "message": "Qdrant supports only vector retrieval.",
+    }
+
+
+def test_same_retriever_allows_query_setting_updates_without_reindex(
+    client,
+    ordinary_user_headers,
+) -> None:
+    collection = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json=_collection_payload("Search settings"),
+    ).json()
+    document_id = _add_ready_document(
+        client,
+        collection_id=collection["id"],
+        retriever_type="elasticsearch",
+    )
+
+    updated = client.put(
+        f"/api/knowledge-collections/{collection['id']}",
+        headers=ordinary_user_headers,
+        json={
+            "name": "Updated search settings",
+            "config": {
+                "retriever_type": "elasticsearch",
+                "retrieval_mode": "hybrid",
+                "top_k": 8,
+                "score_threshold": 0.4,
+                "vector_weight": 0.6,
+                "keyword_weight": 0.4,
+            },
+            "is_active": True,
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["config"] == {
+        **DEFAULT_KNOWLEDGE_CONFIG,
+        "retrieval_mode": "hybrid",
+        "top_k": 8,
+        "score_threshold": 0.4,
+        "vector_weight": 0.6,
+        "keyword_weight": 0.4,
+    }
+    with client.app.state.session_factory() as session:
+        document = session.get(models.KnowledgeDocument, document_id)
+        assert document is not None
+        assert document.status == "ready"
+        assert document.index_generation == 2
+        assert document.parsed_object_key == "parsed"
+
+
+def test_chunk_setting_update_requeues_documents_without_changing_retriever(
+    client,
+    ordinary_user_headers,
+) -> None:
+    collection = client.post(
+        "/api/knowledge-collections",
+        headers=ordinary_user_headers,
+        json={
+            "name": "Chunk settings",
+            "config": {"retriever_type": "qdrant", "retrieval_mode": "vector"},
+        },
+    ).json()
+    document_id = _add_ready_document(
+        client,
+        collection_id=collection["id"],
+        retriever_type="qdrant",
+    )
+
+    updated = client.put(
+        f"/api/knowledge-collections/{collection['id']}",
+        headers=ordinary_user_headers,
+        json={
+            "name": collection["name"],
+            "config": {
+                "retriever_type": "qdrant",
+                "retrieval_mode": "vector",
+                "chunk_size": 700,
+                "chunk_overlap": 80,
+            },
+            "is_active": True,
+        },
+    )
+
+    assert updated.status_code == 200
+    with client.app.state.session_factory() as session:
+        document = session.get(models.KnowledgeDocument, document_id)
+        assert document is not None
+        assert document.status == "queued"
+        assert document.index_generation == 3
+        assert document.retriever_type == "qdrant"
+        assert document.parsed_object_key is None
 
 
 def test_global_collection_is_readable_by_users_but_only_admin_can_write(

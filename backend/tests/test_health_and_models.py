@@ -12,10 +12,40 @@ def test_health_reports_local_dependencies(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["version"] == "development"
     assert body["storage"]["mysql"] == "configured"
+    assert body["storage"]["elasticsearch"] == "configured"
     assert body["storage"]["qdrant"] == "configured"
     assert body["storage"]["object_store"] == "local"
     assert "providers" in body
     assert "workspace" not in body
+
+
+def test_retriever_health_checks_both_shared_backends(client: TestClient) -> None:
+    response = client.get("/api/health/retrievers")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "retrievers": {"elasticsearch": True, "qdrant": True},
+    }
+
+
+def test_retriever_health_reports_unavailable_without_hiding_backend(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        client.app.state.knowledge_retriever_factory,
+        "test_connections",
+        lambda: {"elasticsearch": False, "qdrant": True},
+    )
+
+    response = client.get("/api/health/retrievers")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "unavailable",
+        "retrievers": {"elasticsearch": False, "qdrant": True},
+    }
 
 
 def test_health_reads_object_store_status_from_the_bound_app_settings(
@@ -88,7 +118,7 @@ def test_models_only_returns_configured_providers(tmp_path, monkeypatch) -> None
             engine.dispose()
         with TestClient(
             create_app(
-                knowledge_vector_store_override=FakeKnowledgeVectorStore(),
+                knowledge_retriever_factory_override=FakeKnowledgeVectorStore(),
                 start_background_workers=False,
             )
         ) as configured_client:
@@ -131,7 +161,7 @@ def test_models_does_not_fallback_when_default_provider_is_unconfigured(
             engine.dispose()
         with TestClient(
             create_app(
-                knowledge_vector_store_override=FakeKnowledgeVectorStore(),
+                knowledge_retriever_factory_override=FakeKnowledgeVectorStore(),
                 start_background_workers=False,
             )
         ) as configured_client:

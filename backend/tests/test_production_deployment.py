@@ -12,8 +12,12 @@ DEPLOY_DIR = ROOT / "deploy"
 def test_local_compose_only_contains_development_dependencies() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
-    assert set(compose["services"]) == {"mysql", "qdrant"}
-    assert set(compose["volumes"]) == {"mysql_data", "qdrant_data"}
+    assert set(compose["services"]) == {"mysql", "qdrant", "elasticsearch"}
+    assert set(compose["volumes"]) == {
+        "mysql_data",
+        "qdrant_data",
+        "elasticsearch_data",
+    }
 
 
 def test_production_compose_only_exposes_loopback_application_ports() -> None:
@@ -21,12 +25,18 @@ def test_production_compose_only_exposes_loopback_application_ports() -> None:
     services = compose["services"]
 
     assert all("build" not in service for service in services.values())
-    assert all("ports" not in services[name] for name in ("mysql", "qdrant"))
+    assert all(
+        "ports" not in services[name]
+        for name in ("mysql", "qdrant", "elasticsearch")
+    )
     assert services["backend"]["ports"] == ["127.0.0.1:${AUTO_REIGN_BACKEND_PORT:-18300}:8000"]
     assert services["frontend"]["ports"] == ["127.0.0.1:${AUTO_REIGN_FRONTEND_PORT:-13100}:3000"]
     assert "caddy" not in services
     assert "${AUTO_REIGN_VERSION" in services["backend"]["image"]
     assert "${AUTO_REIGN_VERSION" in services["frontend"]["image"]
+    assert services["qdrant"]["environment"]["QDRANT__SERVICE__API_KEY"] == (
+        "${QDRANT_API_KEY:-}"
+    )
 
 
 def test_production_backend_enforces_single_instance_s3_object_storage() -> None:
@@ -74,6 +84,9 @@ def test_production_environment_example_has_no_s3_credential_defaults() -> None:
     assert values["S3_REGION"] == "cn-hangzhou"
     assert values["S3_ACCESS_KEY_ID"] == ""
     assert values["S3_SECRET_ACCESS_KEY"] == ""
+    assert values["ELASTICSEARCH_PASSWORD"] == (
+        "replace-with-a-long-random-password"
+    )
     assert "REGISTRATION_ENABLED" not in values
 
 
@@ -89,14 +102,15 @@ def test_production_runtime_has_no_parallel_coordination_or_log_stack() -> None:
     assert set(compose["services"]) == {
         "mysql",
         "qdrant",
+        "elasticsearch",
         "migrate",
         "backend",
         "frontend",
     }
     assert set(compose["services"]).isdisjoint(
-        {"redis", "elasticsearch", "kibana", "celery"}
+        {"redis", "kibana", "celery"}
     )
-    assert dependencies.isdisjoint({"redis", "elasticsearch", "celery"})
+    assert dependencies.isdisjoint({"redis", "celery"})
     assert 'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]' in dockerfile
     assert "--workers" not in dockerfile
 

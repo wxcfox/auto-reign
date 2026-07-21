@@ -51,12 +51,18 @@
   "form": {
     "name": "名称",
     "retrievalConfig": "索引与检索设置",
+    "retrieverType": "Retriever",
+    "retrievalMode": "检索模式",
     "chunkSize": "Chunk 大小",
     "chunkOverlap": "Chunk 重叠长度",
     "topK": "Top K",
-    "scoreThreshold": "分数阈值（可选）",
-    "indexingHint": "Chunk 大小和重叠长度只影响之后上传或显式重新索引的文档。",
-    "retrievalHint": "Top K 和分数阈值会影响之后的检索。",
+    "scoreThreshold": "分数阈值",
+    "vectorWeight": "向量权重",
+    "keywordWeight": "关键词权重",
+    "qdrantModeReset": "Qdrant 只支持向量检索，检索模式已自动切换为向量。",
+    "retrieverImmutable": "Retriever 在资料库创建时确定，创建后不可修改。",
+    "indexingHint": "修改 Chunk 大小或重叠长度会将启用中的文档重新加入索引队列。",
+    "retrievalHint": "修改检索模式、Top K、分数阈值和混合权重不会重建索引。",
     "nameTaken": "已存在同名资料库。",
     "saveError": "资料库保存失败。"
   },
@@ -65,8 +71,19 @@
     "chunkSize": "Chunk 大小必须是 200 到 4000 之间的整数。",
     "chunkOverlap": "Chunk 重叠长度必须是 0 到 1000 之间的整数。",
     "chunkOverlapHalf": "Chunk 重叠长度不能超过 Chunk 大小的一半。",
-    "topK": "Top K 必须是 1 到 30 之间的整数。",
-    "scoreThreshold": "分数阈值必须留空，或填写 -1 到 1 之间的数字。"
+    "topK": "Top K 必须是 1 到 10 之间的整数。",
+    "scoreThreshold": "分数阈值必须是 0 到 1 之间的数字。",
+    "weight": "权重必须是 0 到 1 之间的数字。",
+    "weightSum": "向量权重和关键词权重不能同时为 0。"
+  },
+  "retrievers": {
+    "elasticsearch": "Elasticsearch",
+    "qdrant": "Qdrant"
+  },
+  "retrievalModes": {
+    "vector": "向量",
+    "keyword": "关键词（BM25）",
+    "hybrid": "混合"
   },
   "uploader": {
     "title": "上传文档",

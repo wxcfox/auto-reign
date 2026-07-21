@@ -22,6 +22,8 @@ import {
 import type {
   KnowledgeCollection,
   KnowledgeCollectionConfig,
+  KnowledgeRetrievalMode,
+  KnowledgeRetrieverType,
   ResourceScope,
 } from "@/lib/types";
 
@@ -29,10 +31,14 @@ export { DEFAULT_KNOWLEDGE_COLLECTION_CONFIG } from "@/lib/limits";
 
 type FieldName =
   | "name"
+  | "retrieverType"
+  | "retrievalMode"
   | "chunkSize"
   | "chunkOverlap"
   | "topK"
-  | "scoreThreshold";
+  | "scoreThreshold"
+  | "vectorWeight"
+  | "keywordWeight";
 
 type FieldErrors = Partial<Record<FieldName, string>>;
 
@@ -44,7 +50,10 @@ export type KnowledgeCollectionFormProps = {
   scope: ResourceScope;
 };
 
-function configValue(collection: KnowledgeCollection | null, key: keyof KnowledgeCollectionConfig) {
+function configValue<K extends keyof KnowledgeCollectionConfig>(
+  collection: KnowledgeCollection | null,
+  key: K,
+): KnowledgeCollectionConfig[K] {
   return collection?.config[key] ?? DEFAULT_KNOWLEDGE_COLLECTION_CONFIG[key];
 }
 
@@ -58,16 +67,27 @@ export function KnowledgeCollectionForm({
   const { t } = useTranslation("knowledge");
   const idPrefix = useId();
   const [name, setName] = useState(collection?.name ?? "");
+  const [retrieverType, setRetrieverType] = useState<KnowledgeRetrieverType>(
+    configValue(collection, "retriever_type"),
+  );
+  const [retrievalMode, setRetrievalMode] = useState<KnowledgeRetrievalMode>(
+    configValue(collection, "retrieval_mode"),
+  );
   const [chunkSize, setChunkSize] = useState(String(configValue(collection, "chunk_size")));
   const [chunkOverlap, setChunkOverlap] = useState(
     String(configValue(collection, "chunk_overlap")),
   );
   const [topK, setTopK] = useState(String(configValue(collection, "top_k")));
   const [scoreThreshold, setScoreThreshold] = useState(
-    collection?.config.score_threshold == null
-      ? ""
-      : String(collection.config.score_threshold),
+    String(configValue(collection, "score_threshold")),
   );
+  const [vectorWeight, setVectorWeight] = useState(
+    String(configValue(collection, "vector_weight")),
+  );
+  const [keywordWeight, setKeywordWeight] = useState(
+    String(configValue(collection, "keyword_weight")),
+  );
+  const [modeResetNotice, setModeResetNotice] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [saveErrorKey, setSaveErrorKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -88,14 +108,15 @@ export function KnowledgeCollectionForm({
     operationRef.current += 1;
     savingRef.current = false;
     setName(collection?.name ?? "");
+    setRetrieverType(configValue(collection, "retriever_type"));
+    setRetrievalMode(configValue(collection, "retrieval_mode"));
     setChunkSize(String(configValue(collection, "chunk_size")));
     setChunkOverlap(String(configValue(collection, "chunk_overlap")));
     setTopK(String(configValue(collection, "top_k")));
-    setScoreThreshold(
-      collection?.config.score_threshold == null
-        ? ""
-        : String(collection.config.score_threshold),
-    );
+    setScoreThreshold(String(configValue(collection, "score_threshold")));
+    setVectorWeight(String(configValue(collection, "vector_weight")));
+    setKeywordWeight(String(configValue(collection, "keyword_weight")));
+    setModeResetNotice(false);
     setFieldErrors({});
     setSaveErrorKey(null);
     setSaving(false);
@@ -147,15 +168,40 @@ export function KnowledgeCollectionForm({
       errors.topK = "validation.topK";
     }
 
-    const thresholdText = scoreThreshold.trim();
-    const parsedScoreThreshold = thresholdText === "" ? null : Number(thresholdText);
+    const parsedScoreThreshold = Number(scoreThreshold);
     if (
-      parsedScoreThreshold !== null &&
-      (!Number.isFinite(parsedScoreThreshold) ||
+      !scoreThreshold.trim() ||
+      !Number.isFinite(parsedScoreThreshold) ||
         parsedScoreThreshold < KNOWLEDGE_COLLECTION_LIMITS.scoreThresholdMin ||
-        parsedScoreThreshold > KNOWLEDGE_COLLECTION_LIMITS.scoreThresholdMax)
+        parsedScoreThreshold > KNOWLEDGE_COLLECTION_LIMITS.scoreThresholdMax
     ) {
       errors.scoreThreshold = "validation.scoreThreshold";
+    }
+
+    const parsedVectorWeight = Number(vectorWeight);
+    if (
+      !vectorWeight.trim() ||
+      !Number.isFinite(parsedVectorWeight) ||
+      parsedVectorWeight < KNOWLEDGE_COLLECTION_LIMITS.weightMin ||
+      parsedVectorWeight > KNOWLEDGE_COLLECTION_LIMITS.weightMax
+    ) {
+      errors.vectorWeight = "validation.weight";
+    }
+    const parsedKeywordWeight = Number(keywordWeight);
+    if (
+      !keywordWeight.trim() ||
+      !Number.isFinite(parsedKeywordWeight) ||
+      parsedKeywordWeight < KNOWLEDGE_COLLECTION_LIMITS.weightMin ||
+      parsedKeywordWeight > KNOWLEDGE_COLLECTION_LIMITS.weightMax
+    ) {
+      errors.keywordWeight = "validation.weight";
+    }
+    if (
+      !errors.vectorWeight &&
+      !errors.keywordWeight &&
+      parsedVectorWeight + parsedKeywordWeight <= 0
+    ) {
+      errors.keywordWeight = "validation.weightSum";
     }
 
     setFieldErrors(errors);
@@ -165,10 +211,14 @@ export function KnowledgeCollectionForm({
     return {
       name: trimmedName,
       config: {
+        retriever_type: retrieverType,
+        retrieval_mode: retrievalMode,
         chunk_size: parsedChunkSize,
         chunk_overlap: parsedChunkOverlap,
         top_k: parsedTopK,
         score_threshold: parsedScoreThreshold,
+        vector_weight: parsedVectorWeight,
+        keyword_weight: parsedKeywordWeight,
       },
     };
   }
@@ -201,10 +251,15 @@ export function KnowledgeCollectionForm({
       }
       if (collection === null) {
         setName("");
+        setRetrieverType(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.retriever_type);
+        setRetrievalMode(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.retrieval_mode);
         setChunkSize(String(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.chunk_size));
         setChunkOverlap(String(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.chunk_overlap));
         setTopK(String(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.top_k));
-        setScoreThreshold("");
+        setScoreThreshold(String(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.score_threshold));
+        setVectorWeight(String(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.vector_weight));
+        setKeywordWeight(String(DEFAULT_KNOWLEDGE_COLLECTION_CONFIG.keyword_weight));
+        setModeResetNotice(false);
       }
       onSaved?.(saved);
     } catch (error) {
@@ -240,6 +295,16 @@ export function KnowledgeCollectionForm({
 
   const editing = collection !== null;
 
+  function selectRetriever(next: KnowledgeRetrieverType) {
+    setRetrieverType(next);
+    if (next === "qdrant" && retrievalMode !== "vector") {
+      setRetrievalMode("vector");
+      setModeResetNotice(true);
+    } else {
+      setModeResetNotice(false);
+    }
+  }
+
   return (
     <form
       className="knowledge-collection-form"
@@ -266,6 +331,51 @@ export function KnowledgeCollectionForm({
       <fieldset className="knowledge-config-fieldset">
         <legend>{t("form.retrievalConfig")}</legend>
         <div className="knowledge-config-grid">
+          <div className="knowledge-form-field">
+            <label>
+              {t("form.retrieverType")}
+              <select
+                aria-describedby={editing ? `${idPrefix}-retriever-immutable` : undefined}
+                data-testid="knowledge-retriever-select"
+                disabled={editing}
+                onChange={(event) =>
+                  selectRetriever(event.target.value as KnowledgeRetrieverType)
+                }
+                value={retrieverType}
+              >
+                <option value="elasticsearch">{t("retrievers.elasticsearch")}</option>
+                <option value="qdrant">{t("retrievers.qdrant")}</option>
+              </select>
+            </label>
+            {editing ? (
+              <small
+                className="form-hint"
+                data-testid="knowledge-retriever-immutable-hint"
+                id={`${idPrefix}-retriever-immutable`}
+              >
+                {t("form.retrieverImmutable")}
+              </small>
+            ) : null}
+          </div>
+          <div className="knowledge-form-field">
+            <label>
+              {t("form.retrievalMode")}
+              <select
+                onChange={(event) =>
+                  setRetrievalMode(event.target.value as KnowledgeRetrievalMode)
+                }
+                value={retrievalMode}
+              >
+                <option value="vector">{t("retrievalModes.vector")}</option>
+                {retrieverType === "elasticsearch" ? (
+                  <>
+                    <option value="keyword">{t("retrievalModes.keyword")}</option>
+                    <option value="hybrid">{t("retrievalModes.hybrid")}</option>
+                  </>
+                ) : null}
+              </select>
+            </label>
+          </div>
           <div className="knowledge-form-field">
             <label>
               {t("form.chunkSize")}
@@ -337,7 +447,46 @@ export function KnowledgeCollectionForm({
             </label>
             {fieldError("scoreThreshold")}
           </div>
+          {retrievalMode === "hybrid" ? (
+            <>
+              <div className="knowledge-form-field">
+                <label>
+                  {t("form.vectorWeight")}
+                  <input
+                    aria-describedby={fieldErrors.vectorWeight ? errorId("vectorWeight") : undefined}
+                    aria-invalid={fieldErrors.vectorWeight ? true : undefined}
+                    max={KNOWLEDGE_COLLECTION_LIMITS.weightMax}
+                    min={KNOWLEDGE_COLLECTION_LIMITS.weightMin}
+                    onChange={(event) => setVectorWeight(event.target.value)}
+                    step="any"
+                    type="number"
+                    value={vectorWeight}
+                  />
+                </label>
+                {fieldError("vectorWeight")}
+              </div>
+              <div className="knowledge-form-field">
+                <label>
+                  {t("form.keywordWeight")}
+                  <input
+                    aria-describedby={fieldErrors.keywordWeight ? errorId("keywordWeight") : undefined}
+                    aria-invalid={fieldErrors.keywordWeight ? true : undefined}
+                    max={KNOWLEDGE_COLLECTION_LIMITS.weightMax}
+                    min={KNOWLEDGE_COLLECTION_LIMITS.weightMin}
+                    onChange={(event) => setKeywordWeight(event.target.value)}
+                    step="any"
+                    type="number"
+                    value={keywordWeight}
+                  />
+                </label>
+                {fieldError("keywordWeight")}
+              </div>
+            </>
+          ) : null}
         </div>
+        {modeResetNotice ? (
+          <p className="form-notice" role="status">{t("form.qdrantModeReset")}</p>
+        ) : null}
         <p className="form-hint">{t("form.indexingHint")}</p>
         <p className="form-hint">{t("form.retrievalHint")}</p>
       </fieldset>

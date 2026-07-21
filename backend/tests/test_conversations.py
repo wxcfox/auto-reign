@@ -25,7 +25,7 @@ from app.schemas.conversations import (
 )
 from app.schemas.modeling import ModelRef
 from app.services.knowledge_document_service import KnowledgeDocumentService
-from app.services.knowledge_vector_store import KnowledgeVectorHit
+from app.services.knowledge_retrievers import KnowledgeRetrieverHit as KnowledgeVectorHit
 from app.services.runtime_types import ToolCall
 from app.services.conversation_service import (
     ConversationService,

@@ -21,7 +21,11 @@ from app.services.embedding_service import EmbeddingProviderError
 from app.services.extraction_service import ExtractionError, ExtractionService
 from app.services.knowledge_chunk_service import KnowledgeChunkService
 from app.services.knowledge_document_service import KnowledgeDocumentService
-from app.services.knowledge_vector_store import DocumentGeneration
+from app.services.knowledge_retrievers import (
+    DocumentGeneration,
+    KnowledgeRetriever,
+    RetrieverType,
+)
 from app.storage.object_store import ObjectConflict, ObjectStore, ObjectStoreError
 
 
@@ -36,12 +40,8 @@ class KnowledgeWorkerStopTimeout(RuntimeError):
     pass
 
 
-class _KnowledgeWorkerVectorStore(Protocol):
-    def upsert_generation(self, chunks) -> None: ...
-
-    def delete_generation(self, scope: DocumentGeneration) -> None: ...
-
-    def delete_generations_before(self, current: DocumentGeneration) -> None: ...
+class _KnowledgeWorkerRetrieverFactory(Protocol):
+    def get(self, retriever_type: RetrieverType) -> KnowledgeRetriever: ...
 
 
 def map_index_error(error: Exception) -> str:
@@ -59,7 +59,7 @@ def map_index_error(error: Exception) -> str:
 def safe_error_message(error: Exception) -> str:
     return {
         "knowledge_parse_failed": "Document extraction failed.",
-        "knowledge_unavailable": "Knowledge vector service is unavailable.",
+        "knowledge_unavailable": "Knowledge retrieval service is unavailable.",
         "knowledge_storage_unavailable": "Knowledge object storage is unavailable.",
         "knowledge_index_failed": "Knowledge indexing failed.",
         "embedding_auth_failed": "Embedding provider authentication failed.",
@@ -77,7 +77,7 @@ class KnowledgeIndexWorker:
         repository: KnowledgeDocumentRepository,
         object_store: ObjectStore,
         extraction: ExtractionService,
-        vector_store: _KnowledgeWorkerVectorStore,
+        retriever_factory: _KnowledgeWorkerRetrieverFactory,
         coordinator: DocumentOperationCoordinator,
         clock: Callable[[], datetime],
         processing_timeout: timedelta,
@@ -91,7 +91,7 @@ class KnowledgeIndexWorker:
         self.repository = repository
         self.object_store = object_store
         self.extraction = extraction
-        self.vector_store = vector_store
+        self.retriever_factory = retriever_factory
         self.coordinator = coordinator
         self.clock = clock
         self.processing_timeout = processing_timeout
@@ -209,10 +209,11 @@ class KnowledgeIndexWorker:
                     return True
                 # A crashed attempt may have partially populated this unpublished
                 # generation. Rebuild it from a clean exact-generation projection.
-                self.vector_store.delete_generation(generation)
+                retriever = self._retriever(item)
+                retriever.delete_generation(generation)
                 if not self._prepare_for_mutation(item, parsed_key):
                     return True
-                self.vector_store.upsert_generation(chunks)
+                retriever.upsert_generation(chunks)
 
                 with session_scope(self.session_factory) as session:
                     published = self.repository.complete_generation(
@@ -221,6 +222,7 @@ class KnowledgeIndexWorker:
                         generation=item.generation,
                         processing_attempt_id=item.processing_attempt_id,
                         parsed_object_key=parsed_key,
+                        retriever_type=item.retriever_type,
                     )
                 if published:
                     self._cleanup_published_old_generations(item, parsed_key)
@@ -398,7 +400,7 @@ class KnowledgeIndexWorker:
         # mutation. A future generation remains outside this filter even if it
         # is written immediately after the DB check above.
         try:
-            self.vector_store.delete_generations_before(
+            self._retriever(item).delete_generations_before(
                 self._vector_generation(item)
             )
         except Exception as error:
@@ -426,7 +428,7 @@ class KnowledgeIndexWorker:
         except Exception as error:
             errors.append(error)
         try:
-            self.vector_store.delete_generation(self._vector_generation(item))
+            self._retriever(item).delete_generation(self._vector_generation(item))
         except Exception as error:
             errors.append(error)
         if not errors:
@@ -451,3 +453,9 @@ class KnowledgeIndexWorker:
             index_generation=item.generation,
             content_hash=item.content_hash,
         )
+
+    def _retriever(self, item: ClaimedDocument) -> KnowledgeRetriever:
+        config = KnowledgeCollectionConfig.model_validate(item.config_json)
+        if item.retriever_type != config.retriever_type:
+            raise KnowledgeParseError("Document Retriever does not match its Collection")
+        return self.retriever_factory.get(config.retriever_type)

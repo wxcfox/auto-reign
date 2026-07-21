@@ -20,6 +20,7 @@ from pathlib import Path
 PROJECT_NAME = "auto-reign"
 MYSQL_START_TIMEOUT = 60.0
 QDRANT_START_TIMEOUT = 60.0
+ELASTICSEARCH_START_TIMEOUT = 90.0
 APP_START_TIMEOUT = 90.0
 STOP_TIMEOUT = 5.0
 
@@ -383,10 +384,15 @@ def run_command(
         if list(args[:6]) == ["docker", "compose", "-p", PROJECT_NAME, "up", "-d"]:
             mysql_image = (env or {}).get("MYSQL_IMAGE", "mysql:8.4")
             qdrant_image = (env or {}).get("QDRANT_IMAGE", "qdrant/qdrant:v1.17.0")
+            elasticsearch_image = (env or {}).get(
+                "ELASTICSEARCH_IMAGE",
+                "docker.elastic.co/elasticsearch/elasticsearch:8.19.3",
+            )
             hint = (
-                " If Docker Hub access is unstable, set MYSQL_IMAGE and QDRANT_IMAGE in .env "
-                f"to reachable mirror images, then retry. Current values: MYSQL_IMAGE={mysql_image}, "
-                f"QDRANT_IMAGE={qdrant_image}."
+                " If registry access is unstable, configure MYSQL_IMAGE, QDRANT_IMAGE, "
+                "and ELASTICSEARCH_IMAGE in .env, then retry. Current values: "
+                f"MYSQL_IMAGE={mysql_image}, QDRANT_IMAGE={qdrant_image}, "
+                f"ELASTICSEARCH_IMAGE={elasticsearch_image}."
             )
         raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args)}{hint}")
 
@@ -439,6 +445,13 @@ def qdrant_ready_url(qdrant_url: str) -> str:
     return urllib.parse.urljoin(qdrant_url.rstrip("/") + "/", "readyz")
 
 
+def elasticsearch_ready_url(elasticsearch_url: str) -> str:
+    return urllib.parse.urljoin(
+        elasticsearch_url.rstrip("/") + "/",
+        "_cluster/health?wait_for_status=yellow&timeout=5s",
+    )
+
+
 def service_marker(name: str) -> str:
     return f"auto-reign-{name}"
 
@@ -457,7 +470,17 @@ def verify_docker() -> None:
 
 def start_dependency_containers(root: Path, env: MutableMapping[str, str]) -> None:
     run_command(
-        ["docker", "compose", "-p", PROJECT_NAME, "up", "-d", "mysql", "qdrant"],
+        [
+            "docker",
+            "compose",
+            "-p",
+            PROJECT_NAME,
+            "up",
+            "-d",
+            "mysql",
+            "qdrant",
+            "elasticsearch",
+        ],
         cwd=root,
         env=env,
     )
@@ -465,7 +488,16 @@ def start_dependency_containers(root: Path, env: MutableMapping[str, str]) -> No
 
 def stop_dependency_containers(root: Path, env: MutableMapping[str, str]) -> None:
     run_command(
-        ["docker", "compose", "-p", PROJECT_NAME, "stop", "mysql", "qdrant"],
+        [
+            "docker",
+            "compose",
+            "-p",
+            PROJECT_NAME,
+            "stop",
+            "mysql",
+            "qdrant",
+            "elasticsearch",
+        ],
         cwd=root,
         env=env,
     )
@@ -474,6 +506,7 @@ def stop_dependency_containers(root: Path, env: MutableMapping[str, str]) -> Non
 def wait_for_dependencies(root: Path, env: MutableMapping[str, str]) -> None:
     database_url = env.get("DATABASE_URL", "")
     qdrant_url = env.get("QDRANT_URL", "")
+    elasticsearch_url = env.get("ELASTICSEARCH_URL", "")
     mysql_host, mysql_port = database_endpoint(database_url)
     if not wait_for_tcp(mysql_host, mysql_port, MYSQL_START_TIMEOUT):
         raise RuntimeError(f"MySQL did not become reachable at {mysql_host}:{mysql_port}")
@@ -482,6 +515,11 @@ def wait_for_dependencies(root: Path, env: MutableMapping[str, str]) -> None:
     ready_url = qdrant_ready_url(qdrant_url)
     if not wait_for_http(ready_url, QDRANT_START_TIMEOUT):
         raise RuntimeError(f"Qdrant did not become ready at {ready_url}")
+    elasticsearch_target = elasticsearch_ready_url(elasticsearch_url)
+    if not wait_for_http(elasticsearch_target, ELASTICSEARCH_START_TIMEOUT):
+        raise RuntimeError(
+            f"Elasticsearch did not become ready at {elasticsearch_target}"
+        )
 
 
 def backend_env(root: Path, env: MutableMapping[str, str], port: int) -> dict[str, str]:
@@ -664,14 +702,24 @@ def format_dependency_status(name: str, healthy: bool, target: str) -> str:
 def show_status(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     database_url = env.get("DATABASE_URL", "")
     qdrant_url = env.get("QDRANT_URL", "")
+    elasticsearch_url = env.get("ELASTICSEARCH_URL", "")
     mysql_host, mysql_port = database_endpoint(database_url)
     mysql_healthy = wait_for_tcp(mysql_host, mysql_port, 1.0)
     qdrant_target = qdrant_ready_url(qdrant_url)
     qdrant_healthy = wait_for_http(qdrant_target, 1.0)
+    elasticsearch_target = elasticsearch_ready_url(elasticsearch_url)
+    elasticsearch_healthy = wait_for_http(elasticsearch_target, 1.0)
     backend = healthy_managed_state(backend_state_path(paths), backend_health_url)
     frontend = healthy_managed_state(frontend_state_path(paths), frontend_health_url)
     print(format_dependency_status("mysql", mysql_healthy, f"{mysql_host}:{mysql_port}"))
     print(format_dependency_status("qdrant", qdrant_healthy, qdrant_target))
+    print(
+        format_dependency_status(
+            "elasticsearch",
+            elasticsearch_healthy,
+            elasticsearch_target,
+        )
+    )
     print(format_host_status("backend", backend, backend_health_url))
     print(format_host_status("frontend", frontend, frontend_health_url))
     return 0
@@ -714,6 +762,10 @@ def start_stack(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
         raise
     print(f"MySQL: ready on {database_endpoint(env['DATABASE_URL'])[0]}:{database_endpoint(env['DATABASE_URL'])[1]}")
     print(f"Qdrant: ready on {qdrant_ready_url(env['QDRANT_URL'])}")
+    print(
+        "Elasticsearch: ready on "
+        f"{elasticsearch_ready_url(env['ELASTICSEARCH_URL'])}"
+    )
     print(f"Backend:  http://127.0.0.1:{backend.port}")
     print(f"Frontend: http://127.0.0.1:{frontend.port}")
     return 0
