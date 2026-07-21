@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     database_url: str = "mysql+pymysql://auto_reign:auto_reign@127.0.0.1:13306/auto_reign"
     qdrant_url: str = "http://127.0.0.1:16333"
     qdrant_collection: str = "auto_reign_default"
+    qdrant_api_key: str | None = None
+    elasticsearch_url: str = "http://127.0.0.1:19200"
+    elasticsearch_index: str = "auto_reign_knowledge"
+    elasticsearch_username: str | None = None
+    elasticsearch_password: str | None = None
+    elasticsearch_api_key: str | None = None
+    elasticsearch_request_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
     embedding_provider: str = "qwen"
     embedding_model: str = "text-embedding-v4"
     openai_api_key: str | None = None

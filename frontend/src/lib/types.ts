@@ -144,11 +144,18 @@ export type KnowledgeDocumentStatus =
   | "ready"
   | "failed";
 
+export type KnowledgeRetrieverType = "elasticsearch" | "qdrant";
+export type KnowledgeRetrievalMode = "vector" | "keyword" | "hybrid";
+
 export interface KnowledgeCollectionConfig {
+  retriever_type: KnowledgeRetrieverType;
+  retrieval_mode: KnowledgeRetrievalMode;
   chunk_size: number;
   chunk_overlap: number;
   top_k: number;
-  score_threshold: number | null;
+  score_threshold: number;
+  vector_weight: number;
+  keyword_weight: number;
 }
 
 export type KnowledgeCollection = ResourceEnvelope<KnowledgeCollectionConfig>;

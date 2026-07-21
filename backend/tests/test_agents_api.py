@@ -850,10 +850,14 @@ def test_resolve_for_turn_locks_agent_references_and_documents_in_order(
     assert resolved.config.knowledge_scopes[0].owner_user_id == alice["id"]
     assert resolved.config.knowledge_scopes[0].document_ids == (document_id,)
     assert dict(resolved.config.knowledge_scopes[0].config_json) == {
+        "retriever_type": "elasticsearch",
+        "retrieval_mode": "vector",
         "chunk_size": 900,
         "chunk_overlap": 120,
-        "top_k": 8,
-        "score_threshold": None,
+        "top_k": 5,
+        "score_threshold": 0.5,
+        "vector_weight": 0.7,
+        "keyword_weight": 0.3,
     }
     assert resolved.config_hash == resolved.config.config_hash
     assert len(resolved.config_hash) == 64

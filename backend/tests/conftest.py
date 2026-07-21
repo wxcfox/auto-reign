@@ -66,7 +66,7 @@ def client(
         finally:
             engine.dispose()
         app = main_module.create_app(
-            knowledge_vector_store_override=fake_knowledge_vector_store,
+            knowledge_retriever_factory_override=fake_knowledge_vector_store,
             start_background_workers=False,
         )
         with TestClient(app) as test_client:

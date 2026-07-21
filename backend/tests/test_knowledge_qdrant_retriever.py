@@ -11,10 +11,12 @@ from qdrant_client.http.models import FieldCondition
 
 from app.repositories.vector_store import VectorStoreUnavailable, stable_vector_id
 from app.services.knowledge_chunk_service import KnowledgeChunk, KnowledgeChunkService
-from app.services.knowledge_vector_store import (
+from app.services.knowledge_retrievers import (
     DocumentGeneration,
-    DocumentVectorScope,
-    KnowledgeVectorStore,
+    DocumentIndexScope as DocumentVectorScope,
+)
+from app.services.knowledge_retrievers.qdrant import (
+    QdrantRetriever,
     build_knowledge_embeddings,
     build_qdrant_client,
 )
@@ -50,6 +52,8 @@ def chunks_for(
                 "content_hash": content_hash or f"sha256-{generation}",
                 "filename": filename,
                 "chunk_index": chunk_index,
+                "source_start": 0,
+                "source_end": len(text),
             },
         )
     ]
@@ -65,8 +69,8 @@ def qdrant_client() -> Iterator[QdrantClient]:
 
 
 @pytest.fixture
-def store(qdrant_client: QdrantClient) -> KnowledgeVectorStore:
-    return KnowledgeVectorStore(
+def store(qdrant_client: QdrantClient) -> QdrantRetriever:
+    return QdrantRetriever(
         settings=vector_settings(),
         client=qdrant_client,
         embeddings=StableTestEmbeddings(),
@@ -95,7 +99,7 @@ def test_point_ids_differ_between_generations() -> None:
 
 
 def test_upsert_writes_generation_metadata_and_stable_point_id(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
     qdrant_client: QdrantClient,
 ) -> None:
     chunks = chunks_for(
@@ -121,7 +125,7 @@ def test_upsert_writes_generation_metadata_and_stable_point_id(
 
 
 def test_sparse_source_skips_blank_slices_and_upserts_to_real_qdrant(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
     qdrant_client: QdrantClient,
 ) -> None:
     text = "x" + (" " * 2_500) + "y"
@@ -168,7 +172,7 @@ def test_sparse_source_skips_blank_slices_and_upserts_to_real_qdrant(
 
 
 def test_search_filters_document_and_current_generation_together(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
 ) -> None:
     store.upsert_generation(
         chunks_for(
@@ -195,7 +199,7 @@ def test_search_filters_document_and_current_generation_together(
 
 
 def test_search_or_conditions_do_not_cross_pair_tenant_or_generation(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
 ) -> None:
     store.upsert_generation(
         chunks_for(
@@ -246,7 +250,7 @@ def test_search_or_conditions_do_not_cross_pair_tenant_or_generation(
 
 
 def test_vector_search_fails_closed_for_empty_scopes(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
 ) -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         store.search("anything", scopes=[], limit=5)
@@ -257,7 +261,7 @@ def test_vector_search_fails_closed_for_empty_scopes(
     [("", 1), ("  ", 1), ("query", 0), ("query", True)],
 )
 def test_vector_search_rejects_invalid_query_or_limit(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
     query: str,
     limit: int,
 ) -> None:
@@ -266,7 +270,7 @@ def test_vector_search_rejects_invalid_query_or_limit(
 
 
 def test_vector_upsert_rejects_malformed_tenant_payload(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
 ) -> None:
     chunks = chunks_for("doc-1", generation=1, text="source")
     chunks[0].metadata["owner_user_id"] = True
@@ -276,7 +280,7 @@ def test_vector_upsert_rejects_malformed_tenant_payload(
 
 
 def test_vector_upsert_rejects_incomplete_metadata(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
 ) -> None:
     chunk = chunks_for("doc-1", generation=1, text="source")[0]
     del chunk.metadata["content_hash"]
@@ -286,7 +290,7 @@ def test_vector_upsert_rejects_incomplete_metadata(
 
 
 def test_vector_upsert_rejects_duplicate_point_ids(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
 ) -> None:
     chunk = chunks_for("doc-1", generation=1, text="source")[0]
 
@@ -319,7 +323,7 @@ class RecordingDeleteClient:
 
 def test_vector_mutations_never_use_a_bare_document_id() -> None:
     client = RecordingDeleteClient()
-    store = KnowledgeVectorStore(
+    store = QdrantRetriever(
         settings=vector_settings(),
         client=client,  # type: ignore[arg-type]
         embeddings=StableTestEmbeddings(),
@@ -368,7 +372,7 @@ def test_vector_mutations_never_use_a_bare_document_id() -> None:
 
 
 def test_delete_generations_before_preserves_current_and_future_generations(
-    store: KnowledgeVectorStore,
+    store: QdrantRetriever,
     qdrant_client: QdrantClient,
 ) -> None:
     store.upsert_generation(
@@ -427,7 +431,66 @@ def valid_result_metadata() -> dict[str, object]:
         "content_hash": "sha256-current",
         "filename": "guide.md",
         "chunk_index": 0,
+        "source_start": 0,
+        "source_end": 4,
     }
+
+
+@pytest.mark.parametrize(
+    ("raw_cosine", "expected_score"),
+    [
+        (-1.0, 0.0),
+        (0.0, 0.5),
+        (1.0, 1.0),
+        (1.0 + 5e-7, 1.0),
+        (-1.0 - 5e-7, 0.0),
+    ],
+)
+def test_qdrant_cosine_score_is_normalized_to_shared_zero_one_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_cosine: float,
+    expected_score: float,
+) -> None:
+    client = RecordingDeleteClient()
+    store = QdrantRetriever(
+        settings=vector_settings(),
+        client=client,  # type: ignore[arg-type]
+        embeddings=StableTestEmbeddings(),
+    )
+    document = Document(page_content="text", metadata=valid_result_metadata())
+    monkeypatch.setattr(
+        store,
+        "_store",
+        lambda: StaticSearchStore((document, raw_cosine)),
+    )
+
+    hits = store.search("query", scopes=[current_scope()], limit=1)
+
+    assert hits[0].score == pytest.approx(expected_score)
+    assert hits[0].vector_score == pytest.approx(expected_score)
+    assert 0.0 <= hits[0].score <= 1.0
+
+
+@pytest.mark.parametrize("raw_cosine", [-1.01, 1.01, float("inf"), float("-inf")])
+def test_qdrant_rejects_cosine_scores_outside_the_shared_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_cosine: float,
+) -> None:
+    client = RecordingDeleteClient()
+    store = QdrantRetriever(
+        settings=vector_settings(),
+        client=client,  # type: ignore[arg-type]
+        embeddings=StableTestEmbeddings(),
+    )
+    document = Document(page_content="text", metadata=valid_result_metadata())
+    monkeypatch.setattr(
+        store,
+        "_store",
+        lambda: StaticSearchStore((document, raw_cosine)),
+    )
+
+    with pytest.raises(VectorStoreUnavailable, match="normalize search results"):
+        store.search("query", scopes=[current_scope()], limit=1)
 
 
 @pytest.mark.parametrize(
@@ -445,7 +508,7 @@ def test_vector_adapter_maps_malformed_results_to_unavailable(
     score: object,
 ) -> None:
     client = RecordingDeleteClient()
-    store = KnowledgeVectorStore(
+    store = QdrantRetriever(
         settings=vector_settings(),
         client=client,  # type: ignore[arg-type]
         embeddings=StableTestEmbeddings(),
@@ -464,7 +527,7 @@ def test_vector_adapter_rejects_result_outside_requested_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = RecordingDeleteClient()
-    store = KnowledgeVectorStore(
+    store = QdrantRetriever(
         settings=vector_settings(),
         client=client,  # type: ignore[arg-type]
         embeddings=StableTestEmbeddings(),
@@ -543,7 +606,7 @@ def test_every_external_vector_failure_is_mapped(
         if operation == "embedding"
         else StableTestEmbeddings()
     )
-    store = KnowledgeVectorStore(
+    store = QdrantRetriever(
         settings=vector_settings(),
         client=client,  # type: ignore[arg-type]
         embeddings=embeddings,
@@ -578,7 +641,7 @@ def test_qdrant_client_construction_failure_is_mapped(
         raise RuntimeError("client failed")
 
     monkeypatch.setattr(
-        "app.services.knowledge_vector_store.QdrantClient",
+        "app.services.knowledge_retrievers.qdrant.QdrantClient",
         fail_client,
     )
 
@@ -593,7 +656,7 @@ def test_embedding_construction_failure_is_mapped(
         raise RuntimeError("embedding failed")
 
     monkeypatch.setattr(
-        "app.services.knowledge_vector_store.EmbeddingService",
+        "app.services.knowledge_retrievers.embedding.EmbeddingService",
         fail_embeddings,
     )
 
@@ -612,11 +675,11 @@ def test_store_construction_defers_embedding_configuration_until_use(
         raise RuntimeError("embedding provider is not configured")
 
     monkeypatch.setattr(
-        "app.services.knowledge_vector_store.build_knowledge_embeddings",
+        "app.services.knowledge_retrievers.qdrant.build_knowledge_embeddings",
         fail_embeddings,
     )
 
-    store = KnowledgeVectorStore(
+    store = QdrantRetriever(
         settings=vector_settings(),
         client=qdrant_client,
     )
@@ -635,10 +698,10 @@ def test_vector_operation_maps_deferred_embedding_failure(
         raise RuntimeError("embedding provider is not configured")
 
     monkeypatch.setattr(
-        "app.services.knowledge_vector_store.EmbeddingService",
+        "app.services.knowledge_retrievers.embedding.EmbeddingService",
         fail_embedding_service,
     )
-    store = KnowledgeVectorStore(
+    store = QdrantRetriever(
         settings=vector_settings(),
         client=qdrant_client,
     )

@@ -399,7 +399,7 @@ def test_corrupt_direct_source_returns_error_without_rag_fallback() -> None:
     scope_service = RecordingScopeService(scopes)
     retrieval = KnowledgeRetrievalService(
         object_store=FakeObjectStore(),
-        vector_store=vector_store,
+        retriever_factory=vector_store,
         token_counter=RuntimeTokenCounter(image_input_token_reserve=1_024),
     )
     provider = KnowledgeCapabilityProvider(

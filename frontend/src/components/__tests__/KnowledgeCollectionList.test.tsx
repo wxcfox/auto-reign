@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { KnowledgeCollectionList } from "../KnowledgeCollectionList";
+import { DEFAULT_KNOWLEDGE_COLLECTION_CONFIG } from "../KnowledgeCollectionForm";
 import i18next from "@/i18n/setup";
 import {
   createKnowledgeCollection,
@@ -24,7 +25,7 @@ const privateCollection: KnowledgeCollection = {
   name: "My manuals",
   scope: "private",
   can_manage: true,
-  config: { chunk_size: 900, chunk_overlap: 120, top_k: 8, score_threshold: null },
+  config: { ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG },
   is_active: false,
   created_at: "2026-07-13T00:00:00Z",
   updated_at: "2026-07-13T00:00:00Z",
@@ -104,12 +105,7 @@ describe("KnowledgeCollectionList management page", () => {
     await waitFor(() =>
       expect(createKnowledgeCollection).toHaveBeenCalledWith("private", {
         name: "Private references",
-        config: {
-          chunk_size: 900,
-          chunk_overlap: 120,
-          top_k: 8,
-          score_threshold: null,
-        },
+        config: DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
       }),
     );
     await waitFor(() =>
@@ -133,7 +129,7 @@ describe("KnowledgeCollectionList management page", () => {
     });
     vi.mocked(updateKnowledgeCollection).mockResolvedValue({
       ...globalCollection,
-      config: { ...globalCollection.config, top_k: 12 },
+      config: { ...globalCollection.config, top_k: 10 },
     });
     render(<KnowledgeCollectionList scope="global" />);
 
@@ -147,7 +143,7 @@ describe("KnowledgeCollectionList management page", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit global handbook/i }));
     const editor = screen.getByRole("region", { name: /edit global handbook/i });
     fireEvent.change(within(editor).getByLabelText(/top k/i), {
-      target: { value: "12" },
+      target: { value: "10" },
     });
     fireEvent.click(within(editor).getByRole("button", { name: /^save$/i }));
 
@@ -157,7 +153,7 @@ describe("KnowledgeCollectionList management page", () => {
         globalCollection.id,
         {
           name: globalCollection.name,
-          config: { ...globalCollection.config, top_k: 12 },
+          config: { ...globalCollection.config, top_k: 10 },
           is_active: true,
         },
       ),

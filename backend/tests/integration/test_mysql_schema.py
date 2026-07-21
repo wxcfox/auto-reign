@@ -1,5 +1,7 @@
+import json
 import os
 from pathlib import Path
+from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
@@ -15,7 +17,7 @@ from app.db.session import create_engine_for_settings
 ALEMBIC_INI = Path(__file__).parents[2] / "alembic.ini"
 BASELINE_REVISION = "20260713_0001"
 ATTACHMENT_INTEGRITY_REVISION = "20260713_0002"
-LATEST_REVISION = "20260716_0004"
+LATEST_REVISION = "20260720_0005"
 MIGRATION_DATABASE_SUFFIX = "_migration_test"
 EXPECTED_TABLES = {
     "attachments",
@@ -100,6 +102,22 @@ def _assert_knowledge_attempt_columns(engine: Engine, *, present: bool) -> None:
         assert column["nullable"] is True
 
 
+def _assert_knowledge_retriever_column(engine: Engine, *, present: bool) -> None:
+    columns = {
+        column["name"]: column
+        for column in inspect(engine).get_columns("knowledge_documents")
+    }
+    if not present:
+        assert "retriever_type" not in columns
+        return
+    removed_switch_state_column = "_".join(("previous", "retriever", "type"))
+    assert removed_switch_state_column not in columns
+    retriever_type = columns["retriever_type"]
+    assert isinstance(retriever_type["type"], String)
+    assert retriever_type["type"].length == 32
+    assert retriever_type["nullable"] is False
+
+
 def _foreign_key_signatures(inspector, table_name: str):
     return {
         (
@@ -161,11 +179,13 @@ def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
         command.upgrade(config, "head")
         assert _current_revision(engine) == LATEST_REVISION
         _assert_knowledge_attempt_columns(engine, present=True)
+        _assert_knowledge_retriever_column(engine, present=True)
 
         command.downgrade(config, ATTACHMENT_INTEGRITY_REVISION)
         assert _current_revision(engine) == ATTACHMENT_INTEGRITY_REVISION
         _assert_attachment_integrity_columns(engine, present=True)
         _assert_knowledge_attempt_columns(engine, present=False)
+        _assert_knowledge_retriever_column(engine, present=False)
 
         command.downgrade(config, BASELINE_REVISION)
         assert _current_revision(engine) == BASELINE_REVISION
@@ -176,6 +196,7 @@ def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
         assert _current_revision(engine) == ATTACHMENT_INTEGRITY_REVISION
         _assert_attachment_integrity_columns(engine, present=True)
         _assert_knowledge_attempt_columns(engine, present=False)
+        _assert_knowledge_retriever_column(engine, present=False)
         assert _index_names(inspect(engine), "attachments") == baseline_indexes
 
         command.downgrade(config, BASELINE_REVISION)
@@ -187,7 +208,122 @@ def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
         assert _current_revision(engine) == LATEST_REVISION
         _assert_attachment_integrity_columns(engine, present=True)
         _assert_knowledge_attempt_columns(engine, present=True)
+        _assert_knowledge_retriever_column(engine, present=True)
         assert _index_names(inspect(engine), "attachments") == baseline_indexes
+
+        command.downgrade(config, "20260716_0004")
+        suffix = uuid4().hex
+        collection_id = str(uuid4())
+        document_id = str(uuid4())
+        with engine.begin() as connection:
+            user_result = connection.execute(
+                text(
+                    """
+                    INSERT INTO users (
+                        username, password_hash, display_name, role, is_active,
+                        token_version, settings_json, created_at, updated_at
+                    ) VALUES (
+                        :username, 'hash', 'Migration User', 'user', TRUE,
+                        1, '{}', NOW(6), NOW(6)
+                    )
+                    """
+                ),
+                {"username": f"migration-{suffix}"},
+            )
+            user_id = int(user_result.lastrowid)
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO resources (
+                        id, user_id, resource_type, name, config_json, is_active,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :user_id, 'knowledge_collection', :name,
+                        :config_json, TRUE, NOW(6), NOW(6)
+                    )
+                    """
+                ),
+                {
+                    "id": collection_id,
+                    "user_id": user_id,
+                    "name": f"migration-collection-{suffix}",
+                    "config_json": json.dumps(
+                        {
+                            "chunk_size": 1200,
+                            "chunk_overlap": 300,
+                            "top_k": 8,
+                            "score_threshold": None,
+                        }
+                    ),
+                },
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO knowledge_documents (
+                        id, user_id, collection_id, name, source_object_key,
+                        parsed_object_key, mime_type, size_bytes, content_hash,
+                        status, index_generation, processing_attempt_id,
+                        cleanup_attempt_id, error_code, error_message, is_active,
+                        created_at, updated_at, indexed_at
+                    ) VALUES (
+                        :id, :user_id, :collection_id, 'legacy.txt',
+                        'legacy/source', 'legacy/parsed', 'text/plain', 6,
+                        'sha256-legacy', 'ready', 4, 'processing-token',
+                        'cleanup-token', 'legacy_error', 'legacy error', TRUE,
+                        NOW(6), NOW(6), NOW(6)
+                    )
+                    """
+                ),
+                {
+                    "id": document_id,
+                    "user_id": user_id,
+                    "collection_id": collection_id,
+                },
+            )
+
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            migrated = connection.execute(
+                text(
+                    """
+                    SELECT status, index_generation, parsed_object_key, indexed_at,
+                           processing_attempt_id, cleanup_attempt_id, error_code,
+                           error_message, retriever_type
+                    FROM knowledge_documents
+                    WHERE id = :document_id
+                    """
+                ),
+                {"document_id": document_id},
+            ).mappings().one()
+            raw_config = connection.execute(
+                text("SELECT config_json FROM resources WHERE id = :collection_id"),
+                {"collection_id": collection_id},
+            ).scalar_one()
+        assert migrated == {
+            "status": "queued",
+            "index_generation": 5,
+            "parsed_object_key": None,
+            "indexed_at": None,
+            "processing_attempt_id": None,
+            "cleanup_attempt_id": None,
+            "error_code": None,
+            "error_message": None,
+            "retriever_type": "elasticsearch",
+        }
+        migrated_config = (
+            json.loads(raw_config) if isinstance(raw_config, str) else raw_config
+        )
+        assert migrated_config == {
+            "retriever_type": "elasticsearch",
+            "retrieval_mode": "vector",
+            "chunk_size": 900,
+            "chunk_overlap": 120,
+            "top_k": 5,
+            "score_threshold": 0.5,
+            "vector_weight": 0.7,
+            "keyword_weight": 0.3,
+        }
     finally:
         engine.dispose()
 

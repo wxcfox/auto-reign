@@ -51,12 +51,18 @@
   "form": {
     "name": "Name",
     "retrievalConfig": "Indexing and retrieval settings",
+    "retrieverType": "Retriever",
+    "retrievalMode": "Retrieval mode",
     "chunkSize": "Chunk size",
     "chunkOverlap": "Chunk overlap",
     "topK": "Top K",
-    "scoreThreshold": "Score threshold (optional)",
-    "indexingHint": "Chunk size and overlap apply only to future uploads or documents you explicitly reindex.",
-    "retrievalHint": "Top K and score threshold apply to subsequent retrievals.",
+    "scoreThreshold": "Score threshold",
+    "vectorWeight": "Vector weight",
+    "keywordWeight": "Keyword weight",
+    "qdrantModeReset": "Qdrant supports vector retrieval only. Retrieval mode was changed to Vector.",
+    "retrieverImmutable": "Retriever is selected when the knowledge base is created and cannot be changed later.",
+    "indexingHint": "Changing the chunk size or overlap queues active documents for reindexing.",
+    "retrievalHint": "Retrieval mode, Top K, threshold, and hybrid weights affect queries without rebuilding the index.",
     "nameTaken": "A knowledge base with this name already exists.",
     "saveError": "Could not save the knowledge base."
   },
@@ -65,8 +71,19 @@
     "chunkSize": "Chunk size must be an integer from 200 to 4000.",
     "chunkOverlap": "Chunk overlap must be an integer from 0 to 1000.",
     "chunkOverlapHalf": "Chunk overlap cannot exceed half of the chunk size.",
-    "topK": "Top K must be an integer from 1 to 30.",
-    "scoreThreshold": "Score threshold must be empty or a number from -1 to 1."
+    "topK": "Top K must be an integer from 1 to 10.",
+    "scoreThreshold": "Score threshold must be a number from 0 to 1.",
+    "weight": "Weight must be a number from 0 to 1.",
+    "weightSum": "Vector and keyword weights cannot both be zero."
+  },
+  "retrievers": {
+    "elasticsearch": "Elasticsearch",
+    "qdrant": "Qdrant"
+  },
+  "retrievalModes": {
+    "vector": "Vector",
+    "keyword": "Keyword (BM25)",
+    "hybrid": "Hybrid"
   },
   "uploader": {
     "title": "Upload documents",

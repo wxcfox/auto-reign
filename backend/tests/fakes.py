@@ -9,10 +9,10 @@ from langchain_core.embeddings import Embeddings
 
 from app.repositories.vector_store import VectorStoreUnavailable
 from app.services.knowledge_chunk_service import KnowledgeChunk
-from app.services.knowledge_vector_store import (
+from app.services.knowledge_retrievers import (
     DocumentGeneration,
-    DocumentVectorScope,
-    KnowledgeVectorHit,
+    DocumentIndexScope,
+    KnowledgeRetrieverHit,
 )
 
 
@@ -184,13 +184,16 @@ class FakeOpenAIClient:
 
 
 class FakeKnowledgeVectorStore:
+    retriever_type = "qdrant"
+    supported_retrieval_methods = frozenset({"vector", "keyword", "hybrid"})
+
     def __init__(self) -> None:
         self.upsert_calls: list[list[KnowledgeChunk]] = []
         self.search_calls: list[tuple[str, list[DocumentGeneration], int]] = []
         self.delete_generation_calls: list[DocumentGeneration] = []
         self.delete_generations_before_calls: list[DocumentGeneration] = []
-        self.delete_document_calls: list[DocumentVectorScope] = []
-        self.search_results: list[KnowledgeVectorHit] = []
+        self.delete_document_calls: list[DocumentIndexScope] = []
+        self.search_results: list[KnowledgeRetrieverHit] = []
         self._generations: dict[
             tuple[str, int, str, int, str],
             list[KnowledgeChunk],
@@ -240,10 +243,50 @@ class FakeKnowledgeVectorStore:
         *,
         scopes: list[DocumentGeneration],
         limit: int,
-    ) -> list[KnowledgeVectorHit]:
+    ) -> list[KnowledgeRetrieverHit]:
         self._raise_if_failed("search")
         self.search_calls.append((query, list(scopes), limit))
         return list(self.search_results[:limit])
+
+    def get(self, _retriever_type: str):
+        return self
+
+    def retrieve(
+        self,
+        query: str,
+        *,
+        scopes: list[DocumentGeneration],
+        mode: str,
+        limit: int,
+        vector_weight: float,
+        keyword_weight: float,
+    ) -> list[KnowledgeRetrieverHit]:
+        del vector_weight, keyword_weight
+        hits = self.search(query, scopes=scopes, limit=limit)
+        return [
+            KnowledgeRetrieverHit(
+                content=hit.content,
+                score=hit.score,
+                metadata=hit.metadata,
+                retrieval_mode=mode,  # type: ignore[arg-type]
+                vector_score=(
+                    hit.vector_score if hit.vector_score is not None else hit.score
+                )
+                if mode != "keyword"
+                else None,
+                keyword_score=(
+                    hit.keyword_score if hit.keyword_score is not None else hit.score
+                )
+                if mode != "vector"
+                else None,
+                fused_score=(
+                    hit.fused_score if hit.fused_score is not None else hit.score
+                )
+                if mode == "hybrid"
+                else None,
+            )
+            for hit in hits
+        ]
 
     def delete_generation(self, scope: DocumentGeneration) -> None:
         self._raise_if_failed("delete_generation")
@@ -260,7 +303,7 @@ class FakeKnowledgeVectorStore:
                 if key[:3] == current_key[:3] and key[3] < current_key[3]:
                     self._generations.pop(key, None)
 
-    def delete_document(self, scope: DocumentVectorScope) -> None:
+    def delete_document(self, scope: DocumentIndexScope) -> None:
         self._raise_if_failed("delete_document")
         self.delete_document_calls.append(scope)
         document_key = (
@@ -272,6 +315,17 @@ class FakeKnowledgeVectorStore:
             for key in list(self._generations):
                 if key[:3] == document_key:
                     self._generations.pop(key, None)
+
+    def purge_collection(self, *, collection_id: str, owner_user_id: int) -> None:
+        for key in list(self._generations):
+            if key[0] == collection_id and key[1] == owner_user_id:
+                self._generations.pop(key, None)
+
+    def test_connection(self) -> bool:
+        return True
+
+    def test_connections(self) -> dict[str, bool]:
+        return {"elasticsearch": True, "qdrant": True}
 
     def has_generation(self, document_id: str, generation: int) -> bool:
         with self._lock:

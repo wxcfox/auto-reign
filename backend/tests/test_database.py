@@ -180,7 +180,7 @@ def test_app_bootstraps_before_startup_and_shutdown_disposes_engine(
     )
 
     app = main_module.create_app(
-        knowledge_vector_store_override=sentinel.knowledge_vector_store,
+        knowledge_retriever_factory_override=sentinel.knowledge_vector_store,
         start_background_workers=False,
     )
     with TestClient(app):
@@ -232,7 +232,7 @@ def test_app_disposes_engine_when_bootstrap_fails(monkeypatch, main_module) -> N
     )
 
     app = main_module.create_app(
-        knowledge_vector_store_override=sentinel.knowledge_vector_store,
+        knowledge_retriever_factory_override=sentinel.knowledge_vector_store,
         start_background_workers=False,
     )
     with pytest.raises(RuntimeError, match="bootstrap failed"), TestClient(app):
@@ -281,7 +281,7 @@ def test_app_disposes_engine_when_generation_recovery_fails(
     )
 
     app = main_module.create_app(
-        knowledge_vector_store_override=sentinel.knowledge_vector_store,
+        knowledge_retriever_factory_override=sentinel.knowledge_vector_store,
         start_background_workers=False,
     )
     with pytest.raises(RuntimeError, match="recovery failed"), TestClient(app):
@@ -337,7 +337,7 @@ def test_lifespan_starts_and_stops_knowledge_worker_in_locked_order(
     )
 
     app = main_module.create_app(
-        knowledge_vector_store_override=sentinel.knowledge_vector_store,
+        knowledge_retriever_factory_override=sentinel.knowledge_vector_store,
     )
     with TestClient(app):
         calls.append("yield")
@@ -401,7 +401,7 @@ def test_lifespan_disposes_engine_without_stopping_when_worker_start_fails(
     )
 
     app = main_module.create_app(
-        knowledge_vector_store_override=sentinel.knowledge_vector_store,
+        knowledge_retriever_factory_override=sentinel.knowledge_vector_store,
     )
     with pytest.raises(RuntimeError, match="worker start failed"), TestClient(app):
         pass
@@ -452,7 +452,7 @@ def test_lifespan_waits_for_timed_out_worker_before_disposing_engine(
         Mock(return_value=sentinel.object_store),
     )
     app = main_module.create_app(
-        knowledge_vector_store_override=sentinel.knowledge_vector_store,
+        knowledge_retriever_factory_override=sentinel.knowledge_vector_store,
     )
 
     with pytest.raises(main_module.KnowledgeWorkerStopTimeout, match="still running"):

@@ -82,12 +82,12 @@ def test_model_request_timeout_has_a_positive_bounded_default(tmp_path: Path) ->
 def test_runtime_limits_are_explicit_and_bounded() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.knowledge_max_results == 30
+    assert settings.knowledge_max_results == 10
     assert settings.knowledge_max_query_chars == 2_000
     assert settings.runtime_max_tool_rounds == 8
 
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, knowledge_max_results=31)
+        Settings(_env_file=None, knowledge_max_results=11)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, knowledge_max_query_chars=20_001)
     with pytest.raises(ValidationError):

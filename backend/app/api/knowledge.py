@@ -100,7 +100,7 @@ def _service(
 ) -> KnowledgeDocumentService:
     return KnowledgeDocumentService(
         request.app.state.object_store,
-        vector_store=request.app.state.knowledge_vector_store,
+        retriever_factory=request.app.state.knowledge_retriever_factory,
         coordinator=request.app.state.knowledge_document_coordinator,
         max_parsed_chars=settings.knowledge_max_parsed_chars,
     )
@@ -329,9 +329,10 @@ def delete_document(
             id=document.id,
             user_id=document.user_id,
             collection_id=document.collection_id,
+            retriever_type=document.retriever_type,  # type: ignore[arg-type]
         )
         # Isolation is the retrieval authority boundary. The transaction is
-        # closed before ObjectStore/Qdrant I/O while the process lock fences
+        # closed before ObjectStore/Retriever I/O while the process lock fences
         # the Worker for this Document.
         session.commit()
 

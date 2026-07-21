@@ -51,7 +51,7 @@ describe("KnowledgeCollectionForm", () => {
     await i18next.changeLanguage("en");
   });
 
-  it("creates through the selected scope with defaults and maps an empty threshold to null", async () => {
+  it("creates through the selected scope with Elasticsearch vector defaults", async () => {
     const onSaved = vi.fn();
     vi.mocked(createKnowledgeCollection).mockResolvedValue({
       ...collection,
@@ -72,18 +72,26 @@ describe("KnowledgeCollectionForm", () => {
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("combobox", { name: /visibility|owner|scope/i }))
       .not.toBeInTheDocument();
-    expect(screen.getByText(/future uploads or documents you explicitly reindex/i))
+    expect(screen.getByRole("combobox", { name: /^retriever$/i }))
+      .toHaveValue("elasticsearch");
+    expect(screen.getByTestId("knowledge-retriever-select")).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: /retrieval mode/i })).toHaveValue("vector");
+    expect(screen.getByText(/queues active documents for reindexing/i))
       .toBeInTheDocument();
-    expect(screen.getByText(/top k and score threshold apply to subsequent retrievals/i))
+    expect(screen.getByText(/without rebuilding the index/i))
       .toBeInTheDocument();
   });
 
   it("edits every numeric setting and preserves the collection lifecycle state", async () => {
     const updatedConfig: KnowledgeCollectionConfig = {
+      ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
       chunk_size: 1_200,
       chunk_overlap: 300,
-      top_k: 12,
+      top_k: 10,
       score_threshold: 0.25,
+      retrieval_mode: "hybrid",
+      vector_weight: 0.6,
+      keyword_weight: 0.4,
     };
     vi.mocked(updateKnowledgeCollection).mockResolvedValue({
       ...collection,
@@ -92,7 +100,12 @@ describe("KnowledgeCollectionForm", () => {
     render(<KnowledgeCollectionForm collection={collection} scope="private" />);
 
     setValue(/^name$/i, "Updated manuals");
-    fillConfig({ chunkSize: "1200", overlap: "300", topK: "12", threshold: "0.25" });
+    fireEvent.change(screen.getByRole("combobox", { name: /retrieval mode/i }), {
+      target: { value: "hybrid" },
+    });
+    setValue(/vector weight/i, "0.6");
+    setValue(/keyword weight/i, "0.4");
+    fillConfig({ chunkSize: "1200", overlap: "300", topK: "10", threshold: "0.25" });
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
@@ -109,36 +122,88 @@ describe("KnowledgeCollectionForm", () => {
     expect(screen.queryByRole("checkbox", { name: /active|启用/i })).not.toBeInTheDocument();
   });
 
+  it("shows an immutable Retriever in edit mode with localized guidance", async () => {
+    render(<KnowledgeCollectionForm collection={collection} scope="private" />);
+
+    expect(screen.getByTestId("knowledge-retriever-select")).toBeDisabled();
+    expect(screen.getByTestId("knowledge-retriever-immutable-hint"))
+      .toHaveTextContent(
+        "Retriever is selected when the knowledge base is created and cannot be changed later.",
+      );
+    expect(screen.getByRole("combobox", { name: /retrieval mode/i })).toBeEnabled();
+
+    await act(async () => {
+      await i18next.changeLanguage("zh-CN");
+    });
+    expect(screen.getByTestId("knowledge-retriever-immutable-hint"))
+      .toHaveTextContent("Retriever 在资料库创建时确定，创建后不可修改。");
+  });
+
+  it("keeps a Qdrant Retriever read-only and exposes vector mode only", () => {
+    render(
+      <KnowledgeCollectionForm
+        collection={{
+          ...collection,
+          config: {
+            ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
+            retriever_type: "qdrant",
+          },
+        }}
+        scope="private"
+      />,
+    );
+
+    expect(screen.getByTestId("knowledge-retriever-select"))
+      .toHaveValue("qdrant");
+    expect(screen.getByTestId("knowledge-retriever-select")).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: /retrieval mode/i }))
+      .toHaveValue("vector");
+    expect(screen.queryByRole("option", { name: /keyword/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /hybrid/i })).not.toBeInTheDocument();
+  });
+
   it("rejects non-integers, every out-of-range field, and overlap above half the chunk size", () => {
     render(<KnowledgeCollectionForm scope="private" />);
     setValue(/^name$/i, "Invalid config");
 
-    fillConfig({ chunkSize: "199", overlap: "120", topK: "8", threshold: "" });
+    fillConfig({ chunkSize: "199", overlap: "120", topK: "5", threshold: "0.5" });
     fireEvent.click(screen.getByRole("button", { name: /create knowledge base/i }));
     expect(screen.getByText(/integer from 200 to 4000/i)).toBeInTheDocument();
 
-    fillConfig({ chunkSize: "200", overlap: "101", topK: "8", threshold: "" });
+    fillConfig({ chunkSize: "200", overlap: "101", topK: "5", threshold: "0.5" });
     fireEvent.click(screen.getByRole("button", { name: /create knowledge base/i }));
     expect(screen.getByText(/cannot exceed half/i)).toBeInTheDocument();
 
     fillConfig({ chunkSize: "200.5", overlap: "100", topK: "31", threshold: "2" });
     fireEvent.click(screen.getByRole("button", { name: /create knowledge base/i }));
     expect(screen.getByText(/integer from 200 to 4000/i)).toBeInTheDocument();
-    expect(screen.getByText(/integer from 1 to 30/i)).toBeInTheDocument();
-    expect(screen.getByText(/empty or a number from -1 to 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/integer from 1 to 10/i)).toBeInTheDocument();
+    expect(screen.getByText(/number from 0 to 1/i)).toBeInTheDocument();
     expect(createKnowledgeCollection).not.toHaveBeenCalled();
   });
 
   it.each([
     {
       label: "minimum",
-      values: { chunkSize: "200", overlap: "100", topK: "1", threshold: "-1" },
-      expected: { chunk_size: 200, chunk_overlap: 100, top_k: 1, score_threshold: -1 },
+      values: { chunkSize: "200", overlap: "100", topK: "1", threshold: "0" },
+      expected: {
+        ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
+        chunk_size: 200,
+        chunk_overlap: 100,
+        top_k: 1,
+        score_threshold: 0,
+      },
     },
     {
       label: "maximum",
-      values: { chunkSize: "4000", overlap: "1000", topK: "30", threshold: "1" },
-      expected: { chunk_size: 4000, chunk_overlap: 1000, top_k: 30, score_threshold: 1 },
+      values: { chunkSize: "4000", overlap: "1000", topK: "10", threshold: "1" },
+      expected: {
+        ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
+        chunk_size: 4000,
+        chunk_overlap: 1000,
+        top_k: 10,
+        score_threshold: 1,
+      },
     },
   ])("accepts the $label inclusive boundaries", async ({ values, expected }) => {
     vi.mocked(createKnowledgeCollection).mockResolvedValue({
@@ -258,4 +323,78 @@ describe("KnowledgeCollectionForm", () => {
       expect(onSavingChange).not.toHaveBeenCalled();
     },
   );
+
+  it("offers all Elasticsearch modes and resets hybrid to vector when switching to Qdrant", () => {
+    render(<KnowledgeCollectionForm scope="private" />);
+    const mode = screen.getByRole("combobox", { name: /retrieval mode/i });
+    expect(screen.getByRole("option", { name: /keyword/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /hybrid/i })).toBeInTheDocument();
+
+    fireEvent.change(mode, { target: { value: "hybrid" } });
+    expect(screen.getByLabelText(/vector weight/i)).toHaveValue(0.7);
+    fireEvent.change(screen.getByRole("combobox", { name: /^retriever$/i }), {
+      target: { value: "qdrant" },
+    });
+
+    expect(mode).toHaveValue("vector");
+    expect(screen.queryByRole("option", { name: /keyword/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /hybrid/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/supports vector retrieval only/i);
+  });
+
+  it("persists a user-selected Qdrant vector configuration", async () => {
+    const config: KnowledgeCollectionConfig = {
+      ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
+      retriever_type: "qdrant",
+    };
+    vi.mocked(createKnowledgeCollection).mockResolvedValue({
+      ...collection,
+      config,
+      is_active: true,
+    });
+    render(<KnowledgeCollectionForm scope="private" />);
+    setValue(/^name$/i, "Qdrant manuals");
+    fireEvent.change(screen.getByRole("combobox", { name: /^retriever$/i }), {
+      target: { value: "qdrant" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /create knowledge base/i }));
+
+    await waitFor(() =>
+      expect(createKnowledgeCollection).toHaveBeenCalledWith("private", {
+        name: "Qdrant manuals",
+        config,
+      }),
+    );
+  });
+
+  it("persists Elasticsearch hybrid mode and custom linear weights", async () => {
+    const config: KnowledgeCollectionConfig = {
+      ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG,
+      retrieval_mode: "hybrid",
+      vector_weight: 0.6,
+      keyword_weight: 0.4,
+    };
+    vi.mocked(createKnowledgeCollection).mockResolvedValue({
+      ...collection,
+      config,
+      is_active: true,
+    });
+    render(<KnowledgeCollectionForm scope="private" />);
+    setValue(/^name$/i, "Hybrid manuals");
+    fireEvent.change(screen.getByRole("combobox", { name: /retrieval mode/i }), {
+      target: { value: "hybrid" },
+    });
+    setValue(/vector weight/i, "0.6");
+    setValue(/keyword weight/i, "0.4");
+
+    fireEvent.click(screen.getByRole("button", { name: /create knowledge base/i }));
+
+    await waitFor(() =>
+      expect(createKnowledgeCollection).toHaveBeenCalledWith("private", {
+        name: "Hybrid manuals",
+        config,
+      }),
+    );
+  });
 });

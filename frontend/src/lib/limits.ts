@@ -20,17 +20,23 @@ export const KNOWLEDGE_COLLECTION_LIMITS = {
   chunkOverlapMin: 0,
   chunkOverlapMax: 1_000,
   topKMin: 1,
-  topKMax: 30,
-  scoreThresholdMin: -1,
+  topKMax: 10,
+  scoreThresholdMin: 0,
   scoreThresholdMax: 1,
+  weightMin: 0,
+  weightMax: 1,
 } as const;
 
 export const MAX_KNOWLEDGE_SCOPES = 20;
 export const MAX_DOCUMENTS_PER_SCOPE = 100;
 
 export const DEFAULT_KNOWLEDGE_COLLECTION_CONFIG: KnowledgeCollectionConfig = {
+  retriever_type: "elasticsearch",
+  retrieval_mode: "vector",
   chunk_size: 900,
   chunk_overlap: 120,
-  top_k: 8,
-  score_threshold: null,
+  top_k: 5,
+  score_threshold: 0.5,
+  vector_weight: 0.7,
+  keyword_weight: 0.3,
 };

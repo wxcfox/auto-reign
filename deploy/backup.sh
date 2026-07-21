@@ -50,6 +50,7 @@ application_version=$version
 mysql=$mysql_status
 workspace=$workspace_status
 qdrant=rebuildable-not-included
+elasticsearch=rebuildable-not-included
 EOF
 
 if command -v sha256sum >/dev/null 2>&1; then

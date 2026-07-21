@@ -159,10 +159,14 @@ def test_collection_config_defines_bounded_generation_settings() -> None:
     config = KnowledgeCollectionConfig.model_validate({})
 
     assert config.model_dump() == {
+        "retriever_type": "elasticsearch",
+        "retrieval_mode": "vector",
         "chunk_size": 900,
         "chunk_overlap": 120,
-        "top_k": 8,
-        "score_threshold": None,
+        "top_k": 5,
+        "score_threshold": 0.5,
+        "vector_weight": 0.7,
+        "keyword_weight": 0.3,
     }
     assert KnowledgeChunkService.from_config(config)
 

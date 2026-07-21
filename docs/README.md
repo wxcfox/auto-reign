@@ -6,7 +6,7 @@
 
 - [项目说明](../README.md)：当前能力、快速开始、配置、数据和开发检查。
 - [通用 Agent 平台架构](workbench-architecture.md)：资源、Runtime、Agent Home、权限和 LLM 边界。
-- [Knowledge Collection 数据流](knowledge-data-flow.md)：Document 原文、generation、Qdrant 投影和检索。
+- [Knowledge Collection 数据流](knowledge-data-flow.md)：Document 原文、generation、Elasticsearch/Qdrant 投影与多路检索。
 - [生产部署](production-deployment.md)：版本发布、S3-compatible 配置、账号初始化、备份、日志和单实例边界。
 
 ## 维护原则

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import bad_request, conflict, forbidden, not_found
 from app.db import models
 from app.repositories.resource_repository import ResourceRepository
+from app.repositories.knowledge_document_repository import KnowledgeDocumentRepository
 from app.schemas.agents import AgentConfig
 from app.schemas.knowledge_collections import (
     KnowledgeCollectionConfig,
@@ -21,6 +22,7 @@ from app.schemas.resources import ResourceDeleteResponse, ResourceListScope
 class KnowledgeCollectionService:
     def __init__(self, resources: ResourceRepository | None = None) -> None:
         self.resources = resources or ResourceRepository()
+        self.documents = KnowledgeDocumentRepository()
 
     def list_resources(
         self,
@@ -195,6 +197,24 @@ class KnowledgeCollectionService:
         )
         assert resource is not None
 
+        previous_config = KnowledgeCollectionConfig.model_validate(resource.config_json)
+        if previous_config.retriever_type != payload.config.retriever_type:
+            raise conflict(
+                "knowledge_retriever_immutable",
+                "Knowledge Retriever cannot be changed after creation.",
+            )
+        if (
+            payload.config.retriever_type == "qdrant"
+            and payload.config.retrieval_mode != "vector"
+        ):
+            raise bad_request(
+                "knowledge_retrieval_mode_unsupported",
+                "Qdrant supports only vector retrieval.",
+            )
+        current_config = KnowledgeCollectionConfig.model_validate(
+            payload.config.model_dump(mode="json")
+        )
+
         if not payload.is_active and (
             self._agent_references(session, resource_id=resource.id)
             or self._documents_block_collection_change(
@@ -208,9 +228,27 @@ class KnowledgeCollectionService:
             )
 
         resource.name = payload.name
-        resource.config_json = payload.config.model_dump(mode="json")
+        resource.config_json = current_config.model_dump(mode="json")
         resource.is_active = payload.is_active
         resource.updated_at = models._now()
+        if self._requires_reindex(previous_config, current_config):
+            documents = list(
+                session.scalars(
+                    select(models.KnowledgeDocument)
+                    .where(
+                        models.KnowledgeDocument.collection_id == resource.id,
+                        models.KnowledgeDocument.user_id == resource.user_id,
+                        models.KnowledgeDocument.is_active.is_(True),
+                    )
+                    .order_by(models.KnowledgeDocument.id)
+                    .with_for_update()
+                )
+            )
+            for document in documents:
+                document.index_generation += 1
+                document.parsed_object_key = None
+                document.indexed_at = None
+                self.documents.queue(session, document)
         self._flush_with_name_conflict(session)
         return self._response(resource, actor)
 
@@ -399,4 +437,14 @@ class KnowledgeCollectionService:
         return conflict(
             "resource_name_taken",
             "A Knowledge Collection with this name already exists.",
+        )
+
+    @staticmethod
+    def _requires_reindex(
+        previous: KnowledgeCollectionConfig,
+        current: KnowledgeCollectionConfig,
+    ) -> bool:
+        return (
+            previous.chunk_size != current.chunk_size
+            or previous.chunk_overlap != current.chunk_overlap
         )

@@ -18,9 +18,9 @@ from app.services.knowledge_scope_service import (
     ReadyDocumentScope,
     ResolvedCollectionScope,
 )
-from app.services.knowledge_vector_store import (
+from app.services.knowledge_retrievers import (
     DocumentGeneration,
-    KnowledgeVectorHit,
+    KnowledgeRetrieverHit as KnowledgeVectorHit,
 )
 from app.services.token_counter import RuntimeTokenCounter
 from app.storage import ObjectStoreUnavailable, StoredObject
@@ -31,6 +31,7 @@ class RecordingVectorStore:
     def __init__(self) -> None:
         self.results: dict[str, list[KnowledgeVectorHit]] = {}
         self.search_calls: list[tuple[str, tuple[DocumentGeneration, ...], int]] = []
+        self.get_calls: list[str] = []
         self.error: Exception | None = None
 
     def search(
@@ -45,6 +46,23 @@ class RecordingVectorStore:
         assert scopes
         self.search_calls.append((query, tuple(scopes), limit))
         return list(self.results.get(scopes[0].collection_id, ()))[:limit]
+
+    def get(self, retriever_type: str):
+        self.get_calls.append(retriever_type)
+        return self
+
+    def retrieve(
+        self,
+        query: str,
+        *,
+        scopes: list[DocumentGeneration],
+        mode: str,
+        limit: int,
+        vector_weight: float,
+        keyword_weight: float,
+    ) -> list[KnowledgeVectorHit]:
+        del mode, vector_weight, keyword_weight
+        return self.search(query, scopes=scopes, limit=limit)
 
 
 class CorruptMetadataObjectStore(FakeObjectStore):
@@ -104,8 +122,9 @@ def _scope(
     *documents: ReadyDocumentScope,
     collection_id: str | None = None,
     owner_user_id: int | None = None,
-    top_k: int = 8,
-    score_threshold: float | None = None,
+    top_k: int = 5,
+    score_threshold: float = 0.5,
+    retriever_type: str = "elasticsearch",
 ) -> ResolvedCollectionScope:
     first = documents[0] if documents else None
     resolved_collection_id = collection_id or (
@@ -120,6 +139,7 @@ def _scope(
         collection_id=resolved_collection_id,
         owner_user_id=resolved_owner_id,
         config=KnowledgeCollectionConfig(
+            retriever_type=retriever_type,
             top_k=top_k,
             score_threshold=score_threshold,
         ),
@@ -143,6 +163,8 @@ def _source(
         chunk_index=chunk_index,
         score=score,
         content=content,
+        retrieval_mode="vector" if chunk_index is not None else None,
+        vector_score=score if chunk_index is not None else None,
     )
 
 
@@ -177,6 +199,7 @@ def _hit(
         content=text[start:end] if content is None else content,  # type: ignore[arg-type]
         score=score,
         metadata=metadata,
+        vector_score=score,
     )
 
 
@@ -190,7 +213,7 @@ def _retriever(
 ) -> KnowledgeRetrievalService:
     return KnowledgeRetrievalService(
         object_store=object_store,
-        vector_store=vector_store,
+        retriever_factory=vector_store,
         token_counter=token_counter,
         max_results=max_results,
         max_query_chars=max_query_chars,
@@ -728,7 +751,7 @@ def test_noncanonical_parsed_pointer_fails_before_object_io_or_rag(
     assert vector_store.search_calls == []
 
 
-def test_multiple_collections_apply_each_top_k_then_global_limit_and_stable_ties(
+def test_multiple_retrievers_share_score_contract_and_use_stable_global_sorting(
     token_counter,
 ) -> None:
     object_store = FakeObjectStore()
@@ -805,8 +828,8 @@ def test_multiple_collections_apply_each_top_k_then_global_limit_and_stable_ties
         query="authoritative",
         # Reversed input order makes the tie-break contract observable.
         scopes=[
-            _scope(document_b, top_k=2),
-            _scope(document_a, top_k=1),
+            _scope(document_b, top_k=2, retriever_type="qdrant"),
+            _scope(document_a, top_k=1, retriever_type="elasticsearch"),
         ],
         available_tokens=available,
     )
@@ -816,11 +839,14 @@ def test_multiple_collections_apply_each_top_k_then_global_limit_and_stable_ties
         ("collection-b", 2),
         ("collection-a", 1),
     ]
+    assert vector_store.get_calls == ["qdrant", "elasticsearch"]
     assert len(result.sources) == 2
 
 
-def test_score_threshold_is_taken_from_the_turn_scope_snapshot(
+@pytest.mark.parametrize("retriever_type", ["elasticsearch", "qdrant"])
+def test_score_threshold_is_shared_by_both_retrievers(
     token_counter,
+    retriever_type: str,
 ) -> None:
     object_store = FakeObjectStore()
     vector_store = RecordingVectorStore()
@@ -850,12 +876,51 @@ def test_score_threshold_is_taken_from_the_turn_scope_snapshot(
     result = _retriever(object_store, vector_store, token_counter).search(
         call_id=call_id,
         query="threshold",
-        scopes=[_scope(document, score_threshold=0.5)],
+        scopes=[
+            _scope(
+                document,
+                score_threshold=0.5,
+                retriever_type=retriever_type,
+            )
+        ],
         available_tokens=available,
     )
 
     assert result.mode == "rag"
     assert result.sources == []
+
+
+@pytest.mark.parametrize("retriever_type", ["elasticsearch", "qdrant"])
+@pytest.mark.parametrize("score", [-0.01, 1.01])
+def test_retriever_scores_outside_zero_one_fail_closed(
+    token_counter,
+    retriever_type: str,
+    score: float,
+) -> None:
+    object_store = FakeObjectStore()
+    vector_store = RecordingVectorStore()
+    document = _document()
+    text = "range source" + (" tail" * 300)
+    _put_text(object_store, document, text)
+    vector_store.results[document.collection_id] = [
+        _hit(
+            document,
+            text,
+            start=0,
+            end=len("range source"),
+            score=score,
+        )
+    ]
+
+    with pytest.raises(HTTPException) as error:
+        _retriever(object_store, vector_store, token_counter).search(
+            call_id=f"call-range-{retriever_type}-{score}",
+            query="range",
+            scopes=[_scope(document, retriever_type=retriever_type)],
+            available_tokens=300,
+        )
+
+    assert error.value.detail["code"] == "knowledge_unavailable"
 
 
 def test_below_threshold_hit_still_must_match_the_authoritative_slice(

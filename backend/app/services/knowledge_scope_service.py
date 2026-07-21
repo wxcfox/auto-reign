@@ -72,16 +72,20 @@ class KnowledgeScopeService:
         }
         seen_document_ids: set[str] = set()
         configured_by_pair = {
-            (scope.collection_id, scope.owner_user_id): scope for scope, _config in configured
+            (scope.collection_id, scope.owner_user_id): (scope, config)
+            for scope, config in configured
         }
         for document in documents:
             pair = (document.collection_id, document.user_id)
-            scope = configured_by_pair.get(pair)
+            configured_scope = configured_by_pair.get(pair)
+            if configured_scope is None:
+                raise self._unavailable()
+            scope, config = configured_scope
             if (
-                scope is None
-                or document.id in seen_document_ids
+                document.id in seen_document_ids
                 or not document.is_active
                 or document.status != "ready"
+                or document.retriever_type != config.retriever_type
                 or (scope.document_ids is not None and document.id not in scope.document_ids)
             ):
                 raise self._unavailable()

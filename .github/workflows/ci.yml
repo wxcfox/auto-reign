@@ -30,6 +30,19 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.19.3
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd="curl -fsS 'http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
     defaults:
       run:
         working-directory: backend
@@ -41,6 +54,11 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run pytest -v
+      - name: Run Elasticsearch Retriever integration
+        env:
+          ELASTICSEARCH_URL: http://127.0.0.1:9200
+          RUN_ELASTICSEARCH_INTEGRATION: "1"
+        run: uv run pytest -v tests/integration/test_knowledge_elasticsearch.py
       - name: Upgrade disposable MySQL schema
         env:
           DATABASE_URL: mysql+pymysql://auto_reign:auto_reign@127.0.0.1:3306/auto_reign_migration_test
@@ -71,6 +89,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm audit --omit=dev
+      - run: npm run lint
       - run: npm test
       - run: npm run build
 

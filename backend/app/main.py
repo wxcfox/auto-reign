@@ -43,7 +43,7 @@ from app.services.knowledge_index_worker import (
 )
 from app.services.knowledge_retrieval_service import KnowledgeRetrievalService
 from app.services.knowledge_scope_service import KnowledgeScopeService
-from app.services.knowledge_vector_store import KnowledgeVectorStore
+from app.services.knowledge_retrievers import KnowledgeRetrieverFactory
 from app.services.model_service import ModelService
 from app.services.platform_prompt_service import PlatformPromptService
 from app.services.token_counter import RuntimeTokenCounter
@@ -61,7 +61,7 @@ from app.middleware.request_logging import (
 
 def create_app(
     *,
-    knowledge_vector_store_override: KnowledgeVectorStore | None = None,
+    knowledge_retriever_factory_override: KnowledgeRetrieverFactory | None = None,
     start_background_workers: bool = True,
 ) -> FastAPI:
     settings = get_settings()
@@ -87,10 +87,10 @@ def create_app(
             max_pdf_pages=settings.attachment_max_pdf_pages,
         ),
     )
-    knowledge_vector_store = (
-        knowledge_vector_store_override
-        if knowledge_vector_store_override is not None
-        else KnowledgeVectorStore(settings=settings)
+    knowledge_retriever_factory = (
+        knowledge_retriever_factory_override
+        if knowledge_retriever_factory_override is not None
+        else KnowledgeRetrieverFactory(settings=settings)
     )
     knowledge_extraction = ExtractionService(
         max_parsed_chars=settings.knowledge_max_parsed_chars,
@@ -103,7 +103,7 @@ def create_app(
         repository=KnowledgeDocumentRepository(),
         object_store=object_store,
         extraction=knowledge_extraction,
-        vector_store=knowledge_vector_store,
+        retriever_factory=knowledge_retriever_factory,
         coordinator=knowledge_document_coordinator,
         clock=models._now,
         processing_timeout=timedelta(
@@ -124,7 +124,7 @@ def create_app(
     knowledge_scope_service = KnowledgeScopeService()
     knowledge_retrieval_service = KnowledgeRetrievalService(
         object_store=object_store,
-        vector_store=knowledge_vector_store,
+        retriever_factory=knowledge_retriever_factory,
         token_counter=token_counter,
         max_results=settings.knowledge_max_results,
         max_query_chars=settings.knowledge_max_query_chars,
@@ -206,7 +206,7 @@ def create_app(
     app.state.upload_validation_service = upload_validation_service
     app.state.attachment_upload_policy = attachment_upload_policy
     app.state.attachment_service = attachment_service
-    app.state.knowledge_vector_store = knowledge_vector_store
+    app.state.knowledge_retriever_factory = knowledge_retriever_factory
     app.state.knowledge_extraction = knowledge_extraction
     app.state.knowledge_document_coordinator = knowledge_document_coordinator
     app.state.knowledge_worker = knowledge_worker

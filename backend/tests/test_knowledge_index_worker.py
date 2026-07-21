@@ -112,7 +112,7 @@ def _worker(
                 max_decompressed_bytes=10_000,
                 max_pdf_pages=10,
             ),
-        vector_store=vectors,
+        retriever_factory=vectors,
         coordinator=coordinator or DocumentOperationCoordinator(),
         clock=clock or (lambda: NOW),
         processing_timeout=timedelta(minutes=5),
@@ -437,6 +437,41 @@ def test_claim_identity_rejects_late_same_generation_completion(
             generation=claim.generation,
             processing_attempt_id=claim.processing_attempt_id,
             parsed_object_key="parsed/late",
+            retriever_type=claim.retriever_type,
+        ) is False
+
+    with session_factory() as session:
+        current = session.get(models.KnowledgeDocument, claim.id)
+        assert current is not None
+        assert current.status == "processing"
+        assert current.parsed_object_key is None
+
+
+def test_completion_rejects_a_document_whose_retriever_changed_after_claim(
+    session_factory,
+) -> None:
+    _queued_document(session_factory)
+    repository = KnowledgeDocumentRepository()
+    with session_scope(session_factory) as session:
+        claim = repository.claim_next(
+            session,
+            stale_before=models._now(),
+        )
+    assert claim is not None
+
+    with session_scope(session_factory) as session:
+        current = session.get(models.KnowledgeDocument, claim.id)
+        assert current is not None
+        current.retriever_type = "qdrant"
+
+    with session_scope(session_factory) as session:
+        assert repository.complete_generation(
+            session,
+            document_id=claim.id,
+            generation=claim.generation,
+            processing_attempt_id=claim.processing_attempt_id,
+            parsed_object_key="parsed/wrong-retriever",
+            retriever_type=claim.retriever_type,
         ) is False
 
     with session_factory() as session:
@@ -569,7 +604,7 @@ def test_delete_fence_wins_before_worker_projection_mutation(
 
     service = KnowledgeDocumentService(
         store,
-        vector_store=vectors,
+        retriever_factory=vectors,
         coordinator=coordinator,
     )
     with coordinator.hold(document.id):
@@ -586,6 +621,7 @@ def test_delete_fence_wins_before_worker_projection_mutation(
                 id=document.id,
                 user_id=document.user_id,
                 collection_id=document.collection_id,
+                retriever_type="elasticsearch",
             )
         )
         with session_scope(session_factory) as session:
@@ -666,7 +702,7 @@ def test_old_publisher_cleanup_cannot_delete_new_generation(
             max_decompressed_bytes=10_000,
             max_pdf_pages=10,
         ),
-        vector_store=vectors,
+        retriever_factory=vectors,
         coordinator=DocumentOperationCoordinator(),
         clock=models._now,
         processing_timeout=timedelta(minutes=5),
@@ -757,7 +793,7 @@ def test_stop_timeout_never_reports_worker_stopped_while_attempt_is_running(
         repository=KnowledgeDocumentRepository(),
         object_store=FakeObjectStore(),
         extraction=ExtractionService(),
-        vector_store=FakeKnowledgeVectorStore(),
+        retriever_factory=FakeKnowledgeVectorStore(),
         coordinator=DocumentOperationCoordinator(),
         clock=models._now,
         processing_timeout=timedelta(minutes=5),
@@ -798,7 +834,7 @@ def test_worker_loop_continues_after_transient_claim_failure(
         repository=repository,
         object_store=FakeObjectStore(),
         extraction=ExtractionService(),
-        vector_store=FakeKnowledgeVectorStore(),
+        retriever_factory=FakeKnowledgeVectorStore(),
         coordinator=DocumentOperationCoordinator(),
         clock=models._now,
         processing_timeout=timedelta(minutes=5),
