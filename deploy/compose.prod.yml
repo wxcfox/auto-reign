@@ -13,6 +13,11 @@ x-backend-environment: &backend-environment
   APP_VERSION: ${AUTO_REIGN_VERSION:?Set AUTO_REIGN_VERSION}
   DATA_DIR: /app/data
   DATABASE_URL: mysql+pymysql://${MYSQL_USER:?Set MYSQL_USER}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+  REDIS_URL: redis://redis:6379/0
+  CHAT_STREAM_TTL_SECONDS: ${CHAT_STREAM_TTL_SECONDS:-3600}
+  CHAT_STREAM_KEY_PREFIX: ${CHAT_STREAM_KEY_PREFIX:-auto_reign:chat}
+  SOCKETIO_PING_INTERVAL_SECONDS: ${SOCKETIO_PING_INTERVAL_SECONDS:-25}
+  SOCKETIO_PING_TIMEOUT_SECONDS: ${SOCKETIO_PING_TIMEOUT_SECONDS:-20}
   QDRANT_URL: http://qdrant:6333
   QDRANT_API_KEY: ${QDRANT_API_KEY:-}
   ELASTICSEARCH_URL: http://elasticsearch:9200
@@ -33,6 +38,21 @@ x-backend-environment: &backend-environment
   S3_ADDRESSING_STYLE: virtual
 
 services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    restart: unless-stopped
+    volumes:
+      - ${AUTO_REIGN_REDIS_DIR:?Set AUTO_REIGN_REDIS_DIR}:/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    logging: *default-logging
+
   mysql:
     image: ${MYSQL_IMAGE:-mysql:8.4}
     restart: unless-stopped
@@ -119,6 +139,8 @@ services:
     ports:
       - "127.0.0.1:${AUTO_REIGN_BACKEND_PORT:-18300}:8000"
     depends_on:
+      redis:
+        condition: service_healthy
       mysql:
         condition: service_healthy
       qdrant:

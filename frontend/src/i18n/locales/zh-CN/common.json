@@ -37,12 +37,13 @@
     "global_knowledge": "全局资料库",
     "users": "用户管理",
     "history": "历史对话",
-    "empty_history": "暂无历史对话",
-    "untitled_session": "未命名对话"
+    "empty_history": "暂无历史任务",
+    "untitled_task": "未命名任务"
   },
   "states": {
     "loading": "加载中...",
-    "working": "处理中..."
+    "working": "处理中...",
+    "task_running": "任务正在运行"
   },
   "permissions": {
     "loading": "正在检查权限…",
@@ -51,13 +52,13 @@
   },
   "actions": {
     "cancel": "取消",
-    "conversation_actions": "{{title}}的更多操作",
-    "conversation_name": "会话名称",
-    "delete_conversation": "删除",
-    "delete_conversation_confirm": "删除会话“{{title}}”？",
+    "task_actions": "{{title}}的更多操作",
+    "task_name": "任务名称",
+    "delete_task": "删除",
+    "delete_task_confirm": "删除任务“{{title}}”？",
     "save": "保存",
-    "rename_conversation": "重命名",
-    "rename_conversation_description": "保持简短且易于识别。",
+    "rename_task": "重命名",
+    "rename_task_description": "保持简短且易于识别。",
     "new_chat": "新聊天"
   },
   "errors": {

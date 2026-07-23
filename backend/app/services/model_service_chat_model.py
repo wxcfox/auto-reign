@@ -17,6 +17,7 @@ from langchain_core.tools import BaseTool
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from app.services.runtime_types import (
+    ProviderReasoningDelta,
     RuntimeObserver,
     ToolCall,
     ToolDefinition,
@@ -90,6 +91,15 @@ class ModelServiceChatModel(BaseChatModel):
             observer=self.runtime_observer,
             tools=self.tool_definitions or None,
         ):
+            if isinstance(event, ProviderReasoningDelta):
+                yield ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content_blocks=[
+                            {"type": "reasoning", "reasoning": event.content}
+                        ]
+                    )
+                )
+                continue
             if isinstance(event, str):
                 yield ChatGenerationChunk(
                     message=AIMessageChunk(content=event)

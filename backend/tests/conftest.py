@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.db.models import Base
 from app.db.session import create_engine_for_settings
 from tests.fake_object_store import FakeObjectStore
@@ -51,6 +51,20 @@ def client(
     get_settings.cache_clear()
 
     from app import main as main_module
+    from app.services.chat_stream_store import (
+        ChatRealtimeBackend,
+        MemoryChatStreamStore,
+    )
+
+    async def build_memory_chat_realtime(
+        _settings: Settings,
+    ) -> ChatRealtimeBackend:
+        return ChatRealtimeBackend(
+            stream_store=MemoryChatStreamStore(),
+            redis_available=False,
+            backend="memory",
+            degraded=True,
+        )
 
     monkeypatch.setattr("app.services.model_service.OpenAI", FakeOpenAIClient)
     monkeypatch.setattr("app.services.embedding_service.OpenAI", FakeOpenAIEmbeddings)
@@ -58,6 +72,11 @@ def client(
         main_module,
         "build_object_store",
         lambda _settings: fake_object_store,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "build_chat_realtime",
+        build_memory_chat_realtime,
     )
     try:
         engine = create_engine_for_settings(get_settings())

@@ -2,8 +2,9 @@ from functools import lru_cache
 from pathlib import Path
 import secrets
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.limits import (
@@ -115,6 +116,16 @@ class Settings(BaseSettings):
         le=MAX_KNOWLEDGE_QUERY_CHARS,
     )
     database_url: str = "mysql+pymysql://auto_reign:auto_reign@127.0.0.1:13306/auto_reign"
+    redis_url: str = "redis://127.0.0.1:16379/0"
+    chat_stream_ttl_seconds: int = Field(default=3600, ge=60, le=86_400)
+    chat_stream_key_prefix: str = Field(
+        default="auto_reign:chat",
+        min_length=1,
+        max_length=200,
+        pattern=r"^\S+$",
+    )
+    socketio_ping_interval_seconds: int = Field(default=25, ge=5, le=120)
+    socketio_ping_timeout_seconds: int = Field(default=20, ge=5, le=120)
     qdrant_url: str = "http://127.0.0.1:16333"
     qdrant_collection: str = "auto_reign_default"
     qdrant_api_key: str | None = None
@@ -165,6 +176,17 @@ class Settings(BaseSettings):
         ge=1,
         le=MAX_RUNTIME_MAX_TOOL_ROUNDS,
     )
+
+    @field_validator("redis_url")
+    @classmethod
+    def validate_standalone_redis_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
+            raise ValueError(
+                "REDIS_URL must target standalone redis:// or rediss://; "
+                "Redis Cluster URLs are unsupported"
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_object_store_capacity(self) -> "Settings":

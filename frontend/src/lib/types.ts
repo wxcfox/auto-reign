@@ -191,65 +191,171 @@ export interface KnowledgeDeletePending {
   status: "cleanup_pending";
 }
 
-export interface Attachment {
-  id: string;
-  filename: string;
-  mime_type: string;
-  size_bytes: number;
-  message_id: string | null;
-  created_at: string;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+export type JsonObject = { [key: string]: JsonValue };
+
+export type TaskStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type SubtaskStatus = TaskStatus;
+export type SubtaskRole = "USER" | "ASSISTANT";
+
+export type SubtaskContextType = "attachment" | "knowledge_base" | "selected_documents";
+export type SubtaskContextStatus =
+  | "pending"
+  | "uploading"
+  | "parsing"
+  | "ready"
+  | "empty"
+  | "failed";
+
+export interface SubtaskContextBrief {
+  id: number;
+  context_type: SubtaskContextType;
+  name: string;
+  status: SubtaskContextStatus;
+  mime_type: string | null;
+  file_extension: string | null;
+  file_size: number | null;
+  text_length: number;
+  type_data: JsonObject;
 }
 
-export interface ConversationMessage {
+export interface SubtaskContextBriefList {
+  items: SubtaskContextBrief[];
+}
+
+export interface AssistantToolCall {
   id: string;
-  role: "assistant" | "user";
-  status: "pending" | "streaming" | "completed" | "failed";
+  type: "function";
+  function: {
+    name: string;
+    /** Canonical JSON object serialized by the backend. */
+    arguments: string;
+  };
+}
+
+export interface AssistantChainMessage {
+  role: "assistant";
+  content: string | JsonObject[] | null;
+  tool_calls?: AssistantToolCall[];
+  reasoning_content?: string;
+  model_info?: {
+    provider: string | null;
+    model: string | null;
+  };
+  compacted?: boolean;
+  summary_compacted?: boolean;
+  compaction_version?: number | null;
+}
+
+export interface ToolChainMessage {
+  role: "tool";
+  tool_call_id: string;
+  name: string;
   content: string;
-  attachments: Attachment[];
-  provider: string | null;
-  model: string | null;
+  is_error?: boolean;
+}
+
+export type MessageChainItem = AssistantChainMessage | ToolChainMessage;
+
+export interface TextChatBlock {
+  id: string;
+  type: "text";
+  content: string;
+  status: "streaming" | "done";
+  timestamp: string;
+}
+
+export interface ToolChatBlock {
+  id: string;
+  type: "tool";
+  tool_use_id: string;
+  tool_name: string;
+  tool_input: JsonObject;
+  tool_output?: JsonValue;
+  status: "generating_arguments" | "pending" | "done" | "error";
+  timestamp: string;
+}
+
+export type ChatBlock = TextChatBlock | ToolChatBlock;
+
+export interface ContextCompaction {
+  message_index: number;
+  compacted: boolean;
+  summary_compacted: boolean;
+  version: number | null;
+}
+
+interface AssistantResultBase {
+  value: string;
+  blocks: ChatBlock[];
+  context_compactions: ContextCompaction[];
+  sources: JsonValue[];
+  termination_reason: string | null;
+}
+
+export interface AssistantCompletedResult extends AssistantResultBase {
+  messages_chain: MessageChainItem[];
+}
+
+export interface AssistantPartialResult extends AssistantResultBase {
+  messages_chain?: never;
+}
+
+/** Safe projection returned for failed/cancelled Subtasks in Task history. */
+export interface AssistantHistoryResult {
+  value?: string;
+  messages_chain: MessageChainItem[];
+  blocks?: never;
+  context_compactions?: never;
+  sources?: never;
+  termination_reason?: never;
+}
+
+export type AssistantResult =
+  | AssistantCompletedResult
+  | AssistantPartialResult
+  | AssistantHistoryResult;
+
+export interface Subtask {
+  id: number;
+  task_id: number;
+  role: SubtaskRole;
+  message_id: number;
+  parent_id: number | null;
+  prompt: string;
+  status: SubtaskStatus;
+  progress: number;
+  result: AssistantResult | null;
+  error_message: string | null;
+  contexts: SubtaskContextBrief[];
   created_at: string;
   updated_at: string;
-  metadata: Record<string, unknown>;
+  completed_at: string | null;
 }
 
-export interface ConversationHistoryItem {
-  id: string;
-  title: string;
+export interface TaskAgentResponse {
+  id: string | null;
+  name: string;
+  is_available: boolean;
+}
+
+export interface TaskHistoryItemResponse {
+  id: number;
+  name: string;
   href: string;
-  agent: {
-    id: string | null;
-    name: string;
-    is_available: boolean;
-  };
+  agent: TaskAgentResponse;
   model_override: ModelRef | null;
-  status: "idle" | "generating";
-  started_at: string;
+  status: TaskStatus;
+  created_at: string;
   updated_at: string;
   last_message: string;
 }
 
-export interface ConversationListResponse {
-  conversations: ConversationHistoryItem[];
+export interface TaskListResponse {
+  tasks: TaskHistoryItemResponse[];
 }
 
-export interface ConversationDetailResponse extends ConversationHistoryItem {
-  messages: ConversationMessage[];
-}
-
-export interface ConversationDeleteResponse {
-  id: string;
-  status: "deleted";
-}
-
-export interface ConversationStreamResult {
-  conversation_id: string;
-  message: ConversationMessage;
-}
-
-export interface AcceptedGeneration {
-  conversation_id: string;
-  user_message_id: string | null;
-  assistant_message_id: string;
-  attachment_ids: string[];
+export interface TaskDetailResponse extends TaskHistoryItemResponse {
+  subtasks: Subtask[];
 }

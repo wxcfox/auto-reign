@@ -1,26 +1,24 @@
 const TOKEN_KEY = "auto-reign-auth-token";
+const tokenListeners = new Set<() => void>();
 
 export function setAuthToken(token: string) {
   if (typeof window === "undefined") {
     return;
   }
+  const previous = readStoredToken();
   try {
     window.localStorage.setItem(TOKEN_KEY, token);
   } catch {
     // Authentication should still fail closed when browser storage is unavailable.
   }
+  if (readStoredToken() !== previous) notifyTokenListeners();
 }
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") {
     return null;
   }
-  let token: string | null = null;
-  try {
-    token = window.localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  const token = readStoredToken();
   if (!token || isTokenExpired(token)) {
     clearAuthToken();
     return null;
@@ -32,15 +30,43 @@ export function clearAuthToken() {
   if (typeof window === "undefined") {
     return;
   }
+  const previous = readStoredToken();
   try {
     window.localStorage.removeItem(TOKEN_KEY);
   } catch {
     // Clearing auth state is best-effort in restricted storage environments.
   }
+  if (readStoredToken() !== previous) notifyTokenListeners();
 }
 
 export function isAuthenticated() {
   return Boolean(getAuthToken());
+}
+
+export function subscribeAuthToken(listener: () => void) {
+  tokenListeners.add(listener);
+  const handleStorage = (event: StorageEvent) => {
+    if (event.storageArea === window.localStorage && event.key === TOKEN_KEY) {
+      listener();
+    }
+  };
+  if (typeof window !== "undefined") window.addEventListener("storage", handleStorage);
+  return () => {
+    tokenListeners.delete(listener);
+    if (typeof window !== "undefined") window.removeEventListener("storage", handleStorage);
+  };
+}
+
+function readStoredToken() {
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function notifyTokenListeners() {
+  for (const listener of [...tokenListeners]) listener();
 }
 
 function isTokenExpired(token: string) {

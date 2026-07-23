@@ -3,8 +3,12 @@ import { ChatWorkspace } from "@/components/ChatWorkspace";
 export default async function ChatPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ session?: string }>;
+  searchParams?: Promise<{ task?: string }>;
 }) {
   const params = await searchParams;
-  return <ChatWorkspace sessionId={params?.session} />;
+  const parsed = params?.task ? Number(params.task) : null;
+  const taskId = parsed !== null && Number.isSafeInteger(parsed) && parsed > 0
+    ? parsed
+    : undefined;
+  return <ChatWorkspace taskId={taskId} />;
 }

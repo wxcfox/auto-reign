@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearAuthToken, getAuthToken, setAuthToken } from "./auth";
+import { clearAuthToken, getAuthToken, setAuthToken, subscribeAuthToken } from "./auth";
 
 function tokenWithExp(exp: number) {
   const payload = window
@@ -34,5 +34,21 @@ describe("auth token storage", () => {
 
     expect(getAuthToken()).toBeNull();
     expect(localStorage.getItem("auto-reign-auth-token")).toBeNull();
+  });
+
+  it("notifies same-page subscribers only when the stored identity changes", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeAuthToken(listener);
+
+    setAuthToken("token-1");
+    setAuthToken("token-1");
+    setAuthToken("token-2");
+    clearAuthToken();
+    clearAuthToken();
+
+    expect(listener).toHaveBeenCalledTimes(3);
+    unsubscribe();
+    setAuthToken("token-3");
+    expect(listener).toHaveBeenCalledTimes(3);
   });
 });

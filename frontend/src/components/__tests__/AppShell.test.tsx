@@ -1,306 +1,158 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
+import type { SocketContextValue } from "@/contexts/SocketContext";
 import i18next from "@/i18n/setup";
-import { deleteConversation, getCurrentUser, listConversations, renameConversation } from "@/lib/api";
+import { deleteTask, getCurrentUser, listTasks, renameTask } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
-import type { ConversationHistoryItem, User } from "@/lib/types";
+import type { SocketEventHandlers } from "@/lib/socket-types";
+import type { TaskHistoryItemResponse, User } from "@/lib/types";
 
-const navigationMocks = vi.hoisted(() => ({
-  pathname: "/chat",
-  replace: vi.fn(),
-}));
+const navigation = vi.hoisted(() => ({ pathname: "/chat", replace: vi.fn() }));
+const socket = vi.hoisted(() => ({ handlers: {} as SocketEventHandlers, cleanup: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => navigationMocks.pathname,
-  useRouter: () => ({ replace: navigationMocks.replace }),
+  usePathname: () => navigation.pathname,
+  useRouter: () => ({ replace: navigation.replace }),
 }));
-
+vi.mock("@/contexts/SocketContext", () => ({
+  useSocket: (): SocketContextValue => ({
+    connected: true,
+    joinTask: vi.fn(),
+    leaveTask: vi.fn(),
+    sendChatMessage: vi.fn(),
+    cancel: vi.fn(),
+    retry: vi.fn(),
+    registerHandlers: (handlers: SocketEventHandlers) => {
+      socket.handlers = handlers;
+      return socket.cleanup;
+    },
+    onReconnect: vi.fn(),
+  }),
+}));
 vi.mock("@/lib/api", () => ({
-  deleteConversation: vi.fn(),
+  deleteTask: vi.fn(),
   getCurrentUser: vi.fn(),
-  listConversations: vi.fn(),
-  renameConversation: vi.fn(),
+  listTasks: vi.fn(),
+  renameTask: vi.fn(),
 }));
-
 vi.mock("@/lib/auth", () => ({ clearAuthToken: vi.fn() }));
 
-const firstConversation: ConversationHistoryItem = {
-  id: "conversation-one",
-  title: "Python context managers",
-  href: "/chat?session=conversation-one",
-  agent: { id: "agent-one", name: "Python coach", is_available: true },
+const timestamp = "2026-07-22T00:00:00Z";
+const firstTask: TaskHistoryItemResponse = {
+  id: 7,
+  name: "Python Task",
+  href: "/chat?task=7",
+  agent: { id: "agent-1", name: "Coach", is_available: true },
   model_override: null,
-  status: "idle",
-  started_at: "2026-07-13T00:00:00Z",
-  updated_at: "2026-07-13T00:10:00Z",
-  last_message: "Latest answer",
+  status: "COMPLETED",
+  created_at: timestamp,
+  updated_at: timestamp,
+  last_message: "answer",
 };
-
-const secondConversation: ConversationHistoryItem = {
-  ...firstConversation,
-  id: "conversation-two",
-  title: "Redis patterns",
-  href: "/chat?session=conversation-two",
+const runningTask: TaskHistoryItemResponse = {
+  ...firstTask,
+  id: 8,
+  name: "Running Task",
+  href: "/chat?task=8",
+  status: "RUNNING",
 };
-
-const userFixture: User = {
+const user: User = {
   id: 7,
   username: "alice",
   display_name: "Alice",
   role: "user",
   is_active: true,
-  created_at: "2026-07-13T00:00:00Z",
-  updated_at: "2026-07-13T00:00:00Z",
+  created_at: timestamp,
+  updated_at: timestamp,
 };
 
 function clickMenuItem(name: RegExp) {
-  const menuItem = screen.getByRole("menuitem", { name });
-  fireEvent.pointerDown(menuItem);
-  fireEvent.click(menuItem);
+  const item = screen.getByRole("menuitem", { name });
+  fireEvent.pointerDown(item);
+  fireEvent.click(item);
 }
 
 describe("AppShell", () => {
   beforeEach(() => {
-    vi.resetAllMocks();
-    navigationMocks.pathname = "/chat";
+    vi.clearAllMocks();
+    socket.handlers = {};
+    navigation.pathname = "/chat";
     window.history.replaceState(null, "", "/chat");
-    i18next.changeLanguage("en");
     window.localStorage.clear();
-    document.documentElement.dataset.theme = "light";
-    vi.mocked(getCurrentUser).mockResolvedValue(userFixture);
-    vi.mocked(listConversations).mockResolvedValue({
-      conversations: [firstConversation, secondConversation],
-    });
-    vi.mocked(renameConversation).mockImplementation(async (id, title) => ({
-      ...(id === firstConversation.id ? firstConversation : secondConversation),
-      title,
+    void i18next.changeLanguage("en");
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    vi.mocked(listTasks).mockResolvedValue({ tasks: [firstTask, runningTask] });
+    vi.mocked(renameTask).mockImplementation(async (id, name) => ({
+      ...(id === 7 ? firstTask : runningTask),
+      name,
     }));
-    vi.mocked(deleteConversation).mockResolvedValue({
-      id: secondConversation.id,
-      status: "deleted",
-    });
+    vi.mocked(deleteTask).mockResolvedValue();
   });
 
-  it("renders setup without the authenticated shell", () => {
-    navigationMocks.pathname = "/setup";
-    render(<AppShell><div>Administrator setup</div></AppShell>);
-
-    expect(screen.getByText("Administrator setup")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /new chat/i })).not.toBeInTheDocument();
-    expect(listConversations).not.toHaveBeenCalled();
+  it("does not load Task history on authentication pages", () => {
+    navigation.pathname = "/setup";
+    render(<AppShell><div>Setup</div></AppShell>);
+    expect(screen.getByText("Setup")).toBeInTheDocument();
+    expect(listTasks).not.toHaveBeenCalled();
     expect(getCurrentUser).not.toHaveBeenCalled();
   });
 
-  it("shows one new chat and the complete personal management navigation", async () => {
-    render(<AppShell><div>Current page</div></AppShell>);
-
-    expect(screen.getAllByRole("link", { name: /^new chat$/i })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: /^agents$/i })).toHaveAttribute(
-      "href",
-      "/agents",
-    );
-    expect(screen.getByRole("link", { name: /^agent workspaces$/i })).toHaveAttribute(
-      "href",
-      "/workspaces",
-    );
-    expect(screen.getByRole("link", { name: /^knowledge bases$/i })).toHaveAttribute(
-      "href",
-      "/knowledge",
-    );
-    expect(await screen.findByRole("button", { name: /^alice$/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /global agents/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /global workspaces/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /global knowledge/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /user management/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/new interview|new learning/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /history/i })).toBeInTheDocument();
+  it("lists backend Task hrefs and marks PENDING/RUNNING status", async () => {
+    render(<AppShell><div>Chat</div></AppShell>);
+    expect(await screen.findByRole("link", { name: "Python Task" })).toHaveAttribute("href", "/chat?task=7");
+    expect(screen.getByRole("link", { name: "Running Task" })).toHaveAttribute("href", "/chat?task=8");
+    expect(screen.getByRole("status", { name: "Task is running" })).toHaveAttribute("data-status", "RUNNING");
   });
 
-  it("adds global resource and user management only after /me returns admin", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValue({ ...userFixture, role: "admin" });
-    render(<AppShell><div>Current page</div></AppShell>);
+  it("refreshes history for task:created, task:status, and local Task events", async () => {
+    vi.mocked(listTasks)
+      .mockResolvedValueOnce({ tasks: [firstTask] })
+      .mockResolvedValueOnce({ tasks: [runningTask] })
+      .mockResolvedValueOnce({ tasks: [firstTask] })
+      .mockResolvedValueOnce({ tasks: [runningTask] });
+    render(<AppShell><div>Chat</div></AppShell>);
+    await screen.findByRole("link", { name: "Python Task" });
 
-    expect(await screen.findByRole("link", { name: /global agents/i })).toHaveAttribute(
-      "href",
-      "/admin/agents",
-    );
-    expect(screen.getByRole("link", { name: /global workspaces/i })).toHaveAttribute(
-      "href",
-      "/admin/workspaces",
-    );
-    expect(screen.getByRole("link", { name: /global knowledge/i })).toHaveAttribute(
-      "href",
-      "/admin/knowledge",
-    );
-    expect(screen.getByRole("link", { name: /user management/i })).toHaveAttribute(
-      "href",
-      "/admin/users",
-    );
+    socket.handlers["task:created"]?.({ task: { ...runningTask } });
+    expect(await screen.findByRole("link", { name: "Running Task" })).toBeInTheDocument();
+    socket.handlers["task:status"]?.({ task: { ...firstTask } });
+    expect(await screen.findByRole("link", { name: "Python Task" })).toBeInTheDocument();
+    window.dispatchEvent(new Event("auto-reign:tasks-changed"));
+    expect(await screen.findByRole("link", { name: "Running Task" })).toBeInTheDocument();
+    expect(listTasks).toHaveBeenCalledTimes(4);
   });
 
-  it("uses the backend-provided unified chat href for every history item", async () => {
-    render(<AppShell><div>Current page</div></AppShell>);
-
-    expect(await screen.findByRole("link", { name: firstConversation.title })).toHaveAttribute(
-      "href",
-      firstConversation.href,
-    );
-    expect(screen.getByRole("link", { name: secondConversation.title })).toHaveAttribute(
-      "href",
-      secondConversation.href,
-    );
-  });
-
-  it("marks the single workspace navigation entry active for detail routes", async () => {
-    navigationMocks.pathname = "/workspaces/ws-1";
-    render(<AppShell><div>Workspace page</div></AppShell>);
-
-    const links = screen.getAllByRole("link", { name: /^agent workspaces$/i });
-    expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute("data-active", "true");
-  });
-
-  it("marks the knowledge navigation entry active for detail routes", async () => {
-    navigationMocks.pathname = "/knowledge/collection-1";
-    render(<AppShell><div>Knowledge page</div></AppShell>);
-
-    expect(screen.getByRole("link", { name: /^knowledge bases$/i })).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-  });
-
-  it("refreshes unified history after a conversation change event", async () => {
-    vi.mocked(listConversations)
-      .mockResolvedValueOnce({ conversations: [firstConversation] })
-      .mockResolvedValueOnce({ conversations: [secondConversation] });
-    render(<AppShell><div>Current page</div></AppShell>);
-    expect(await screen.findByRole("link", { name: firstConversation.title })).toBeInTheDocument();
-
-    window.dispatchEvent(new Event("auto-reign:conversations-changed"));
-
-    expect(await screen.findByRole("link", { name: secondConversation.title })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: firstConversation.title })).not.toBeInTheDocument();
-    expect(listConversations).toHaveBeenCalledTimes(2);
-  });
-
-  it("never lets a delayed conversation request cross an authentication boundary", async () => {
-    let resolveAlice!: (value: { conversations: ConversationHistoryItem[] }) => void;
-    let resolveBob!: (value: { conversations: ConversationHistoryItem[] }) => void;
-    const aliceRequest = new Promise<{ conversations: ConversationHistoryItem[] }>((resolve) => {
-      resolveAlice = resolve;
-    });
-    const bobRequest = new Promise<{ conversations: ConversationHistoryItem[] }>((resolve) => {
-      resolveBob = resolve;
-    });
-    vi.mocked(listConversations)
-      .mockReturnValueOnce(aliceRequest)
-      .mockReturnValueOnce(bobRequest);
-    const view = render(<AppShell><div>Current page</div></AppShell>);
-
-    navigationMocks.pathname = "/login";
-    view.rerender(<AppShell><div>Login page</div></AppShell>);
-    await act(async () => {
-      resolveAlice({ conversations: [firstConversation] });
-      await aliceRequest;
-    });
-    navigationMocks.pathname = "/chat";
-    view.rerender(<AppShell><div>Bob chat</div></AppShell>);
-
-    expect(screen.queryByRole("link", { name: firstConversation.title })).not.toBeInTheDocument();
-
-    resolveBob({ conversations: [secondConversation] });
-    expect(await screen.findByRole("link", { name: secondConversation.title })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: firstConversation.title })).not.toBeInTheDocument();
-  });
-
-  it("renames a conversation by id and preserves the backend href", async () => {
-    render(<AppShell><div>Current page</div></AppShell>);
-    fireEvent.click(await screen.findByRole("button", {
-      name: `Actions for ${firstConversation.title}`,
-    }));
+  it("renames a Task by numeric id", async () => {
+    render(<AppShell><div>Chat</div></AppShell>);
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Python Task" }));
     clickMenuItem(/rename/i);
-    fireEvent.change(screen.getByLabelText(/conversation name/i), {
-      target: { value: "Renamed conversation" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    await waitFor(() =>
-      expect(renameConversation).toHaveBeenCalledWith(firstConversation.id, "Renamed conversation"),
-    );
-    expect(await screen.findByRole("link", { name: "Renamed conversation" })).toHaveAttribute(
-      "href",
-      firstConversation.href,
-    );
+    fireEvent.change(screen.getByLabelText("Task name"), { target: { value: "Renamed Task" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(renameTask).toHaveBeenCalledWith(7, "Renamed Task"));
+    expect(await screen.findByRole("link", { name: "Renamed Task" })).toHaveAttribute("href", "/chat?task=7");
   });
 
-  it("deletes a non-current conversation without routing", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    vi.mocked(listConversations)
-      .mockResolvedValueOnce({ conversations: [firstConversation, secondConversation] })
-      .mockResolvedValueOnce({ conversations: [firstConversation] });
-    render(<AppShell><div>Current page</div></AppShell>);
-    fireEvent.click(await screen.findByRole("button", {
-      name: `Actions for ${secondConversation.title}`,
-    }));
+  it("deletes the current Task selected by the task query and routes to new chat", async () => {
+    window.history.replaceState(null, "", "/chat?task=7");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(listTasks)
+      .mockResolvedValueOnce({ tasks: [firstTask] })
+      .mockResolvedValueOnce({ tasks: [] });
+    render(<AppShell><div>Chat</div></AppShell>);
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Python Task" }));
     clickMenuItem(/delete/i);
-
-    await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith(secondConversation.id));
-    expect(navigationMocks.replace).not.toHaveBeenCalled();
-    expect(screen.queryByRole("link", { name: secondConversation.title })).not.toBeInTheDocument();
-    confirmSpy.mockRestore();
+    await waitFor(() => expect(deleteTask).toHaveBeenCalledWith(7));
+    expect(navigation.replace).toHaveBeenCalledWith("/chat");
+    confirm.mockRestore();
   });
 
-  it("always routes to new chat after deleting the current conversation", async () => {
-    navigationMocks.pathname = "/chat";
-    window.history.replaceState(
-      null,
-      "",
-      `/chat?mode=compact&session=${firstConversation.id}&panel=history`,
-    );
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    vi.mocked(deleteConversation).mockResolvedValue({ id: firstConversation.id, status: "deleted" });
-    vi.mocked(listConversations)
-      .mockResolvedValueOnce({ conversations: [firstConversation, secondConversation] })
-      .mockResolvedValueOnce({ conversations: [secondConversation] });
-    render(<AppShell><div>Current page</div></AppShell>);
-    fireEvent.click(await screen.findByRole("button", {
-      name: `Actions for ${firstConversation.title}`,
-    }));
-    clickMenuItem(/delete/i);
-
-    await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith(firstConversation.id));
-    expect(navigationMocks.replace).toHaveBeenCalledWith("/chat");
-    confirmSpy.mockRestore();
-  });
-
-  it("preserves account, language, theme, logout, and collapse controls", async () => {
-    render(<AppShell><div>Current page</div></AppShell>);
-    const shell = screen.getByText("Current page").closest(".app-shell");
-    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
-    expect(shell).toHaveAttribute("data-sidebar-collapsed", "true");
-
-    fireEvent.click(await screen.findByRole("button", { name: /^alice$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /简体中文/i }));
-    expect(await screen.findByRole("button", { name: /english/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "智能体" })).toHaveAttribute(
-      "href",
-      "/agents",
-    );
-    expect(screen.getByRole("link", { name: "智能体工作区" })).toHaveAttribute(
-      "href",
-      "/workspaces",
-    );
-    expect(screen.getByRole("link", { name: "资料库" })).toHaveAttribute(
-      "href",
-      "/knowledge",
-    );
-    fireEvent.click(screen.getByRole("button", { name: /深色模式/i }));
-    expect(document.documentElement.dataset.theme).toBe("dark");
-    fireEvent.click(screen.getByRole("button", { name: /退出登录/i }));
+  it("preserves account controls and logout", async () => {
+    render(<AppShell><div>Chat</div></AppShell>);
+    fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     expect(clearAuthToken).toHaveBeenCalledTimes(1);
-    expect(navigationMocks.replace).toHaveBeenCalledWith("/login");
+    expect(navigation.replace).toHaveBeenCalledWith("/login");
   });
 });

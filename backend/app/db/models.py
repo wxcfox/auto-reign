@@ -2,18 +2,20 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
-    and_,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, foreign, mapped_column, relationship
+from sqlalchemy.dialects.mysql import LONGBLOB, LONGTEXT
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
 from app.core.limits import (
@@ -21,6 +23,11 @@ from app.core.limits import (
     MAX_RESOURCE_NAME_LENGTH,
     MAX_USERNAME_LENGTH,
 )
+
+
+BIGINT_TYPE = BigInteger().with_variant(Integer(), "sqlite")
+LONGBLOB_TYPE = LONGBLOB().with_variant(LargeBinary(), "sqlite")
+LONGTEXT_TYPE = LONGTEXT().with_variant(Text(), "sqlite")
 
 
 def _uuid() -> str:
@@ -84,10 +91,6 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
-    conversations: Mapped[list["Conversation"]] = relationship(back_populates="user")
-    messages: Mapped[list["Message"]] = relationship(back_populates="user")
-
-
 class Resource(Base):
     __tablename__ = "resources"
     __table_args__ = (
@@ -145,107 +148,69 @@ class KnowledgeDocument(Base):
     indexed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
-class Conversation(Base):
-    __tablename__ = "conversations"
-    __table_args__ = (UniqueConstraint("id", "user_id", name="uq_conversations_id_user"),)
+class Task(Base):
+    __tablename__ = "tasks"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    id: Mapped[int] = mapped_column(BIGINT_TYPE, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     agent_id: Mapped[str | None] = mapped_column(
-        ForeignKey("resources.id"), index=True, nullable=True
+        String(36), ForeignKey("resources.id"), index=True, nullable=True
     )
-    title: Mapped[str] = mapped_column(String(255), default="")
-    status: Mapped[str] = mapped_column(String(16), default="idle")
+    name: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(24), default="PENDING", index=True)
     model_override_json: Mapped[dict[str, object] | None] = mapped_column(
         JSON, nullable=True
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
-    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-
-    user: Mapped[User] = relationship(back_populates="conversations")
-    messages: Mapped[list["Message"]] = relationship(
-        back_populates="conversation",
-        cascade="all, delete-orphan",
-        primaryjoin=lambda: and_(
-            Conversation.id == foreign(Message.conversation_id),
-            Conversation.user_id == Message.user_id,
-        ),
-        foreign_keys=lambda: [Message.conversation_id],
-    )
 
 
-class Message(Base):
-    __tablename__ = "messages"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["conversation_id", "user_id"],
-            ["conversations.id", "conversations.user_id"],
-            ondelete="CASCADE",
-        ),
-        UniqueConstraint(
-            "id",
-            "user_id",
-            name="uq_messages_id_user",
-        ),
-        UniqueConstraint(
-            "conversation_id",
-            "sequence",
-            name="uq_messages_conversation_sequence",
-        ),
-    )
+class Subtask(Base):
+    __tablename__ = "subtasks"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    id: Mapped[int] = mapped_column(BIGINT_TYPE, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    conversation_id: Mapped[str] = mapped_column(String(36), index=True)
-    sequence: Mapped[int] = mapped_column(Integer)
+    task_id: Mapped[int] = mapped_column(
+        BIGINT_TYPE, ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
     role: Mapped[str] = mapped_column(String(16))
-    status: Mapped[str] = mapped_column(String(16))
-    content: Mapped[str] = mapped_column(Text, default="")
-    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    message_id: Mapped[int] = mapped_column(BIGINT_TYPE, index=True)
+    parent_id: Mapped[int | None] = mapped_column(BIGINT_TYPE, nullable=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    prompt: Mapped[str] = mapped_column(LONGTEXT_TYPE, default="")
+    status: Mapped[str] = mapped_column(String(24), default="PENDING", index=True)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    result: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
-
-    user: Mapped[User] = relationship(back_populates="messages")
-    conversation: Mapped[Conversation] = relationship(
-        back_populates="messages",
-        primaryjoin=lambda: and_(
-            Conversation.id == foreign(Message.conversation_id),
-            Conversation.user_id == Message.user_id,
-        ),
-        foreign_keys=[conversation_id],
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
-class Attachment(Base):
-    __tablename__ = "attachments"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["message_id", "user_id"],
-            ["messages.id", "messages.user_id"],
-            ondelete="CASCADE",
-        ),
-    )
+class SubtaskContext(Base):
+    __tablename__ = "subtask_contexts"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    id: Mapped[int] = mapped_column(BIGINT_TYPE, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    message_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True, index=True
-    )
-    original_filename: Mapped[str] = mapped_column(String(255))
-    object_key: Mapped[str] = mapped_column(String(1024))
-    parsed_object_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    mime_type: Mapped[str] = mapped_column(String(160))
-    size_bytes: Mapped[int] = mapped_column(Integer)
-    content_hash: Mapped[str] = mapped_column(String(128))
-    parsed_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    parsed_content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    subtask_id: Mapped[int] = mapped_column(BIGINT_TYPE, default=0, index=True)
+    context_type: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    binary_data: Mapped[bytes | None] = mapped_column(LONGBLOB_TYPE, nullable=True)
+    image_base64: Mapped[str | None] = mapped_column(LONGTEXT_TYPE, nullable=True)
+    extracted_text: Mapped[str | None] = mapped_column(LONGTEXT_TYPE, nullable=True)
+    text_length: Mapped[int] = mapped_column(Integer, default=0)
+    mime_type: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    file_extension: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BIGINT_TYPE, nullable=True)
+    type_data: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)

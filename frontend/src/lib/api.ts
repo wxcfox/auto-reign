@@ -1,18 +1,11 @@
 import type {
-  AcceptedGeneration,
   AdminUser,
   AdminUserCreateRequest,
   AdminUserListResponse,
   AgentConfig,
   AgentListResponse,
   AgentResource,
-  Attachment,
   AuthTokenResponse,
-  ConversationDeleteResponse,
-  ConversationDetailResponse,
-  ConversationHistoryItem,
-  ConversationListResponse,
-  ConversationStreamResult,
   KnowledgeCollectionConfig,
   KnowledgeCollectionListResponse,
   KnowledgeCollectionResource,
@@ -26,6 +19,11 @@ import type {
   ResourceScope,
   ResourceUpdateRequest,
   ResourceWriteRequest,
+  SubtaskContextBrief,
+  SubtaskContextBriefList,
+  TaskDetailResponse,
+  TaskHistoryItemResponse,
+  TaskListResponse,
   User,
   WorkspaceConfig,
   WorkspaceFileContent,
@@ -36,7 +34,7 @@ import type {
   WorkspaceResource,
   WorkspaceScope,
 } from "./types";
-import { ApiError, throwApiError } from "./api-error";
+import { throwApiError } from "./api-error";
 import { clearAuthToken, getAuthToken } from "./auth";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -512,218 +510,71 @@ export function deleteKnowledgeDocument(
   );
 }
 
-export function listConversations(): Promise<ConversationListResponse> {
-  return apiRequest<ConversationListResponse>("/api/conversations");
+export function listTasks(): Promise<TaskListResponse> {
+  return apiRequest<TaskListResponse>("/api/tasks");
 }
 
-export function getConversation(conversationId: string): Promise<ConversationDetailResponse> {
-  return apiRequest<ConversationDetailResponse>(`/api/conversations/${conversationId}`);
+export function getTask(taskId: number): Promise<TaskDetailResponse> {
+  return apiRequest<TaskDetailResponse>(`/api/tasks/${encodeURIComponent(String(taskId))}`);
 }
 
-export function renameConversation(
-  conversationId: string,
-  title: string,
-): Promise<ConversationHistoryItem> {
-  return apiRequest<ConversationHistoryItem>(`/api/conversations/${conversationId}`, {
+export function renameTask(taskId: number, name: string): Promise<TaskHistoryItemResponse> {
+  return apiRequest<TaskHistoryItemResponse>(`/api/tasks/${encodeURIComponent(String(taskId))}`, {
     method: "PATCH",
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ name }),
   });
 }
 
-export function deleteConversation(conversationId: string): Promise<ConversationDeleteResponse> {
-  return apiRequest<ConversationDeleteResponse>(`/api/conversations/${conversationId}`, {
-    method: "DELETE",
-  });
-}
-
-export function setConversationModel(
-  conversationId: string,
-  modelOverride: ModelRef | null,
-): Promise<ConversationDetailResponse> {
-  return apiRequest<ConversationDetailResponse>(`/api/conversations/${conversationId}/model`, {
-    method: "PUT",
-    body: JSON.stringify({ model_override: modelOverride }),
-  });
-}
-
-export type StreamCallbacks = {
-  onAccepted?: (value: AcceptedGeneration) => void;
-  onDelta: (text: string) => void;
-};
-
-type StreamErrorPayload = {
-  assistant_message_id?: string;
-  code?: string;
-  conversation_id?: string;
-  message?: string;
-  status_code?: number;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseAcceptedGeneration(value: unknown): AcceptedGeneration {
-  if (!isRecord(value)) {
-    throw new Error("Streaming accepted receipt was invalid.");
-  }
-  const { conversation_id, user_message_id, assistant_message_id, attachment_ids } = value;
-  if (
-    typeof conversation_id !== "string" ||
-    conversation_id.length === 0 ||
-    (user_message_id !== null &&
-      (typeof user_message_id !== "string" || user_message_id.length === 0)) ||
-    typeof assistant_message_id !== "string" ||
-    assistant_message_id.length === 0 ||
-    !Array.isArray(attachment_ids) ||
-    attachment_ids.length > 10 ||
-    new Set(attachment_ids).size !== attachment_ids.length ||
-    !attachment_ids.every(
-      (item) => typeof item === "string" && item.length > 0 && item.length <= 36,
-    )
-  ) {
-    throw new Error("Streaming accepted receipt was invalid.");
-  }
-  return {
-    conversation_id,
-    user_message_id,
-    assistant_message_id,
-    attachment_ids,
-  };
-}
-
-async function apiStream<T>(
-  path: string,
-  body: unknown,
-  callbacks: StreamCallbacks,
-): Promise<T> {
-  const response = await requestApiResponse(path, {
-    method: "POST",
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.body) {
-    throw new Error("Streaming response did not include a body.");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let result: T | null = null;
-
-  const processFrame = (frame: string) => {
-    let event = "message";
-    const dataLines: string[] = [];
-    for (const line of frame.split(/\r?\n/)) {
-      if (line.startsWith("event:")) {
-        event = line.slice("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        dataLines.push(line.slice("data:".length).trimStart());
-      }
-    }
-    if (dataLines.length === 0) {
-      return;
-    }
-
-    const data = JSON.parse(dataLines.join("\n")) as unknown;
-    if (event === "accepted") {
-      const accepted = parseAcceptedGeneration(data);
-      callbacks.onAccepted?.(accepted);
-      return;
-    }
-    if (event === "delta") {
-      const delta = data as { text?: unknown };
-      if (typeof delta.text === "string" && delta.text.length > 0) {
-        callbacks.onDelta(delta.text);
-      }
-      return;
-    }
-    if (event === "result") {
-      result = data as T;
-      return;
-    }
-    if (event === "error") {
-      const error = data as StreamErrorPayload;
-      throw new ApiError(error.message || error.code || "Streaming request failed.", {
-        code: error.code,
-        conversationId:
-          typeof error.conversation_id === "string" ? error.conversation_id : undefined,
-        assistantMessageId:
-          typeof error.assistant_message_id === "string"
-            ? error.assistant_message_id
-            : undefined,
-        status: error.status_code ?? 502,
-      });
-    }
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    let separatorIndex = buffer.indexOf("\n\n");
-    while (separatorIndex >= 0) {
-      const frame = buffer.slice(0, separatorIndex);
-      buffer = buffer.slice(separatorIndex + 2);
-      processFrame(frame);
-      separatorIndex = buffer.indexOf("\n\n");
-    }
-  }
-
-  buffer += decoder.decode();
-  if (buffer.trim()) {
-    processFrame(buffer);
-  }
-  if (result === null) {
-    throw new Error("Streaming response completed without a result.");
-  }
-  return result;
-}
-
-export function sendConversationStream(
-  payload: {
-    text: string;
-    conversation_id?: string;
-    agent_id?: string;
-    model_override?: ModelRef | null;
-    attachment_ids?: string[];
-  },
-  callbacks: StreamCallbacks,
-): Promise<ConversationStreamResult> {
-  return apiStream<ConversationStreamResult>("/api/conversations/stream", payload, callbacks);
-}
-
-export function listAttachmentDrafts(): Promise<Attachment[]> {
-  return apiRequest<{ items: Attachment[] }>("/api/attachments/drafts").then(
-    (payload) => payload.items,
-  );
-}
-
-export async function uploadAttachment(file: File): Promise<Attachment> {
-  const body = new FormData();
-  body.append("file", file);
-  return apiRequest<Attachment>("/api/attachments", {
-    method: "POST",
-    body,
-  });
-}
-
-export async function deleteAttachmentDraft(attachmentId: string): Promise<void> {
-  const encodedAttachmentId = encodeURIComponent(attachmentId);
-  await apiRequestNullable<never>(`/api/attachments/${encodedAttachmentId}`, {
+export async function deleteTask(taskId: number): Promise<void> {
+  await apiRequestNullable<never>(`/api/tasks/${encodeURIComponent(String(taskId))}`, {
     method: "DELETE",
     acceptedStatuses: [204],
   });
 }
 
-export async function readAttachmentContent(
-  attachmentId: string,
+export function setTaskModel(
+  taskId: number,
+  modelOverride: ModelRef | null,
+): Promise<TaskDetailResponse> {
+  return apiRequest<TaskDetailResponse>(
+    `/api/tasks/${encodeURIComponent(String(taskId))}/model`,
+    {
+    method: "PUT",
+    body: JSON.stringify({ model_override: modelOverride }),
+    },
+  );
+}
+
+export function listSubtaskContextDrafts(): Promise<SubtaskContextBrief[]> {
+  return apiRequest<SubtaskContextBriefList>("/api/subtask-contexts/drafts").then(
+    (payload) => payload.items,
+  );
+}
+
+export async function uploadSubtaskContext(file: File): Promise<SubtaskContextBrief> {
+  const body = new FormData();
+  body.append("file", file);
+  return apiRequest<SubtaskContextBrief>("/api/subtask-contexts/attachments", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteSubtaskContextDraft(contextId: number): Promise<void> {
+  const encodedContextId = encodeURIComponent(String(contextId));
+  await apiRequestNullable<never>(`/api/subtask-contexts/${encodedContextId}`, {
+    method: "DELETE",
+    acceptedStatuses: [204],
+  });
+}
+
+export async function readSubtaskContextContent(
+  contextId: number,
   disposition: "inline" | "attachment",
 ): Promise<Blob> {
-  const encodedAttachmentId = encodeURIComponent(attachmentId);
+  const encodedContextId = encodeURIComponent(String(contextId));
   const response = await requestApiResponse(
-    `/api/attachments/${encodedAttachmentId}/content?disposition=${disposition}`,
+    `/api/subtask-contexts/${encodedContextId}/content?disposition=${disposition}`,
   );
   return response.blob();
 }

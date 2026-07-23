@@ -15,8 +15,25 @@ def test_health_reports_local_dependencies(client: TestClient) -> None:
     assert body["storage"]["elasticsearch"] == "configured"
     assert body["storage"]["qdrant"] == "configured"
     assert body["storage"]["object_store"] == "local"
+    assert body["chat_realtime"] == {"backend": "memory", "degraded": True}
     assert "providers" in body
     assert "workspace" not in body
+
+
+def test_health_reports_bound_chat_realtime_backend(client: TestClient) -> None:
+    client.app.state.chat_realtime = type(
+        "Realtime",
+        (),
+        {"backend": "redis", "degraded": False},
+    )()
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["chat_realtime"] == {
+        "backend": "redis",
+        "degraded": False,
+    }
 
 
 def test_retriever_health_checks_both_shared_backends(client: TestClient) -> None:
@@ -67,13 +84,16 @@ def test_health_reads_object_store_status_from_the_bound_app_settings(
 def test_openapi_exposes_only_unified_core_routes(client: TestClient) -> None:
     paths = set(client.get("/openapi.json").json()["paths"])
 
-    assert "/api/conversations/stream" in paths
+    assert "/api/tasks" in paths
+    assert "/api/subtask-contexts/attachments" in paths
     assert "/api/agents" in paths
     assert "/api/workspaces" in paths
     assert "/api/knowledge-collections" in paths
     assert "/api/chats/stream" not in paths
     assert not any(path.startswith("/api/interview-") for path in paths)
     assert "/api/reports" not in paths
+    assert not any(path.startswith("/api/conversations") for path in paths)
+    assert not any(path.startswith("/api/attachments") for path in paths)
     assert not any(
         path == "/api/workspace" or path.startswith("/api/workspace/")
         for path in paths
@@ -83,9 +103,9 @@ def test_openapi_exposes_only_unified_core_routes(client: TestClient) -> None:
 def test_runtime_source_has_no_interview_or_learning_branch() -> None:
     runtime_files = [
         Path("app/services/agent_runtime.py"),
-        Path("app/services/generation_service.py"),
+        Path("app/services/task_execution_service.py"),
         Path("app/services/model_service.py"),
-        Path("app/api/conversations.py"),
+        Path("app/api/ws/chat_namespace.py"),
     ]
 
     combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)

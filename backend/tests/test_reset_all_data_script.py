@@ -231,3 +231,21 @@ def test_reset_dry_run_does_not_remove_local_paths_or_run_commands(
     assert commands == []
     assert local_data.exists()
     assert tmp_path / "data" in result.removed_paths
+
+
+def test_reset_help_and_summary_explicitly_include_redis(tmp_path: Path, capsys) -> None:
+    module = load_reset_module()
+    monkey_root = tmp_path
+
+    result = module.reset_all_data(
+        root=monkey_root,
+        yes=False,
+        dry_run=True,
+        skip_docker=False,
+        command_runner=lambda _command: None,
+    )
+
+    assert result.removed_paths == []
+    module.main(["--dry-run"])
+    output = capsys.readouterr().out
+    assert "Redis" in output

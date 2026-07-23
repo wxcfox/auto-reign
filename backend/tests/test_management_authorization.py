@@ -66,6 +66,35 @@ def _set_resource_state(
         session.commit()
 
 
+def test_removed_conversation_and_attachment_routes_are_not_exposed(
+    client,
+    ordinary_user_headers,
+) -> None:
+    legacy_requests = (
+        client.get("/api/conversations", headers=ordinary_user_headers),
+        client.post(
+            "/api/conversations/stream",
+            headers=ordinary_user_headers,
+            json={"text": "must not reach a compatibility handler"},
+        ),
+        client.get("/api/attachments/drafts", headers=ordinary_user_headers),
+        client.post(
+            "/api/attachments",
+            headers=ordinary_user_headers,
+            files={"file": ("legacy.txt", b"legacy", "text/plain")},
+        ),
+        client.get(
+            "/api/attachments/legacy/content",
+            headers=ordinary_user_headers,
+        ),
+    )
+
+    assert all(response.status_code == 404 for response in legacy_requests)
+    paths = set(client.get("/openapi.json").json()["paths"])
+    assert not any(path.startswith("/api/conversations") for path in paths)
+    assert not any(path.startswith("/api/attachments") for path in paths)
+
+
 @pytest.mark.parametrize(
     ("private_endpoint", "global_endpoint", "response_key", "base_payload"),
     RESOURCE_LIST_CASES,

@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import shlex
 import subprocess
 import tomllib
 
@@ -12,8 +14,14 @@ DEPLOY_DIR = ROOT / "deploy"
 def test_local_compose_only_contains_development_dependencies() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
-    assert set(compose["services"]) == {"mysql", "qdrant", "elasticsearch"}
+    assert set(compose["services"]) == {
+        "redis",
+        "mysql",
+        "qdrant",
+        "elasticsearch",
+    }
     assert set(compose["volumes"]) == {
+        "redis_data",
         "mysql_data",
         "qdrant_data",
         "elasticsearch_data",
@@ -27,7 +35,7 @@ def test_production_compose_only_exposes_loopback_application_ports() -> None:
     assert all("build" not in service for service in services.values())
     assert all(
         "ports" not in services[name]
-        for name in ("mysql", "qdrant", "elasticsearch")
+        for name in ("redis", "mysql", "qdrant", "elasticsearch")
     )
     assert services["backend"]["ports"] == ["127.0.0.1:${AUTO_REIGN_BACKEND_PORT:-18300}:8000"]
     assert services["frontend"]["ports"] == ["127.0.0.1:${AUTO_REIGN_FRONTEND_PORT:-13100}:3000"]
@@ -87,10 +95,44 @@ def test_production_environment_example_has_no_s3_credential_defaults() -> None:
     assert values["ELASTICSEARCH_PASSWORD"] == (
         "replace-with-a-long-random-password"
     )
+    assert values["REDIS_IMAGE"] == "redis:7.4-alpine"
+    assert values["AUTO_REIGN_REDIS_DIR"] == "/srv/auto-reign/redis"
+    assert values["REDIS_URL"] == "redis://redis:6379/0"
+    assert values["CHAT_STREAM_TTL_SECONDS"] == "3600"
+    assert values["CHAT_STREAM_KEY_PREFIX"] == "auto_reign:chat"
+    assert values["SOCKETIO_PING_INTERVAL_SECONDS"] == "25"
+    assert values["SOCKETIO_PING_TIMEOUT_SECONDS"] == "20"
     assert "REGISTRATION_ENABLED" not in values
 
 
-def test_production_runtime_has_no_parallel_coordination_or_log_stack() -> None:
+def test_production_compose_provides_redis_to_backend() -> None:
+    compose = yaml.safe_load((DEPLOY_DIR / "compose.prod.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    redis = services["redis"]
+    backend = services["backend"]
+
+    assert redis["image"] == "${REDIS_IMAGE:-redis:7.4-alpine}"
+    assert redis["volumes"] == [
+        "${AUTO_REIGN_REDIS_DIR:?Set AUTO_REIGN_REDIS_DIR}:/data"
+    ]
+    assert redis["healthcheck"]["test"] == ["CMD", "redis-cli", "ping"]
+    assert backend["environment"]["REDIS_URL"] == "redis://redis:6379/0"
+    assert backend["environment"]["CHAT_STREAM_TTL_SECONDS"] == (
+        "${CHAT_STREAM_TTL_SECONDS:-3600}"
+    )
+    assert backend["environment"]["CHAT_STREAM_KEY_PREFIX"] == (
+        "${CHAT_STREAM_KEY_PREFIX:-auto_reign:chat}"
+    )
+    assert backend["environment"]["SOCKETIO_PING_INTERVAL_SECONDS"] == (
+        "${SOCKETIO_PING_INTERVAL_SECONDS:-25}"
+    )
+    assert backend["environment"]["SOCKETIO_PING_TIMEOUT_SECONDS"] == (
+        "${SOCKETIO_PING_TIMEOUT_SECONDS:-20}"
+    )
+    assert backend["depends_on"]["redis"]["condition"] == "service_healthy"
+
+
+def test_backend_runtime_includes_socket_state_without_a_job_or_log_stack() -> None:
     compose = yaml.safe_load((DEPLOY_DIR / "compose.prod.yml").read_text(encoding="utf-8"))
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     project = tomllib.loads((ROOT / "backend" / "pyproject.toml").read_text(encoding="utf-8"))
@@ -100,6 +142,7 @@ def test_production_runtime_has_no_parallel_coordination_or_log_stack() -> None:
     }
 
     assert set(compose["services"]) == {
+        "redis",
         "mysql",
         "qdrant",
         "elasticsearch",
@@ -107,10 +150,9 @@ def test_production_runtime_has_no_parallel_coordination_or_log_stack() -> None:
         "backend",
         "frontend",
     }
-    assert set(compose["services"]).isdisjoint(
-        {"redis", "kibana", "celery"}
-    )
-    assert dependencies.isdisjoint({"redis", "celery"})
+    assert set(compose["services"]).isdisjoint({"kibana", "celery"})
+    assert {"python-socketio", "redis"}.issubset(dependencies)
+    assert "celery" not in dependencies
     assert 'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]' in dockerfile
     assert "--workers" not in dockerfile
 
@@ -123,6 +165,100 @@ def test_nginx_routes_api_and_frontend_to_loopback_ports() -> None:
     assert "proxy_pass http://127.0.0.1:18300;" in nginx
     assert "proxy_pass http://127.0.0.1:13100;" in nginx
     assert "proxy_buffering off;" in nginx
+
+
+def test_nginx_routes_socketio_transport_before_frontend() -> None:
+    nginx = (DEPLOY_DIR / "nginx" / "auto-reign.conf").read_text(encoding="utf-8")
+
+    socket_location = nginx.index("location /socket.io/")
+    api_location = nginx.index("location /api/")
+    frontend_location = nginx.index("location / {")
+    assert socket_location < api_location < frontend_location
+    socket_block = nginx[socket_location:api_location]
+    assert "proxy_pass http://127.0.0.1:18300;" in socket_block
+    assert "proxy_http_version 1.1;" in socket_block
+    assert "proxy_set_header Upgrade $http_upgrade;" in socket_block
+    assert (
+        "proxy_set_header Connection $auto_reign_connection_upgrade;"
+        in socket_block
+    )
+    assert "proxy_read_timeout 600s;" in socket_block
+    assert "proxy_send_timeout 600s;" in socket_block
+    assert "proxy_buffering off;" in socket_block
+    assert "location /chat" not in nginx
+
+
+def test_ci_provisions_redis_and_runs_task_runtime_integrations() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    backend = workflow["jobs"]["backend"]
+
+    redis = backend["services"]["redis"]
+    assert redis["image"] == "redis:7.4-alpine"
+    commands = "\n".join(
+        step.get("run", "") for step in backend["steps"] if isinstance(step, dict)
+    )
+    assert "tests/integration/test_subtask_context_binding_mysql.py" in commands
+    assert "tests/integration/test_task_room_mysql_redis.py" in commands
+    assert "test_attachment_binding_mysql.py" not in commands
+
+
+def test_deploy_prepares_redis_before_migrations() -> None:
+    script = (DEPLOY_DIR / "deploy.sh").read_text(encoding="utf-8")
+    commands = [
+        (index, shlex.split(line.strip()))
+        for index, line in enumerate(script.splitlines())
+        if line.strip().startswith("compose ")
+    ]
+    pull_index, pull = next(
+        (index, tokens)
+        for index, tokens in commands
+        if tokens[:2] == ["compose", "pull"]
+    )
+    start_index, start = next(
+        (index, tokens)
+        for index, tokens in commands
+        if tokens[:3] == ["compose", "up", "-d"] and "mysql" in tokens
+    )
+    migrate_index, migrate = next(
+        (index, tokens)
+        for index, tokens in commands
+        if tokens[:3] == ["compose", "run", "--rm"]
+    )
+
+    assert "redis" in pull[2:]
+    assert "redis" in start[3:]
+    assert migrate == ["compose", "run", "--rm", "migrate"]
+    assert pull_index < start_index < migrate_index
+
+
+def test_deploy_paths_require_redis_directory() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                'source "$1"; '
+                "AUTO_REIGN_DATA_DIR=/srv/data; "
+                "AUTO_REIGN_MYSQL_DIR=/srv/mysql; "
+                "AUTO_REIGN_QDRANT_DIR=/srv/qdrant; "
+                "AUTO_REIGN_BACKUP_DIR=/srv/backups; "
+                "ENV_FILE=/tmp/production.env; "
+                "unset AUTO_REIGN_REDIS_DIR; "
+                "require_deploy_paths"
+            ),
+            "deploy-path-test",
+            str(DEPLOY_DIR / "lib.sh"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": os.environ["PATH"]},
+    )
+
+    assert result.returncode != 0
+    assert "Set AUTO_REIGN_REDIS_DIR in /tmp/production.env" in result.stderr
 
 
 def test_release_workflow_publishes_main_as_an_explicit_version() -> None:
@@ -180,5 +316,6 @@ def _dotenv_values(path: Path) -> dict[str, str]:
             continue
         key, separator, value = line.partition("=")
         assert separator == "=", raw_line
+        assert key not in values, f"duplicate environment key: {key}"
         values[key] = value
     return values

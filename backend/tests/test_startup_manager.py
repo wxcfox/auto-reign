@@ -208,6 +208,50 @@ def test_wait_for_compose_service_health_retries_until_healthy(tmp_path, monkeyp
     )
 
 
+def test_dependency_lifecycle_includes_redis(tmp_path, monkeypatch) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        start_module,
+        "run_command",
+        lambda args, **_kwargs: commands.append(list(args)),
+    )
+
+    start_module.start_dependency_containers(tmp_path, {})
+    start_module.stop_dependency_containers(tmp_path, {})
+
+    assert commands[0][-4:] == ["mysql", "redis", "qdrant", "elasticsearch"]
+    assert commands[1][-4:] == ["mysql", "redis", "qdrant", "elasticsearch"]
+
+
+def test_wait_for_dependencies_checks_redis_tcp_and_health(tmp_path, monkeypatch) -> None:
+    tcp_targets: list[tuple[str, int]] = []
+    health_services: list[str] = []
+    monkeypatch.setattr(
+        start_module,
+        "wait_for_tcp",
+        lambda host, port, _timeout: tcp_targets.append((host, port)) or True,
+    )
+    monkeypatch.setattr(start_module, "wait_for_http", lambda *_args: True)
+    monkeypatch.setattr(
+        start_module,
+        "wait_for_compose_service_health",
+        lambda _root, service, _timeout, _env: health_services.append(service) or True,
+    )
+
+    start_module.wait_for_dependencies(
+        tmp_path,
+        {
+            "DATABASE_URL": "mysql+pymysql://user:pass@mysql.local:3307/app",
+            "REDIS_URL": "redis://redis.local:6380/0",
+            "QDRANT_URL": "http://qdrant.local:6333",
+            "ELASTICSEARCH_URL": "http://elasticsearch.local:9200",
+        },
+    )
+
+    assert tcp_targets == [("mysql.local", 3307), ("redis.local", 6380)]
+    assert health_services == ["mysql", "redis"]
+
+
 def test_start_stack_checks_ports_before_dependencies_and_migrations(tmp_path, monkeypatch) -> None:
     paths = start_module.RuntimePaths(root=tmp_path, pid_dir=tmp_path / ".pids", log_dir=tmp_path / "logs")
     env = {

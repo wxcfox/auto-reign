@@ -1,6 +1,6 @@
 # Knowledge Collection 数据流
 
-聊天附件、Agent Home 和 Knowledge 是三种不同来源：聊天附件绑定一条 User Message，并在该消息进入有界历史窗口时作为消息上下文；Agent Home 是可写、可演进的长期文件权威源，通过精确文件工具访问；Knowledge 是用户或管理员显式维护的只读参考资料，只有 Knowledge Document 会进入 Elasticsearch 或 Qdrant Retriever。
+聊天附件、Agent Home 和 Knowledge 是三种不同来源：聊天附件全量保存在 MySQL `subtask_contexts` 并绑定一条 User Subtask，在所属 Turn 进入有界历史时作为消息上下文；Agent Home 是可写、可演进的长期 ObjectStore 文件；Knowledge 是用户或管理员显式维护的只读参考资料，只有 Knowledge Document 会进入 Elasticsearch 或 Qdrant Retriever。
 
 本文是 Knowledge Collection、Knowledge Document、ObjectStore、索引 Worker、共享 Retriever 与聊天 Runtime 的当前数据流权威。通用资源、权限、Runtime 和预算边界见[通用 Agent 平台架构](workbench-architecture.md)。
 
@@ -84,6 +84,8 @@ Embedding 请求由 provider-compatible wrapper 逐个发送 chunk，每个 HTTP
 显式重新索引遵循 generation 去重：文档处于 `queued` 或未超时的 `processing` 时，重复请求返回当前任务，不创建新的 generation；processing 超过 `KNOWLEDGE_WORKER_PROCESSING_TIMEOUT_SECONDS` 后才允许新的 generation 接管。修改 chunk size 或 overlap 会为 active Document 创建新 generation 并排队重建；检索模式、Top K、阈值和 hybrid 权重只影响查询，不触发向量重建。Retriever 创建后不可修改。新的 generation 发布前，旧任务不能写入或发布其解析对象和 Retriever 投影。
 
 `index_generation` 同时隔离 MySQL 状态、parsed object 和 Retriever 记录，不只是一个展示字段。
+
+当前 splitter 按 Collection 配置的字符 `chunk_size` 与精确 `chunk_overlap` 产生有序、覆盖原文的 source range。未到文末时依次优先在段落、换行、中文句号、英文句号或空格处寻找不早于半个 chunk 的边界；找不到安全边界才在最大长度硬切。每个 chunk 保存 `chunk_index`、`source_start` 和 `source_end`，正文保持原文，不做 LLM 摘要或改写。
 
 `20260720_0005` 不兼容历史 Collection 检索配置或旧 Qdrant-only 投影。迁移会把历史 Collection 配置直接重置为 Elasticsearch、vector、默认 Top K、阈值、hybrid 权重和分块参数，并把所有历史 active Document 固定绑定到 Elasticsearch，清空旧 generation 的 parsed pointer、索引时间、失败与 attempt 状态，递增 `index_generation` 并改为 `queued`。Worker 随后从仍保留的 source object 重新解析并建立新投影；完成前 Document 不能以虚假的 `ready` 进入直接原文或 RAG。系统不双读旧配置或旧 Qdrant generation，也不把旧索引当作迁移来源。
 
@@ -186,7 +188,7 @@ Knowledge Tool audit 可以保存有界的 Collection、Document、文件名、g
 ## 与附件和 Agent Home 的关系
 
 ```text
-聊天附件 -> 所属 User Message 与有界历史窗口
+聊天附件 -> MySQL SubtaskContext、所属 User Subtask 与有界历史窗口
 聊天附件 -X-> Agent Home
 聊天附件 -X-> Knowledge Document
 聊天附件 -X-> Retriever
@@ -203,6 +205,6 @@ Knowledge Document -> Elasticsearch 或 Qdrant 可重建 chunk 投影
 
 ## Worker 与恢复边界
 
-索引 Worker 只把 `knowledge_documents` 持久状态作为领取、恢复与发布的权威。当前 Worker 与 SSE/取消运行在同一 FastAPI 进程，不使用内存队列、额外 Job 表、Redis、Celery 或独立 worker container。
+索引 Worker 只把 `knowledge_documents` 持久状态作为领取、恢复与发布的权威。当前 Worker 与 Task 执行运行在同一 FastAPI 进程，不使用额外 Job 表、Redis、Celery 或独立 worker container；聊天使用的 Redis 不参与 Knowledge 任务领取。
 
 进程退出不会丢失队列语义；重启从 MySQL 恢复安全工作。Elasticsearch 和 Qdrant 都可从 ObjectStore 与 MySQL 重建，不能成为恢复原文的来源。

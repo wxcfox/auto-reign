@@ -3,8 +3,18 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from fastapi import UploadFile
+
+
+def sanitize_filename(filename: str) -> str:
+    basename = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", basename).strip("._-")
+    safe_name = safe_name or "attachment"
+    if safe_name.lower() == "parsed.txt":
+        safe_name = f"source-{safe_name}"
+    return safe_name
 
 
 SUPPORTED_MIME_TYPES_BY_EXTENSION: dict[str, frozenset[str]] = {
@@ -20,6 +30,13 @@ SUPPORTED_MIME_TYPES_BY_EXTENSION: dict[str, frozenset[str]] = {
     ".webp": frozenset({"image/webp"}),
     ".gif": frozenset({"image/gif"}),
 }
+
+SUPPORTED_IMAGE_MIME_TYPES = frozenset(
+    mime_type
+    for extension, mime_types in SUPPORTED_MIME_TYPES_BY_EXTENSION.items()
+    if extension in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    for mime_type in mime_types
+)
 
 
 @dataclass(frozen=True)

@@ -15,6 +15,7 @@ from app.core.limits import MAX_PROVIDER_TOKEN_COUNT
 from app.core.model_providers import find_chat_provider
 from app.services.runtime_types import (
     ProviderCallMetrics,
+    ProviderReasoningDelta,
     RuntimeObserver,
     ToolCall,
     ToolDefinition,
@@ -48,7 +49,7 @@ class ModelService:
         call_index: int,
         observer: RuntimeObserver,
         tools: tuple[ToolDefinition, ...] | None = None,
-    ) -> Iterator[str | ToolCall]:
+    ) -> Iterator[str | ToolCall | ProviderReasoningDelta]:
         if isinstance(call_index, bool) or not isinstance(call_index, int) or call_index < 1:
             raise ValueError("provider call index must be a positive integer")
         if not callable(observer):
@@ -104,7 +105,20 @@ class ModelService:
                 for choice in self._field(chunk, "choices") or ():
                     delta = self._field(choice, "delta")
                     content = self._field(delta, "content")
-                    if isinstance(content, str) and content:
+                    reasoning_parts, text_parts = self._content_delta_parts(content)
+                    direct_reasoning = self._field(delta, "reasoning_content")
+                    if direct_reasoning is None:
+                        direct_reasoning = self._field(delta, "reasoning")
+                    if direct_reasoning is not None:
+                        if not isinstance(direct_reasoning, str):
+                            raise ValueError("invalid model reasoning delta")
+                        if direct_reasoning:
+                            reasoning_parts.insert(0, direct_reasoning)
+                    for reasoning in reasoning_parts:
+                        if first_token_latency_ms is None:
+                            first_token_latency_ms = self._elapsed_milliseconds(started)
+                        yield ProviderReasoningDelta(content=reasoning)
+                    for text in text_parts:
                         if tool_index is not None:
                             raise ValueError("mixed model stream")
                         if first_token_latency_ms is None:
@@ -112,9 +126,7 @@ class ModelService:
                                 started
                             )
                         yielded_text = True
-                        yield content
-                    elif content is not None and not isinstance(content, str):
-                        raise ValueError("invalid model content delta")
+                        yield text
 
                     tool_calls = self._field(delta, "tool_calls")
                     if tool_calls is None or tool_calls == []:
@@ -444,6 +456,38 @@ class ModelService:
         if not isinstance(fragment, str):
             raise ValueError("invalid model tool call fragment")
         parts.append(fragment)
+
+    @classmethod
+    def _content_delta_parts(
+        cls,
+        content: object,
+    ) -> tuple[list[str], list[str]]:
+        if content is None or content == "":
+            return [], []
+        if isinstance(content, str):
+            return [], [content]
+        if not isinstance(content, (list, tuple)):
+            raise ValueError("invalid model content delta")
+        reasoning: list[str] = []
+        text: list[str] = []
+        for block in content:
+            block_type = cls._field(block, "type")
+            if block_type == "reasoning":
+                value = cls._field(block, "reasoning")
+                if not isinstance(value, str):
+                    raise ValueError("invalid model reasoning delta")
+                if value:
+                    reasoning.append(value)
+                continue
+            if block_type in {"text", "output_text"}:
+                value = cls._field(block, "text")
+                if not isinstance(value, str):
+                    raise ValueError("invalid model content delta")
+                if value:
+                    text.append(value)
+                continue
+            raise ValueError("invalid model content delta")
+        return reasoning, text
 
     @staticmethod
     def _validate_content_block(block: object) -> dict[str, object]:

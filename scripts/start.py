@@ -19,6 +19,7 @@ from pathlib import Path
 
 PROJECT_NAME = "auto-reign"
 MYSQL_START_TIMEOUT = 60.0
+REDIS_START_TIMEOUT = 60.0
 QDRANT_START_TIMEOUT = 60.0
 ELASTICSEARCH_START_TIMEOUT = 90.0
 APP_START_TIMEOUT = 90.0
@@ -383,15 +384,17 @@ def run_command(
         hint = ""
         if list(args[:6]) == ["docker", "compose", "-p", PROJECT_NAME, "up", "-d"]:
             mysql_image = (env or {}).get("MYSQL_IMAGE", "mysql:8.4")
+            redis_image = (env or {}).get("REDIS_IMAGE", "redis:7.4-alpine")
             qdrant_image = (env or {}).get("QDRANT_IMAGE", "qdrant/qdrant:v1.17.0")
             elasticsearch_image = (env or {}).get(
                 "ELASTICSEARCH_IMAGE",
                 "docker.elastic.co/elasticsearch/elasticsearch:8.19.3",
             )
             hint = (
-                " If registry access is unstable, configure MYSQL_IMAGE, QDRANT_IMAGE, "
-                "and ELASTICSEARCH_IMAGE in .env, then retry. Current values: "
-                f"MYSQL_IMAGE={mysql_image}, QDRANT_IMAGE={qdrant_image}, "
+                " If registry access is unstable, configure MYSQL_IMAGE, REDIS_IMAGE, "
+                "QDRANT_IMAGE, and ELASTICSEARCH_IMAGE in .env, then retry. Current values: "
+                f"MYSQL_IMAGE={mysql_image}, REDIS_IMAGE={redis_image}, "
+                f"QDRANT_IMAGE={qdrant_image}, "
                 f"ELASTICSEARCH_IMAGE={elasticsearch_image}."
             )
         raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args)}{hint}")
@@ -441,6 +444,13 @@ def database_endpoint(database_url: str) -> tuple[str, int]:
     return parsed.hostname, parsed.port or 3306
 
 
+def redis_endpoint(redis_url: str) -> tuple[str, int]:
+    parsed = urllib.parse.urlparse(redis_url)
+    if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
+        raise RuntimeError("REDIS_URL must be a redis:// or rediss:// URL with a hostname")
+    return parsed.hostname, parsed.port or 6379
+
+
 def qdrant_ready_url(qdrant_url: str) -> str:
     return urllib.parse.urljoin(qdrant_url.rstrip("/") + "/", "readyz")
 
@@ -478,6 +488,7 @@ def start_dependency_containers(root: Path, env: MutableMapping[str, str]) -> No
             "up",
             "-d",
             "mysql",
+            "redis",
             "qdrant",
             "elasticsearch",
         ],
@@ -495,6 +506,7 @@ def stop_dependency_containers(root: Path, env: MutableMapping[str, str]) -> Non
             PROJECT_NAME,
             "stop",
             "mysql",
+            "redis",
             "qdrant",
             "elasticsearch",
         ],
@@ -505,6 +517,7 @@ def stop_dependency_containers(root: Path, env: MutableMapping[str, str]) -> Non
 
 def wait_for_dependencies(root: Path, env: MutableMapping[str, str]) -> None:
     database_url = env.get("DATABASE_URL", "")
+    redis_url = env.get("REDIS_URL", "")
     qdrant_url = env.get("QDRANT_URL", "")
     elasticsearch_url = env.get("ELASTICSEARCH_URL", "")
     mysql_host, mysql_port = database_endpoint(database_url)
@@ -512,6 +525,11 @@ def wait_for_dependencies(root: Path, env: MutableMapping[str, str]) -> None:
         raise RuntimeError(f"MySQL did not become reachable at {mysql_host}:{mysql_port}")
     if not wait_for_compose_service_health(root, "mysql", MYSQL_START_TIMEOUT, env):
         raise RuntimeError("MySQL did not report healthy status")
+    redis_host, redis_port = redis_endpoint(redis_url)
+    if not wait_for_tcp(redis_host, redis_port, REDIS_START_TIMEOUT):
+        raise RuntimeError(f"Redis did not become reachable at {redis_host}:{redis_port}")
+    if not wait_for_compose_service_health(root, "redis", REDIS_START_TIMEOUT, env):
+        raise RuntimeError("Redis did not report healthy status")
     ready_url = qdrant_ready_url(qdrant_url)
     if not wait_for_http(ready_url, QDRANT_START_TIMEOUT):
         raise RuntimeError(f"Qdrant did not become ready at {ready_url}")
@@ -701,10 +719,13 @@ def format_dependency_status(name: str, healthy: bool, target: str) -> str:
 
 def show_status(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     database_url = env.get("DATABASE_URL", "")
+    redis_url = env.get("REDIS_URL", "")
     qdrant_url = env.get("QDRANT_URL", "")
     elasticsearch_url = env.get("ELASTICSEARCH_URL", "")
     mysql_host, mysql_port = database_endpoint(database_url)
     mysql_healthy = wait_for_tcp(mysql_host, mysql_port, 1.0)
+    redis_host, redis_port = redis_endpoint(redis_url)
+    redis_healthy = wait_for_tcp(redis_host, redis_port, 1.0)
     qdrant_target = qdrant_ready_url(qdrant_url)
     qdrant_healthy = wait_for_http(qdrant_target, 1.0)
     elasticsearch_target = elasticsearch_ready_url(elasticsearch_url)
@@ -712,6 +733,7 @@ def show_status(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     backend = healthy_managed_state(backend_state_path(paths), backend_health_url)
     frontend = healthy_managed_state(frontend_state_path(paths), frontend_health_url)
     print(format_dependency_status("mysql", mysql_healthy, f"{mysql_host}:{mysql_port}"))
+    print(format_dependency_status("redis", redis_healthy, f"{redis_host}:{redis_port}"))
     print(format_dependency_status("qdrant", qdrant_healthy, qdrant_target))
     print(
         format_dependency_status(
@@ -761,6 +783,7 @@ def start_stack(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
             stop_managed_process_with_timeout(state_path)
         raise
     print(f"MySQL: ready on {database_endpoint(env['DATABASE_URL'])[0]}:{database_endpoint(env['DATABASE_URL'])[1]}")
+    print(f"Redis: ready on {redis_endpoint(env['REDIS_URL'])[0]}:{redis_endpoint(env['REDIS_URL'])[1]}")
     print(f"Qdrant: ready on {qdrant_ready_url(env['QDRANT_URL'])}")
     print(
         "Elasticsearch: ready on "

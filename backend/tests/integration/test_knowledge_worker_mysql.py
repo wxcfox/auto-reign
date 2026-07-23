@@ -40,10 +40,22 @@ def _disposable_url() -> str:
         or not url.database
         or url.database.casefold()
         in {"mysql", "sys", "information_schema", "performance_schema"}
+        or not url.database.casefold().endswith("_test")
         or url.database.casefold() == (default.database or "").casefold()
     ):
         pytest.fail("Knowledge Worker integration requires a disposable MySQL database")
     return url.render_as_string(hide_password=False)
+
+
+def test_knowledge_worker_guard_rejects_non_test_schema(monkeypatch) -> None:
+    monkeypatch.setenv("RUN_MYSQL_INTEGRATION", "1")
+    monkeypatch.setenv(
+        "MYSQL_RESOURCE_RACE_DATABASE_URL",
+        "mysql+pymysql://user:pass@127.0.0.1/production",
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="disposable"):
+        _disposable_url()
 
 
 @pytest.fixture

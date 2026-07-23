@@ -18,15 +18,18 @@ dependencies = [
     "pydantic-settings>=2.8.0",
     "pymysql>=1.1,<2",
     "pypdf>=6.13.3,<6.14",
+    "python-socketio>=5.10,<6",
     "python-multipart>=0.0.20",
     "pyyaml>=6.0.3",
     "qdrant-client>=1.17,<2",
+    "redis>=5.0.1,<7",
     "sqlalchemy>=2.0.0",
     "uvicorn[standard]>=0.34.0",
 ]
 
 [dependency-groups]
 dev = [
+    "aiohttp>=3.12,<4",
     "httpx2>=0.28.0",
     "pytest>=8.3.0",
     "ruff>=0.11.0",

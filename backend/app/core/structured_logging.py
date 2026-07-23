@@ -15,8 +15,6 @@ _STRUCTURED_STRING_FIELDS: Final = frozenset(
         "http_method",
         "http_path",
         "exception_type",
-        "conversation_id",
-        "message_id",
         "provider",
         "model",
         "error_code",
@@ -24,13 +22,25 @@ _STRUCTURED_STRING_FIELDS: Final = frozenset(
         "workspace_id",
         "collection_id",
         "document_id",
-        "attachment_id",
         "tool_name",
         "retrieval_mode",
         "provider_request_id",
+        "provider_status",
     }
 )
-_STRUCTURED_INTEGER_FIELDS: Final = frozenset({"status_code", "index_generation"})
+_STRUCTURED_INTEGER_FIELDS: Final = frozenset(
+    {
+        "status_code",
+        "task_id",
+        "subtask_id",
+        "message_id",
+        "context_id",
+        "index_generation",
+        "call_index",
+        "input_tokens",
+        "output_tokens",
+    }
+)
 _STRUCTURED_FLOAT_FIELDS: Final = frozenset({"duration_ms"})
 _STRUCTURED_FIELDS: Final = tuple(
     sorted(
@@ -78,7 +88,15 @@ def _safe_structured_value(field: str, value: object) -> object | None:
             return None
         if field == "status_code" and not 100 <= value <= 599:
             return None
+        if field in {"task_id", "subtask_id", "message_id", "context_id"} and not (
+            1 <= value <= 2**63 - 1
+        ):
+            return None
         if field == "index_generation" and not 1 <= value <= 2_147_483_647:
+            return None
+        if field == "call_index" and not 1 <= value <= 2_147_483_647:
+            return None
+        if field in {"input_tokens", "output_tokens"} and not 0 <= value <= 2**63 - 1:
             return None
         return value
     if field in _STRUCTURED_FLOAT_FIELDS:
@@ -123,8 +141,9 @@ class JsonFormatter(logging.Formatter):
             "logger": logger_name,
             "event": event,
         }
-        if record.exc_info is not None and record.exc_info[0] is not None:
-            raw_exception_type = record.exc_info[0].__name__
+        exc_info = record.exc_info
+        if isinstance(exc_info, tuple) and exc_info[0] is not None:
+            raw_exception_type = exc_info[0].__name__
             exception_type = (
                 raw_exception_type
                 if _SAFE_EXCEPTION_TYPE.fullmatch(raw_exception_type)

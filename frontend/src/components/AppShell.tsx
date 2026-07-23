@@ -35,12 +35,13 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
+import { useSocket } from "@/contexts/SocketContext";
 import { useTranslation } from "@/hooks/useTranslation";
-import { deleteConversation, getCurrentUser, listConversations, renameConversation } from "@/lib/api";
+import { deleteTask, getCurrentUser, listTasks, renameTask } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
-import { CONVERSATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
-import { MAX_CONVERSATION_TITLE_LENGTH } from "@/lib/limits";
-import type { ConversationHistoryItem, User } from "@/lib/types";
+import { TASKS_CHANGED_EVENT } from "@/lib/task-events";
+import { MAX_RESOURCE_NAME_LENGTH } from "@/lib/limits";
+import type { TaskHistoryItemResponse, User } from "@/lib/types";
 
 type AppShellProps = {
   children: ReactNode;
@@ -55,13 +56,13 @@ function stopHistoryMenuPointerDown(event: ReactPointerEvent<HTMLElement>) {
   event.nativeEvent.stopImmediatePropagation();
 }
 
-function isCurrentBrowserConversation(item: ConversationHistoryItem) {
+function isCurrentBrowserTask(item: TaskHistoryItemResponse) {
   if (typeof window === "undefined") {
     return false;
   }
   return (
     window.location.pathname === "/chat" &&
-    new URLSearchParams(window.location.search).get("session") === item.id
+    Number(new URLSearchParams(window.location.search).get("task")) === item.id
   );
 }
 
@@ -112,37 +113,38 @@ function writeSidebarCollapsed(collapsed: boolean) {
 export function AppShell({ children }: AppShellProps) {
   const currentPath = usePathname();
   const router = useRouter();
+  const { registerHandlers } = useSocket();
   const { changeLanguage, getCurrentLanguage, t } = useTranslation("common");
-  const [conversations, setConversations] = useState<ConversationHistoryItem[]>([]);
-  const [historyMenuKey, setHistoryMenuKey] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<TaskHistoryItemResponse[]>([]);
+  const [historyMenuKey, setHistoryMenuKey] = useState<number | null>(null);
   const [historyActionError, setHistoryActionError] = useState<string | null>(null);
-  const [historyActionPendingKey, setHistoryActionPendingKey] = useState<string | null>(null);
-  const [renamingConversation, setRenamingConversation] =
-    useState<ConversationHistoryItem | null>(null);
+  const [historyActionPendingKey, setHistoryActionPendingKey] = useState<number | null>(null);
+  const [renamingTask, setRenamingTask] =
+    useState<TaskHistoryItemResponse | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [darkMode, setDarkMode] = useState(readPreferredDarkMode);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
-  const conversationRefreshId = useRef(0);
+  const taskRefreshId = useRef(0);
   const mountedRef = useRef(false);
   const isAuthPage = currentPath === "/login" || currentPath === "/setup";
 
-  const refreshConversations = useCallback(async () => {
+  const refreshTasks = useCallback(async () => {
     if (isAuthPage) {
-      setConversations([]);
+      setTasks([]);
       return;
     }
-    const refreshId = conversationRefreshId.current + 1;
-    conversationRefreshId.current = refreshId;
+    const refreshId = taskRefreshId.current + 1;
+    taskRefreshId.current = refreshId;
     try {
-      const response = await listConversations();
-      if (mountedRef.current && refreshId === conversationRefreshId.current) {
-        setConversations(response.conversations);
+      const response = await listTasks();
+      if (mountedRef.current && refreshId === taskRefreshId.current) {
+        setTasks(response.tasks);
       }
     } catch {
-      if (mountedRef.current && refreshId === conversationRefreshId.current) {
-        setConversations([]);
+      if (mountedRef.current && refreshId === taskRefreshId.current) {
+        setTasks([]);
       }
     }
   }, [isAuthPage]);
@@ -150,24 +152,32 @@ export function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     mountedRef.current = true;
     if (isAuthPage) {
-      conversationRefreshId.current += 1;
-      setConversations([]);
+      taskRefreshId.current += 1;
+      setTasks([]);
       setCurrentUser(null);
       return () => {
         mountedRef.current = false;
       };
     }
 
-    void refreshConversations();
-    const handleConversationsChanged = () => {
-      void refreshConversations();
+    void refreshTasks();
+    const handleTasksChanged = () => {
+      void refreshTasks();
     };
-    window.addEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
+    window.addEventListener(TASKS_CHANGED_EVENT, handleTasksChanged);
     return () => {
       mountedRef.current = false;
-      window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
+      window.removeEventListener(TASKS_CHANGED_EVENT, handleTasksChanged);
     };
-  }, [isAuthPage, refreshConversations]);
+  }, [isAuthPage, refreshTasks]);
+
+  useEffect(() => {
+    if (isAuthPage) return;
+    return registerHandlers({
+      "task:created": () => void refreshTasks(),
+      "task:status": () => void refreshTasks(),
+    });
+  }, [isAuthPage, refreshTasks, registerHandlers]);
 
   useEffect(() => {
     if (isAuthPage) {
@@ -247,36 +257,36 @@ export function AppShell({ children }: AppShellProps) {
         ]
       : [];
 
-  function openRenameDialog(item: ConversationHistoryItem, title: string) {
+  function openRenameDialog(item: TaskHistoryItemResponse, title: string) {
     setHistoryActionError(null);
     setHistoryMenuKey(null);
-    setRenamingConversation(item);
+    setRenamingTask(item);
     setRenameValue(title);
   }
 
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!renamingConversation || historyActionPendingKey !== null) {
+    if (!renamingTask || historyActionPendingKey !== null) {
       return;
     }
     const title = renameValue.trim();
     if (!title) {
       return;
     }
-    const pendingKey = renamingConversation.id;
+    const pendingKey = renamingTask.id;
     setHistoryActionPendingKey(pendingKey);
     setHistoryActionError(null);
     try {
-      const renamedConversation = await renameConversation(renamingConversation.id, title);
+      const renamedTask = await renameTask(renamingTask.id, title);
       if (!mountedRef.current) {
         return;
       }
-      setConversations((current) =>
-        current.map((conversation) =>
-          conversation.id === pendingKey ? renamedConversation : conversation,
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === pendingKey ? renamedTask : task,
         ),
       );
-      setRenamingConversation(null);
+      setRenamingTask(null);
       setRenameValue("");
     } catch {
       if (mountedRef.current) {
@@ -289,27 +299,27 @@ export function AppShell({ children }: AppShellProps) {
     }
   }
 
-  async function handleDeleteConversation(item: ConversationHistoryItem, title: string) {
+  async function handleDeleteTask(item: TaskHistoryItemResponse, title: string) {
     setHistoryMenuKey(null);
-    const confirmed = window.confirm(t("actions.delete_conversation_confirm", { title }));
+    const confirmed = window.confirm(t("actions.delete_task_confirm", { title }));
     if (!confirmed || historyActionPendingKey !== null) {
       return;
     }
-    const deletingCurrentConversation = isCurrentBrowserConversation(item);
+    const deletingCurrentTask = isCurrentBrowserTask(item);
     setHistoryActionPendingKey(item.id);
     setHistoryActionError(null);
     try {
-      await deleteConversation(item.id);
+      await deleteTask(item.id);
       if (!mountedRef.current) {
         return;
       }
-      setConversations((current) =>
-        current.filter((conversation) => conversation.id !== item.id),
+      setTasks((current) =>
+        current.filter((task) => task.id !== item.id),
       );
-      if (deletingCurrentConversation) {
+      if (deletingCurrentTask) {
         router.replace("/chat");
       }
-      await refreshConversations();
+      await refreshTasks();
     } catch {
       if (mountedRef.current) {
         setHistoryActionError(t("errors.generic_save"));
@@ -373,11 +383,11 @@ export function AppShell({ children }: AppShellProps) {
           {historyActionError ? (
             <p className="sidebar-history-error" role="alert">{historyActionError}</p>
           ) : null}
-          {conversations.length === 0 ? (
+          {tasks.length === 0 ? (
             <p className="sidebar-history-empty">{t("nav.empty_history")}</p>
           ) : null}
-          {conversations.map((item) => {
-            const title = item.title || t("nav.untitled_session");
+          {tasks.map((item) => {
+            const title = item.name || t("nav.untitled_task");
             const menuOpen = historyMenuKey === item.id;
             const pending = historyActionPendingKey === item.id;
             return (
@@ -390,10 +400,18 @@ export function AppShell({ children }: AppShellProps) {
                 >
                   <MessageSquareText size={16} aria-hidden="true" />
                   <span className="sidebar-label">{title}</span>
+                  {item.status === "PENDING" || item.status === "RUNNING" ? (
+                    <span
+                      aria-label={t("states.task_running")}
+                      className="sidebar-task-status"
+                      data-status={item.status}
+                      role="status"
+                    />
+                  ) : null}
                 </Link>
                 <button
                   aria-expanded={menuOpen}
-                  aria-label={t("actions.conversation_actions", { title })}
+                  aria-label={t("actions.task_actions", { title })}
                   className="sidebar-history-action"
                   data-history-menu-surface="true"
                   disabled={pending}
@@ -417,16 +435,16 @@ export function AppShell({ children }: AppShellProps) {
                   >
                     <button onClick={() => openRenameDialog(item, title)} role="menuitem" type="button">
                       <PencilLine size={15} aria-hidden="true" />
-                      <span>{t("actions.rename_conversation")}</span>
+                      <span>{t("actions.rename_task")}</span>
                     </button>
                     <button
                       className="sidebar-history-menu-danger"
-                      onClick={() => void handleDeleteConversation(item, title)}
+                      onClick={() => void handleDeleteTask(item, title)}
                       role="menuitem"
                       type="button"
                     >
                       <Trash2 size={15} aria-hidden="true" />
-                      <span>{t("actions.delete_conversation")}</span>
+                      <span>{t("actions.delete_task")}</span>
                     </button>
                   </div>
                 ) : null}
@@ -480,24 +498,24 @@ export function AppShell({ children }: AppShellProps) {
         </div>
       </aside>
       <main className="app-main">{children}</main>
-      {renamingConversation ? (
+      {renamingTask ? (
         <div className="dialog-backdrop">
           <form
-            aria-labelledby="rename-conversation-title"
+            aria-labelledby="rename-task-title"
             aria-modal="true"
-            className="dialog-panel rename-conversation-dialog"
+            className="dialog-panel rename-task-dialog"
             onSubmit={handleRenameSubmit}
             role="dialog"
           >
             <div className="dialog-heading">
-              <h2 id="rename-conversation-title">{t("actions.rename_conversation")}</h2>
-              <p>{t("actions.rename_conversation_description")}</p>
+              <h2 id="rename-task-title">{t("actions.rename_task")}</h2>
+              <p>{t("actions.rename_task_description")}</p>
             </div>
-            <label htmlFor="rename-conversation-input">{t("actions.conversation_name")}</label>
+            <label htmlFor="rename-task-input">{t("actions.task_name")}</label>
             <input
               autoFocus
-              id="rename-conversation-input"
-              maxLength={MAX_CONVERSATION_TITLE_LENGTH}
+              id="rename-task-input"
+              maxLength={MAX_RESOURCE_NAME_LENGTH}
               onChange={(event) => setRenameValue(event.target.value)}
               value={renameValue}
             />
@@ -509,7 +527,7 @@ export function AppShell({ children }: AppShellProps) {
                 className="button"
                 onClick={() => {
                   setHistoryActionError(null);
-                  setRenamingConversation(null);
+                  setRenamingTask(null);
                   setRenameValue("");
                 }}
                 type="button"

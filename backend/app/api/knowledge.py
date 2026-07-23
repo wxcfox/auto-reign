@@ -28,7 +28,6 @@ from app.schemas.knowledge import (
     KnowledgeDocumentResponse,
 )
 from app.schemas.resources import ResourceId
-from app.services.attachment_service import sanitize_filename
 from app.services.extraction_service import DOCX_MIME_TYPE
 from app.services.knowledge_document_service import (
     InactiveDocumentCleanup,
@@ -38,6 +37,7 @@ from app.services.knowledge_document_service import (
 from app.services.upload_validation_service import (
     UploadPolicy,
     UploadValidationError,
+    sanitize_filename,
 )
 from app.storage.object_store import (
     ObjectConflict,
