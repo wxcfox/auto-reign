@@ -3,14 +3,14 @@ import type { TFunction } from "i18next";
 import { ApiError } from "@/lib/api-error";
 
 const ERROR_CODE_KEYS: Record<string, string> = {
-  agent_required: "chat:errors.agent_required",
   agent_unavailable: "chat:errors.agent_unavailable",
-  agent_locked: "chat:errors.agent_locked",
   chat_message_empty: "chat:errors.chat_message_empty",
   context_too_large: "chat:errors.context_too_large",
-  conversation_not_found: "chat:errors.conversation_not_found",
-  generation_in_progress: "chat:errors.generation_in_progress",
-  message_not_found: "chat:errors.message_not_found",
+  context_not_found: "chat:errors.context_not_found",
+  context_not_ready: "chat:errors.context_not_ready",
+  task_not_found: "chat:errors.task_not_found",
+  task_running: "chat:errors.task_running",
+  subtask_not_found: "chat:errors.subtask_not_found",
   model_override_not_allowed: "chat:errors.model_override_not_allowed",
   model_unavailable: "chat:errors.model_unavailable",
   provider_call_failed: "chat:errors.provider_call_failed",
@@ -23,10 +23,6 @@ const ERROR_CODE_KEYS: Record<string, string> = {
   extraction_empty: "chat:errors.extraction_empty",
   extraction_too_large: "chat:errors.extraction_too_large",
   extraction_unsupported: "chat:errors.extraction_unsupported",
-  attachment_not_found: "chat:errors.attachment_not_found",
-  attachment_not_ready: "chat:errors.attachment_not_ready",
-  attachment_unavailable: "chat:errors.attachment_unavailable",
-  attachment_corrupt: "chat:errors.attachment_corrupt",
 };
 
 export function getErrorMessage(

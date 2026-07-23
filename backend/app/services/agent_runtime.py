@@ -4,7 +4,6 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from app.services.agent_home_service import AgentHomeService, WorkspaceUnavailable
-from app.services.attachment_runtime_loader import AttachmentRuntimeLoader
 from app.services.context_assembler import ContextAssembler, ContextSelection
 from app.services.model_service import ModelService
 from app.services.platform_prompt_service import PlatformPromptService
@@ -12,19 +11,17 @@ from app.services.react_loop import ReactLoop
 from app.services.runtime_types import (
     CapabilityContext,
     CapabilityProvider,
+    RuntimeEvent,
     RuntimeObserver,
     RuntimeTerminalError,
-    RuntimeConversationTurn,
+    RuntimeTaskTurn,
     ToolDefinition,
-    ToolResult,
 )
 from app.services.token_counter import RuntimeTokenCounter
 from app.services.tool_registry import ToolRegistry, ToolRegistrySnapshot
 
 
-_RESERVED_PROMPT_MODULES = frozenset(
-    (*PlatformPromptService.BASE_MODULES, "attachments")
-)
+_RESERVED_PROMPT_MODULES = frozenset(PlatformPromptService.BASE_MODULES)
 
 
 @dataclass(frozen=True)
@@ -33,7 +30,7 @@ class RuntimeTurn:
     agent_prompt: str
     provider: str
     model: str
-    turns: tuple[RuntimeConversationTurn, ...]
+    turns: tuple[RuntimeTaskTurn, ...]
 
 
 @dataclass(frozen=True)
@@ -42,7 +39,7 @@ class PreparedRuntimeTurn:
     agent_prompt: str
     provider: str
     model: str
-    turns: tuple[RuntimeConversationTurn, ...]
+    turns: tuple[RuntimeTaskTurn, ...]
     tool_registry: ToolRegistrySnapshot
 
 
@@ -52,7 +49,6 @@ class AgentRuntime:
         *,
         model_service: ModelService,
         prompt_service: PlatformPromptService,
-        attachment_loader: AttachmentRuntimeLoader,
         context_assembler: ContextAssembler,
         agent_home: AgentHomeService,
         token_counter: RuntimeTokenCounter,
@@ -64,7 +60,6 @@ class AgentRuntime:
         if context_assembler.token_counter is not token_counter:
             raise ValueError("runtime and context assembler must share one token counter")
         self.prompt_service = prompt_service
-        self.attachment_loader = attachment_loader
         self.context_assembler = context_assembler
         self.agent_home = agent_home
         self.tool_result_token_reserve = tool_result_token_reserve
@@ -107,7 +102,7 @@ class AgentRuntime:
         turn: PreparedRuntimeTurn,
         *,
         observer: RuntimeObserver,
-    ) -> Iterator[str | ToolResult]:
+    ) -> Iterator[RuntimeEvent]:
         agents_md: str | None = None
         home = turn.context.agent_config.home_workspace
         if home is not None:
@@ -133,14 +128,7 @@ class AgentRuntime:
             definitions=turn.tool_registry.definitions,
             agents_md=agents_md,
         )
-        attachments = {}
-        for conversation_turn in selection.turns:
-            for ref in conversation_turn.user.attachment_refs:
-                attachments[ref.id] = self.attachment_loader.load(ref)
-        messages = self.context_assembler.render_selected(
-            selection,
-            attachments=attachments,
-        )
+        messages = self.context_assembler.render_selected(selection)
 
         yield from self.react_loop.stream(
             messages,
@@ -156,7 +144,7 @@ class AgentRuntime:
         *,
         context: CapabilityContext,
         agent_prompt: str,
-        turns: tuple[RuntimeConversationTurn, ...],
+        turns: tuple[RuntimeTaskTurn, ...],
         provider_modules: tuple[str, ...],
         definitions: tuple[ToolDefinition, ...],
         agents_md: str | None,
@@ -164,15 +152,9 @@ class AgentRuntime:
         base_platform_prompt = self.prompt_service.build_platform_prompt(
             extra_modules=provider_modules,
         )
-        attachment_platform_prompt = None
-        if any(turn.user.attachment_refs for turn in turns):
-            attachment_platform_prompt = self.prompt_service.build_platform_prompt(
-                extra_modules=(*provider_modules, "attachments"),
-            )
         return self.context_assembler.select_turns(
             history=turns,
             base_system_prompt=base_platform_prompt,
-            attachment_system_prompt=attachment_platform_prompt,
             agent_prompt=agent_prompt,
             agents_md=agents_md,
             tool_definitions=definitions,

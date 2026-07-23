@@ -88,6 +88,10 @@ def _disposable_mysql_url() -> URL:
         "sys",
     }:
         pytest.fail("MYSQL_RESOURCE_RACE_DATABASE_URL must not name a system database")
+    if not url.database.casefold().endswith("_test"):
+        pytest.fail(
+            "MYSQL_RESOURCE_RACE_DATABASE_URL database name must end with _test"
+        )
     try:
         default_url = make_url(Settings(_env_file=None).database_url)
     except ArgumentError as error:
@@ -109,6 +113,17 @@ def test_integration_flag_requires_explicit_disposable_url(monkeypatch) -> None:
     monkeypatch.delenv("MYSQL_RESOURCE_RACE_DATABASE_URL", raising=False)
 
     with pytest.raises(pytest.fail.Exception, match="explicit disposable"):
+        _disposable_mysql_url()
+
+
+def test_knowledge_reference_guard_rejects_non_test_schema(monkeypatch) -> None:
+    monkeypatch.setenv("RUN_MYSQL_INTEGRATION", "1")
+    monkeypatch.setenv(
+        "MYSQL_RESOURCE_RACE_DATABASE_URL",
+        "mysql+pymysql://user:pass@127.0.0.1/production",
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="end with _test"):
         _disposable_mysql_url()
 
 

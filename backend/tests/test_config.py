@@ -94,6 +94,37 @@ def test_runtime_limits_are_explicit_and_bounded() -> None:
         Settings(_env_file=None, runtime_max_tool_rounds=17)
 
 
+def test_chat_realtime_defaults_and_bounds_are_explicit() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.redis_url == "redis://127.0.0.1:16379/0"
+    assert settings.chat_stream_ttl_seconds == 3600
+    assert settings.chat_stream_key_prefix == "auto_reign:chat"
+    assert settings.socketio_ping_interval_seconds == 25
+    assert settings.socketio_ping_timeout_seconds == 20
+
+    for field, value in (
+        ("chat_stream_ttl_seconds", 59),
+        ("chat_stream_ttl_seconds", 86_401),
+        ("socketio_ping_interval_seconds", 4),
+        ("socketio_ping_timeout_seconds", 121),
+        ("chat_stream_key_prefix", ""),
+        ("chat_stream_key_prefix", "   "),
+        ("chat_stream_key_prefix", "x" * 201),
+    ):
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None, **{field: value})
+
+
+@pytest.mark.parametrize(
+    "redis_url",
+    ["redis+cluster://localhost:6379/0", "http://localhost:6379", "redis:///0"],
+)
+def test_chat_realtime_rejects_non_standalone_redis_urls(redis_url: str) -> None:
+    with pytest.raises(ValidationError, match="Redis Cluster URLs are unsupported"):
+        Settings(_env_file=None, redis_url=redis_url)
+
+
 def test_object_store_defaults_are_local_and_bounded_for_development(
     tmp_path: Path,
 ) -> None:

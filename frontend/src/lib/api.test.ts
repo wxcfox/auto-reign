@@ -9,50 +9,47 @@ import {
   createWorkspace,
   createWorkspaceFile,
   deleteAgent,
-  deleteAttachmentDraft,
-  deleteConversation,
   deleteKnowledgeCollection,
   deleteKnowledgeDocument,
+  deleteSubtaskContextDraft,
+  deleteTask,
   deleteWorkspace,
   deleteWorkspaceFile,
   getAgent,
-  getConversation,
+  getTask,
   getWorkspace,
   listAdminUsers,
-  listAttachmentDrafts,
   listAgents,
-  listConversations,
   listKnowledgeCollections,
   listKnowledgeDocuments,
+  listSubtaskContextDrafts,
+  listTasks,
   listWorkspaceFiles,
   listWorkspaces,
-  renameConversation,
-  readAttachmentContent,
+  readSubtaskContextContent,
   readWorkspaceFile,
   reindexKnowledgeDocument,
   resetAdminUserPassword,
-  sendConversationStream,
+  renameTask,
   setAdminUserStatus,
-  setConversationModel,
+  setTaskModel,
   setupAdminPassword,
   updateAgent,
   updateKnowledgeCollection,
   updateWorkspace,
-  uploadAttachment,
+  uploadSubtaskContext,
   uploadKnowledgeDocument,
   writeWorkspaceFile,
 } from "@/lib/api";
 import { getAuthToken, setAuthToken } from "@/lib/auth";
 import type {
-  AcceptedGeneration,
   Agent,
-  Attachment,
   AuthTokenResponse,
-  ConversationStreamResult,
   KnowledgeCollection,
   KnowledgeDocument,
   ModelRef,
   ResourceWriteRequest,
+  SubtaskContextBrief,
   Workspace,
   WorkspaceConfig,
   WorkspaceScope,
@@ -91,10 +88,14 @@ const knowledgeCollectionFixture: KnowledgeCollection = {
   scope: "private",
   can_manage: true,
   config: {
+    retriever_type: "elasticsearch",
+    retrieval_mode: "hybrid",
     chunk_size: 900,
     chunk_overlap: 120,
     top_k: 8,
-    score_threshold: null,
+    score_threshold: 0.2,
+    vector_weight: 0.7,
+    keyword_weight: 0.3,
   },
   is_active: true,
   created_at: "2026-07-13T00:00:00Z",
@@ -116,21 +117,6 @@ const knowledgeDocumentFixture: KnowledgeDocument = {
   created_at: "2026-07-13T00:00:00Z",
   updated_at: "2026-07-13T00:00:00Z",
 };
-
-function streamResponse(body: string) {
-  return new Response(
-    new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(body));
-        controller.close();
-      },
-    }),
-    {
-      headers: { "Content-Type": "text/event-stream" },
-      status: 200,
-    },
-  );
-}
 
 describe("core API contracts", () => {
   beforeEach(() => {
@@ -551,101 +537,56 @@ describe("core API contracts", () => {
     );
   });
 
-  it("uses the unified conversation endpoints for list, detail, rename, and delete", async () => {
+  it("uses the Task endpoints for list, detail, rename, and 204 delete", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ conversations: [] }))
-      .mockResolvedValueOnce(Response.json({ id: "conversation-1" }))
-      .mockResolvedValueOnce(Response.json({ id: "conversation-1", title: "Renamed" }))
-      .mockResolvedValueOnce(Response.json({ id: "conversation-1", status: "deleted" }));
+      .mockResolvedValueOnce(Response.json({ tasks: [] }))
+      .mockResolvedValueOnce(Response.json({ id: 7 }))
+      .mockResolvedValueOnce(Response.json({ id: 7, name: "Renamed" }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await listConversations();
-    await getConversation("conversation-1");
-    await renameConversation("conversation-1", "Renamed");
-    await deleteConversation("conversation-1");
+    await listTasks();
+    await getTask(7);
+    await renameTask(7, "Renamed");
+    await expect(deleteTask(7)).resolves.toBeUndefined();
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/conversations");
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/conversations/conversation-1");
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/conversations/conversation-1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/tasks");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/tasks/7");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/tasks/7");
     expect(fetchMock.mock.calls[2][1]).toEqual(
-      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ title: "Renamed" }) }),
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Renamed" }) }),
     );
-    expect(fetchMock.mock.calls[3][0]).toBe("/api/conversations/conversation-1");
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/tasks/7");
     expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({ method: "DELETE" }));
   });
 
-  it("updates a conversation model override with a dynamic provider", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: "conversation-1" }));
+  it("sets and clears a Task model override with the exact body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: 7 }))
+      .mockResolvedValueOnce(Response.json({ id: 7 }));
     vi.stubGlobal("fetch", fetchMock);
     const modelOverride: ModelRef = {
       provider: "local-runtime",
       model: "custom-chat",
     };
 
-    await setConversationModel("conversation-1", modelOverride);
+    await setTaskModel(7, modelOverride);
+    await setTaskModel(7, null);
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/conversations/conversation-1/model");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/tasks/7/model");
     expect(fetchMock.mock.calls[0][1]).toEqual(
       expect.objectContaining({
         method: "PUT",
         body: JSON.stringify({ model_override: modelOverride }),
       }),
     );
-  });
-
-  it("clears a conversation model override with an explicit null", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: "conversation-1" }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await setConversationModel("conversation-1", null);
-
-    expect(fetchMock.mock.calls[0][1]).toEqual(
+    expect(fetchMock.mock.calls[1][1]).toEqual(
       expect.objectContaining({
         method: "PUT",
         body: JSON.stringify({ model_override: null }),
       }),
     );
-  });
-
-  it("streams through the unified conversation endpoint", async () => {
-    setAuthToken("token-1");
-    const result: ConversationStreamResult = {
-      conversation_id: "conversation-1",
-      message: {
-        id: "message-1",
-        role: "assistant",
-        status: "completed",
-        content: "Hello",
-        attachments: [],
-        provider: "local-runtime",
-        model: "custom-chat",
-        created_at: "2026-07-13T00:00:00Z",
-        updated_at: "2026-07-13T00:00:01Z",
-        metadata: {},
-      },
-    };
-    const fetchMock = vi.fn().mockResolvedValue(
-      streamResponse(
-        `event: delta\ndata: {"text":"Hel"}\n\nevent: result\ndata: ${JSON.stringify(result)}\n\n`,
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const onDelta = vi.fn();
-    const payload = {
-      text: "Say hello",
-      agent_id: "agent-1",
-      model_override: { provider: "local-runtime", model: "custom-chat" },
-    };
-
-    await expect(sendConversationStream(payload, { onDelta })).resolves.toEqual(result);
-
-    expect(onDelta).toHaveBeenCalledWith("Hel");
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/conversations/stream");
-    expect(fetchMock.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ method: "POST", body: JSON.stringify(payload) }),
-    );
-    const headers = fetchMock.mock.calls[0][1].headers as Headers;
-    expect(headers.get("Authorization")).toBe("Bearer token-1");
   });
 
   it("clears stale tokens and redirects private pages on unauthorized responses", async () => {
@@ -670,29 +611,40 @@ describe("core API contracts", () => {
     expect(window.location.pathname).toBe("/login");
   });
 
-  it("uses authenticated attachment endpoints without forcing a multipart content type", async () => {
-    setAuthToken("token-attachment");
-    const attachment: Attachment = {
-      id: "attachment-1",
-      filename: "notes.txt",
+  it("uses authenticated SubtaskContext endpoints and preserves blob response headers", async () => {
+    setAuthToken("token-context");
+    const context: SubtaskContextBrief = {
+      id: 11,
+      context_type: "attachment",
+      name: "notes.txt",
+      status: "ready",
       mime_type: "text/plain",
-      size_bytes: 3,
-      message_id: null,
-      created_at: "2026-07-13T00:00:00Z",
+      file_extension: ".txt",
+      file_size: 3,
+      text_length: 3,
+      type_data: {},
     };
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json(attachment, { status: 201 }))
-      .mockResolvedValueOnce(Response.json({ items: [attachment] }))
+      .mockResolvedValueOnce(Response.json(context, { status: 201 }))
+      .mockResolvedValueOnce(Response.json({ items: [context] }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(new Response("abc", { status: 200 }));
+      .mockResolvedValueOnce(
+        new Response("abc", {
+          status: 200,
+          headers: {
+            "Content-Type": "text/plain",
+            "Content-Disposition": "attachment; filename=notes.txt",
+          },
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      uploadAttachment(new File(["abc"], "notes.txt", { type: "text/plain" })),
-    ).resolves.toEqual(attachment);
-    await expect(listAttachmentDrafts()).resolves.toEqual([attachment]);
-    await expect(deleteAttachmentDraft("attachment-1")).resolves.toBeUndefined();
-    const content = await readAttachmentContent("attachment-1", "attachment");
+      uploadSubtaskContext(new File(["abc"], "notes.txt", { type: "text/plain" })),
+    ).resolves.toEqual(context);
+    await expect(listSubtaskContextDrafts()).resolves.toEqual([context]);
+    await expect(deleteSubtaskContextDraft(11)).resolves.toBeUndefined();
+    const content = await readSubtaskContextContent(11, "attachment");
     expect(content.size).toBe(3);
     expect(content.type).toMatch(/^text\/plain(?:;|$)/);
 
@@ -701,23 +653,23 @@ describe("core API contracts", () => {
     expect((uploadInit.headers as Headers).get("Content-Type")).toBeNull();
     for (const call of fetchMock.mock.calls) {
       expect((call[1].headers as Headers).get("Authorization")).toBe(
-        "Bearer token-attachment",
+        "Bearer token-context",
       );
     }
     expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-      "/api/attachments",
-      "/api/attachments/drafts",
-      "/api/attachments/attachment-1",
-      "/api/attachments/attachment-1/content?disposition=attachment",
+      "/api/subtask-contexts/attachments",
+      "/api/subtask-contexts/drafts",
+      "/api/subtask-contexts/11",
+      "/api/subtask-contexts/11/content?disposition=attachment",
     ]);
   });
 
-  it("keeps a newer identity across late upload, delete, and blob 401 responses", async () => {
+  it("keeps a newer identity across late context upload, delete, and blob 401 responses", async () => {
     window.history.replaceState(null, "", "/chat");
     const operations: Array<() => Promise<unknown>> = [
-      () => uploadAttachment(new File(["abc"], "notes.txt", { type: "text/plain" })),
-      () => deleteAttachmentDraft("attachment-1"),
-      () => readAttachmentContent("attachment-1", "inline"),
+      () => uploadSubtaskContext(new File(["abc"], "notes.txt", { type: "text/plain" })),
+      () => deleteSubtaskContextDraft(11),
+      () => readSubtaskContextContent(11, "inline"),
     ];
 
     for (const [index, operation] of operations.entries()) {
@@ -865,97 +817,6 @@ describe("core API contracts", () => {
     expect(window.location.pathname).toBe("/setup");
   });
 
-  it("preserves structured SSE error codes as ApiError", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse(
-          'event: error\ndata: {"code":"provider_invalid_response","message":"Bad model response","status_code":502,"conversation_id":"conversation-1","assistant_message_id":"message-2"}\n\n',
-        ),
-      ),
-    );
-
-    await expect(
-      sendConversationStream(
-        { text: "Hello", agent_id: "agent-1" },
-        { onDelta: vi.fn() },
-      ),
-    ).rejects.toMatchObject({
-      code: "provider_invalid_response",
-      conversationId: "conversation-1",
-      message: "Bad model response",
-      assistantMessageId: "message-2",
-      name: "ApiError",
-      status: 502,
-    } satisfies Partial<ApiError>);
-  });
-
-  it("parses a retry accepted receipt with a null user id and no attachments", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse(
-          'event: accepted\ndata: {"conversation_id":"conversation-1","user_message_id":null,"assistant_message_id":"retry-2","attachment_ids":[]}\n\nevent: result\ndata: {"conversation_id":"conversation-1","message":{"id":"retry-2"}}\n\n',
-        ),
-      ),
-    );
-    const receipts: AcceptedGeneration[] = [];
-
-    await sendConversationStream(
-      { text: "retry parser fixture", conversation_id: "conversation-1" },
-      { onAccepted: (value) => receipts.push(value), onDelta: vi.fn() },
-    );
-
-    expect(receipts).toEqual([
-      {
-        conversation_id: "conversation-1",
-        user_message_id: null,
-        assistant_message_id: "retry-2",
-        attachment_ids: [],
-      },
-    ]);
-  });
-
-  it("rejects malformed accepted receipts before processing deltas", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse(
-          'event: accepted\ndata: {"conversation_id":"conversation-1","user_message_id":"","assistant_message_id":"message-2","attachment_ids":[]}\n\nevent: delta\ndata: {"text":"unsafe"}\n\n',
-        ),
-      ),
-    );
-    const onDelta = vi.fn();
-
-    await expect(
-      sendConversationStream({ text: "Hello" }, { onDelta }),
-    ).rejects.toThrow("Streaming accepted receipt was invalid");
-    expect(onDelta).not.toHaveBeenCalled();
-  });
-
-  it("leaves contextual identifiers unset for pre-prepare SSE errors", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse(
-          'event: error\ndata: {"code":"agent_required","message":"Agent is required","status_code":400}\n\n',
-        ),
-      ),
-    );
-
-    const request = sendConversationStream({ text: "Hello" }, { onDelta: vi.fn() });
-
-    await expect(request).rejects.toMatchObject({
-      code: "agent_required",
-      message: "Agent is required",
-      name: "ApiError",
-      status: 400,
-    } satisfies Partial<ApiError>);
-    await request.catch((error: ApiError) => {
-      expect(error.conversationId).toBeUndefined();
-      expect(error.assistantMessageId).toBeUndefined();
-    });
-  });
 });
 
 function jwtWithExpiration(exp: number) {

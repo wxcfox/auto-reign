@@ -1,12 +1,12 @@
-import json
 import os
 from pathlib import Path
-from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 import pytest
-from sqlalchemy import Integer, String, create_engine, inspect, text
+from sqlalchemy import String, create_engine, inspect, text
+from sqlalchemy.dialects import mysql
 from sqlalchemy.engine import Engine, URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -15,17 +15,178 @@ from app.db.session import create_engine_for_settings
 
 
 ALEMBIC_INI = Path(__file__).parents[2] / "alembic.ini"
-BASELINE_REVISION = "20260713_0001"
-ATTACHMENT_INTEGRITY_REVISION = "20260713_0002"
-LATEST_REVISION = "20260720_0005"
+BASELINE_REVISION = "20260722_0001"
 MIGRATION_DATABASE_SUFFIX = "_migration_test"
 EXPECTED_TABLES = {
-    "attachments",
-    "conversations",
     "knowledge_documents",
-    "messages",
     "resources",
+    "subtask_contexts",
+    "subtasks",
+    "tasks",
     "users",
+}
+EXPECTED_COLUMNS = {
+    "users": {
+        "id",
+        "username",
+        "password_hash",
+        "display_name",
+        "role",
+        "is_active",
+        "token_version",
+        "settings_json",
+        "seed_initialized_at",
+        "credential_bootstrap_status",
+        "created_at",
+        "updated_at",
+    },
+    "resources": {
+        "id",
+        "user_id",
+        "resource_type",
+        "name",
+        "config_json",
+        "is_active",
+        "deleted_at",
+        "created_at",
+        "updated_at",
+    },
+    "knowledge_documents": {
+        "id",
+        "user_id",
+        "collection_id",
+        "name",
+        "source_object_key",
+        "parsed_object_key",
+        "mime_type",
+        "size_bytes",
+        "content_hash",
+        "status",
+        "index_generation",
+        "retriever_type",
+        "processing_attempt_id",
+        "cleanup_attempt_id",
+        "error_code",
+        "error_message",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "indexed_at",
+    },
+    "tasks": {
+        "id",
+        "user_id",
+        "agent_id",
+        "name",
+        "status",
+        "model_override_json",
+        "is_active",
+        "created_at",
+        "updated_at",
+    },
+    "subtasks": {
+        "id",
+        "user_id",
+        "task_id",
+        "role",
+        "message_id",
+        "parent_id",
+        "title",
+        "prompt",
+        "status",
+        "progress",
+        "result",
+        "error_message",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    },
+    "subtask_contexts": {
+        "id",
+        "user_id",
+        "subtask_id",
+        "context_type",
+        "name",
+        "status",
+        "error_message",
+        "binary_data",
+        "image_base64",
+        "extracted_text",
+        "text_length",
+        "mime_type",
+        "file_extension",
+        "file_size",
+        "type_data",
+        "created_at",
+        "updated_at",
+    },
+}
+EXPECTED_NEW_TABLE_COLUMN_SIGNATURES = {
+    "tasks": {
+        "id": ("BIGINT", False),
+        "user_id": ("INTEGER", False),
+        "agent_id": ("VARCHAR(36)", True),
+        "name": ("VARCHAR(255)", False),
+        "status": ("VARCHAR(24)", False),
+        "model_override_json": ("JSON", True),
+        "is_active": ("TINYINT", False),
+        "created_at": ("DATETIME", False),
+        "updated_at": ("DATETIME", False),
+    },
+    "subtasks": {
+        "id": ("BIGINT", False),
+        "user_id": ("INTEGER", False),
+        "task_id": ("BIGINT", False),
+        "role": ("VARCHAR(16)", False),
+        "message_id": ("BIGINT", False),
+        "parent_id": ("BIGINT", True),
+        "title": ("VARCHAR(255)", False),
+        "prompt": ("LONGTEXT", False),
+        "status": ("VARCHAR(24)", False),
+        "progress": ("INTEGER", False),
+        "result": ("JSON", True),
+        "error_message": ("TEXT", True),
+        "created_at": ("DATETIME", False),
+        "updated_at": ("DATETIME", False),
+        "completed_at": ("DATETIME", True),
+    },
+    "subtask_contexts": {
+        "id": ("BIGINT", False),
+        "user_id": ("INTEGER", False),
+        "subtask_id": ("BIGINT", False),
+        "context_type": ("VARCHAR(32)", False),
+        "name": ("VARCHAR(255)", False),
+        "status": ("VARCHAR(24)", False),
+        "error_message": ("TEXT", True),
+        "binary_data": ("LONGBLOB", True),
+        "image_base64": ("LONGTEXT", True),
+        "extracted_text": ("LONGTEXT", True),
+        "text_length": ("INTEGER", False),
+        "mime_type": ("VARCHAR(160)", True),
+        "file_extension": ("VARCHAR(32)", True),
+        "file_size": ("BIGINT", True),
+        "type_data": ("JSON", False),
+        "created_at": ("DATETIME", False),
+        "updated_at": ("DATETIME", False),
+    },
+}
+EXPECTED_NEW_TABLE_INDEX_SIGNATURES = {
+    "tasks": {
+        ("ix_tasks_agent_id", ("agent_id",), False),
+        ("ix_tasks_status", ("status",), False),
+        ("ix_tasks_user_id", ("user_id",), False),
+    },
+    "subtasks": {
+        ("ix_subtasks_message_id", ("message_id",), False),
+        ("ix_subtasks_status", ("status",), False),
+        ("ix_subtasks_task_id", ("task_id",), False),
+        ("ix_subtasks_user_id", ("user_id",), False),
+    },
+    "subtask_contexts": {
+        ("ix_subtask_contexts_context_type", ("context_type",), False),
+        ("ix_subtask_contexts_subtask_id", ("subtask_id",), False),
+        ("ix_subtask_contexts_user_id", ("user_id",), False),
+    },
 }
 
 
@@ -50,8 +211,9 @@ def _migration_mysql_url() -> URL:
         pytest.skip("requires RUN_MYSQL_INTEGRATION=1")
     explicit_url = os.environ.get("MYSQL_MIGRATION_DATABASE_URL")
     if not explicit_url:
-        pytest.skip(
-            "requires an explicit MYSQL_MIGRATION_DATABASE_URL; "
+        pytest.fail(
+            "RUN_MYSQL_INTEGRATION=1 requires an explicit "
+            "MYSQL_MIGRATION_DATABASE_URL; "
             "DATABASE_URL is never used as a fallback"
         )
     try:
@@ -63,59 +225,6 @@ def _migration_mysql_url() -> URL:
 def _current_revision(engine: Engine) -> str:
     with engine.connect() as connection:
         return connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-
-
-def _attachment_columns(engine: Engine) -> dict[str, dict[str, object]]:
-    return {column["name"]: column for column in inspect(engine).get_columns("attachments")}
-
-
-def _assert_attachment_integrity_columns(engine: Engine, *, present: bool) -> None:
-    columns = _attachment_columns(engine)
-    if not present:
-        assert "parsed_size_bytes" not in columns
-        assert "parsed_content_hash" not in columns
-        return
-
-    parsed_size = columns["parsed_size_bytes"]
-    assert isinstance(parsed_size["type"], Integer)
-    assert parsed_size["nullable"] is True
-    parsed_hash = columns["parsed_content_hash"]
-    assert isinstance(parsed_hash["type"], String)
-    assert parsed_hash["type"].length == 128
-    assert parsed_hash["nullable"] is True
-
-
-def _assert_knowledge_attempt_columns(engine: Engine, *, present: bool) -> None:
-    columns = {
-        column["name"]: column
-        for column in inspect(engine).get_columns("knowledge_documents")
-    }
-    if not present:
-        assert "processing_attempt_id" not in columns
-        assert "cleanup_attempt_id" not in columns
-        return
-
-    for column_name in ("processing_attempt_id", "cleanup_attempt_id"):
-        column = columns[column_name]
-        assert isinstance(column["type"], String)
-        assert column["type"].length == 36
-        assert column["nullable"] is True
-
-
-def _assert_knowledge_retriever_column(engine: Engine, *, present: bool) -> None:
-    columns = {
-        column["name"]: column
-        for column in inspect(engine).get_columns("knowledge_documents")
-    }
-    if not present:
-        assert "retriever_type" not in columns
-        return
-    removed_switch_state_column = "_".join(("previous", "retriever", "type"))
-    assert removed_switch_state_column not in columns
-    retriever_type = columns["retriever_type"]
-    assert isinstance(retriever_type["type"], String)
-    assert retriever_type["type"].length == 32
-    assert retriever_type["nullable"] is False
 
 
 def _foreign_key_signatures(inspector, table_name: str):
@@ -135,7 +244,51 @@ def _unique_constraint_names(inspector, table_name: str) -> set[str | None]:
 
 
 def _index_names(inspector, table_name: str) -> set[str | None]:
-    return {index["name"] for index in inspector.get_indexes(table_name)}
+    return {
+        index["name"]
+        for index in inspector.get_indexes(table_name)
+        if isinstance(index["name"], str) and index["name"].startswith("ix_")
+    }
+
+
+def _index_signatures(inspector, table_name: str):
+    return {
+        (
+            index["name"],
+            tuple(index["column_names"]),
+            bool(index.get("unique", False)),
+        )
+        for index in inspector.get_indexes(table_name)
+    }
+
+
+def _mysql_type_signature(column_type) -> str:
+    if isinstance(column_type, mysql.BIGINT):
+        return "BIGINT"
+    if isinstance(column_type, mysql.INTEGER):
+        return "INTEGER"
+    if isinstance(column_type, mysql.TINYINT):
+        return "TINYINT"
+    if isinstance(column_type, mysql.VARCHAR):
+        return f"VARCHAR({column_type.length})"
+    if isinstance(column_type, mysql.LONGBLOB):
+        return "LONGBLOB"
+    if isinstance(column_type, mysql.LONGTEXT):
+        return "LONGTEXT"
+    if isinstance(column_type, mysql.TEXT):
+        return "TEXT"
+    if isinstance(column_type, mysql.JSON):
+        return "JSON"
+    if isinstance(column_type, mysql.DATETIME):
+        return "DATETIME"
+    raise AssertionError(f"Unexpected reflected MySQL type: {column_type!r}")
+
+
+def _column_signatures(inspector, table_name: str):
+    return {
+        column["name"]: (_mysql_type_signature(column["type"]), column["nullable"])
+        for column in inspector.get_columns(table_name)
+    }
 
 
 @pytest.mark.parametrize(
@@ -157,7 +310,7 @@ def test_migration_mysql_url_never_falls_back_to_database_url(monkeypatch) -> No
         "mysql+pymysql://user:password@127.0.0.1/auto_reign_migration_test",
     )
 
-    with pytest.raises(pytest.skip.Exception, match="explicit"):
+    with pytest.raises(pytest.fail.Exception, match="explicit"):
         _migration_mysql_url()
 
 
@@ -165,7 +318,7 @@ def test_migration_mysql_url_never_falls_back_to_database_url(monkeypatch) -> No
     os.environ.get("RUN_MYSQL_INTEGRATION") != "1",
     reason="requires RUN_MYSQL_INTEGRATION=1 and a live MySQL service",
 )
-def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
+def test_mysql_task_subtask_baseline_lifecycle(monkeypatch) -> None:
     migration_url = _migration_mysql_url()
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -174,248 +327,90 @@ def test_mysql_knowledge_migration_lifecycle(monkeypatch) -> None:
     config = Config(str(ALEMBIC_INI))
     engine = create_engine(migration_url, pool_pre_ping=True)
     try:
-        # CI prepares the empty schema at head. Repeating upgrade keeps local runs safe
-        # and establishes the known starting point before entering the tested lifecycle.
+        assert ScriptDirectory.from_config(config).get_heads() == [BASELINE_REVISION]
+
+        command.downgrade(config, "base")
         command.upgrade(config, "head")
-        assert _current_revision(engine) == LATEST_REVISION
-        _assert_knowledge_attempt_columns(engine, present=True)
-        _assert_knowledge_retriever_column(engine, present=True)
-
-        command.downgrade(config, ATTACHMENT_INTEGRITY_REVISION)
-        assert _current_revision(engine) == ATTACHMENT_INTEGRITY_REVISION
-        _assert_attachment_integrity_columns(engine, present=True)
-        _assert_knowledge_attempt_columns(engine, present=False)
-        _assert_knowledge_retriever_column(engine, present=False)
-
-        command.downgrade(config, BASELINE_REVISION)
         assert _current_revision(engine) == BASELINE_REVISION
-        _assert_attachment_integrity_columns(engine, present=False)
-        baseline_indexes = _index_names(inspect(engine), "attachments")
+        _assert_task_subtask_schema(engine)
 
-        command.upgrade(config, ATTACHMENT_INTEGRITY_REVISION)
-        assert _current_revision(engine) == ATTACHMENT_INTEGRITY_REVISION
-        _assert_attachment_integrity_columns(engine, present=True)
-        _assert_knowledge_attempt_columns(engine, present=False)
-        _assert_knowledge_retriever_column(engine, present=False)
-        assert _index_names(inspect(engine), "attachments") == baseline_indexes
-
-        command.downgrade(config, BASELINE_REVISION)
+        command.downgrade(config, "base")
+        assert set(inspect(engine).get_table_names()) == {"alembic_version"}
+        command.upgrade(config, "head")
         assert _current_revision(engine) == BASELINE_REVISION
-        _assert_attachment_integrity_columns(engine, present=False)
-        assert _index_names(inspect(engine), "attachments") == baseline_indexes
-
-        command.upgrade(config, "head")
-        assert _current_revision(engine) == LATEST_REVISION
-        _assert_attachment_integrity_columns(engine, present=True)
-        _assert_knowledge_attempt_columns(engine, present=True)
-        _assert_knowledge_retriever_column(engine, present=True)
-        assert _index_names(inspect(engine), "attachments") == baseline_indexes
-
-        command.downgrade(config, "20260716_0004")
-        suffix = uuid4().hex
-        collection_id = str(uuid4())
-        document_id = str(uuid4())
-        with engine.begin() as connection:
-            user_result = connection.execute(
-                text(
-                    """
-                    INSERT INTO users (
-                        username, password_hash, display_name, role, is_active,
-                        token_version, settings_json, created_at, updated_at
-                    ) VALUES (
-                        :username, 'hash', 'Migration User', 'user', TRUE,
-                        1, '{}', NOW(6), NOW(6)
-                    )
-                    """
-                ),
-                {"username": f"migration-{suffix}"},
-            )
-            user_id = int(user_result.lastrowid)
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO resources (
-                        id, user_id, resource_type, name, config_json, is_active,
-                        created_at, updated_at
-                    ) VALUES (
-                        :id, :user_id, 'knowledge_collection', :name,
-                        :config_json, TRUE, NOW(6), NOW(6)
-                    )
-                    """
-                ),
-                {
-                    "id": collection_id,
-                    "user_id": user_id,
-                    "name": f"migration-collection-{suffix}",
-                    "config_json": json.dumps(
-                        {
-                            "chunk_size": 1200,
-                            "chunk_overlap": 300,
-                            "top_k": 8,
-                            "score_threshold": None,
-                        }
-                    ),
-                },
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO knowledge_documents (
-                        id, user_id, collection_id, name, source_object_key,
-                        parsed_object_key, mime_type, size_bytes, content_hash,
-                        status, index_generation, processing_attempt_id,
-                        cleanup_attempt_id, error_code, error_message, is_active,
-                        created_at, updated_at, indexed_at
-                    ) VALUES (
-                        :id, :user_id, :collection_id, 'legacy.txt',
-                        'legacy/source', 'legacy/parsed', 'text/plain', 6,
-                        'sha256-legacy', 'ready', 4, 'processing-token',
-                        'cleanup-token', 'legacy_error', 'legacy error', TRUE,
-                        NOW(6), NOW(6), NOW(6)
-                    )
-                    """
-                ),
-                {
-                    "id": document_id,
-                    "user_id": user_id,
-                    "collection_id": collection_id,
-                },
-            )
-
-        command.upgrade(config, "head")
-        with engine.connect() as connection:
-            migrated = connection.execute(
-                text(
-                    """
-                    SELECT status, index_generation, parsed_object_key, indexed_at,
-                           processing_attempt_id, cleanup_attempt_id, error_code,
-                           error_message, retriever_type
-                    FROM knowledge_documents
-                    WHERE id = :document_id
-                    """
-                ),
-                {"document_id": document_id},
-            ).mappings().one()
-            raw_config = connection.execute(
-                text("SELECT config_json FROM resources WHERE id = :collection_id"),
-                {"collection_id": collection_id},
-            ).scalar_one()
-        assert migrated == {
-            "status": "queued",
-            "index_generation": 5,
-            "parsed_object_key": None,
-            "indexed_at": None,
-            "processing_attempt_id": None,
-            "cleanup_attempt_id": None,
-            "error_code": None,
-            "error_message": None,
-            "retriever_type": "elasticsearch",
-        }
-        migrated_config = (
-            json.loads(raw_config) if isinstance(raw_config, str) else raw_config
-        )
-        assert migrated_config == {
-            "retriever_type": "elasticsearch",
-            "retrieval_mode": "vector",
-            "chunk_size": 900,
-            "chunk_overlap": 120,
-            "top_k": 5,
-            "score_threshold": 0.5,
-            "vector_weight": 0.7,
-            "keyword_weight": 0.3,
-        }
+        _assert_task_subtask_schema(engine)
     finally:
         engine.dispose()
 
 
-@pytest.mark.skipif(
-    os.environ.get("RUN_MYSQL_INTEGRATION") != "1",
-    reason="requires RUN_MYSQL_INTEGRATION=1 and a live MySQL service",
-)
-def test_mysql_schema_matches_expected_tables() -> None:
-    database_url = os.environ["DATABASE_URL"]
-    engine = create_engine(database_url)
-    try:
-        inspector = inspect(engine)
-        tables = set(inspector.get_table_names())
-        assert tables == EXPECTED_TABLES | {"alembic_version"}
+def _assert_task_subtask_schema(engine: Engine) -> None:
+    inspector = inspect(engine)
+    assert set(inspector.get_table_names()) == EXPECTED_TABLES | {"alembic_version"}
+    for table_name, column_names in EXPECTED_COLUMNS.items():
+        assert {column["name"] for column in inspector.get_columns(table_name)} == column_names
+    for table_name, expected_signatures in EXPECTED_NEW_TABLE_COLUMN_SIGNATURES.items():
+        assert _column_signatures(inspector, table_name) == expected_signatures
 
-        assert _foreign_key_signatures(inspector, "knowledge_documents") == {
-            (
-                ("collection_id", "user_id"),
-                "resources",
-                ("id", "user_id"),
-                None,
-            )
-        }
-        assert _foreign_key_signatures(inspector, "conversations") == {
-            (("agent_id",), "resources", ("id",), None),
-            (("user_id",), "users", ("id",), "CASCADE"),
-        }
-        assert _foreign_key_signatures(inspector, "messages") == {
-            (
-                ("conversation_id", "user_id"),
-                "conversations",
-                ("id", "user_id"),
-                "CASCADE",
-            ),
-            (("user_id",), "users", ("id",), "CASCADE"),
-        }
-        assert _foreign_key_signatures(inspector, "attachments") == {
-            (
-                ("message_id", "user_id"),
-                "messages",
-                ("id", "user_id"),
-                "CASCADE",
-            ),
-            (("user_id",), "users", ("id",), "CASCADE"),
-        }
+    assert _foreign_key_signatures(inspector, "knowledge_documents") == {
+        (("collection_id", "user_id"), "resources", ("id", "user_id"), None)
+    }
+    assert _foreign_key_signatures(inspector, "tasks") == {
+        (("agent_id",), "resources", ("id",), None),
+        (("user_id",), "users", ("id",), "CASCADE"),
+    }
+    assert _foreign_key_signatures(inspector, "subtasks") == {
+        (("task_id",), "tasks", ("id",), "CASCADE"),
+        (("user_id",), "users", ("id",), "CASCADE"),
+    }
+    assert _foreign_key_signatures(inspector, "subtask_contexts") == {
+        (("user_id",), "users", ("id",), "CASCADE")
+    }
 
-        assert _unique_constraint_names(inspector, "resources") == {
-            "uq_resources_id_owner",
-            "uq_resources_owner_type_name",
-        }
-        assert _unique_constraint_names(inspector, "conversations") == {"uq_conversations_id_user"}
-        assert _unique_constraint_names(inspector, "messages") == {
-            "uq_messages_conversation_sequence",
-            "uq_messages_id_user",
-        }
+    assert _unique_constraint_names(inspector, "resources") == {
+        "uq_resources_id_owner",
+        "uq_resources_owner_type_name",
+    }
+    assert _unique_constraint_names(inspector, "subtasks") == set()
+    assert not any(
+        index["unique"] and index["column_names"] == ["task_id", "message_id"]
+        for index in inspector.get_indexes("subtasks")
+    )
 
-        expected_indexes = {
-            "users": {"ix_users_username"},
-            "resources": {"ix_resources_resource_type", "ix_resources_user_id"},
-            "knowledge_documents": {
-                "ix_knowledge_documents_collection_id",
-                "ix_knowledge_documents_user_id",
-            },
-            "conversations": {"ix_conversations_agent_id", "ix_conversations_user_id"},
-            "messages": {"ix_messages_conversation_id", "ix_messages_user_id"},
-            "attachments": {"ix_attachments_message_id", "ix_attachments_user_id"},
-        }
-        for table_name, index_names in expected_indexes.items():
-            assert index_names <= _index_names(inspector, table_name)
+    expected_existing_index_names = {
+        "users": {"ix_users_username"},
+        "resources": {"ix_resources_resource_type", "ix_resources_user_id"},
+        "knowledge_documents": {
+            "ix_knowledge_documents_collection_id",
+            "ix_knowledge_documents_user_id",
+        },
+    }
+    for table_name, index_names in expected_existing_index_names.items():
+        assert _index_names(inspector, table_name) == index_names
+    for table_name, expected_signatures in EXPECTED_NEW_TABLE_INDEX_SIGNATURES.items():
+        assert _index_signatures(inspector, table_name) == expected_signatures
+    for table_name in EXPECTED_TABLES:
+        assert inspector.get_check_constraints(table_name) == []
 
-        attachment_columns = {
-            column["name"]: column for column in inspector.get_columns("attachments")
-        }
-        parsed_size = attachment_columns["parsed_size_bytes"]
-        assert isinstance(parsed_size["type"], Integer)
-        assert parsed_size["nullable"] is True
-        parsed_hash = attachment_columns["parsed_content_hash"]
-        assert isinstance(parsed_hash["type"], String)
-        assert parsed_hash["type"].length == 128
-        assert parsed_hash["nullable"] is True
-        _assert_knowledge_attempt_columns(engine, present=True)
-    finally:
-        engine.dispose()
-
+    knowledge_document_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("knowledge_documents")
+    }
+    for attempt_column_name in ("processing_attempt_id", "cleanup_attempt_id"):
+        attempt_column = knowledge_document_columns[attempt_column_name]
+        assert isinstance(attempt_column["type"], String)
+        assert attempt_column["type"].length == 36
+        assert attempt_column["nullable"] is True
+    retriever_type = knowledge_document_columns["retriever_type"]
+    assert isinstance(retriever_type["type"], String)
+    assert retriever_type["type"].length == 32
+    assert retriever_type["nullable"] is False
 
 @pytest.mark.skipif(
     os.environ.get("RUN_MYSQL_INTEGRATION") != "1",
     reason="requires RUN_MYSQL_INTEGRATION=1 and a live MySQL service",
 )
 def test_application_mysql_engine_uses_read_committed_transaction_isolation() -> None:
-    database_url = os.environ["DATABASE_URL"]
+    database_url = _migration_mysql_url().render_as_string(hide_password=False)
     engine = create_engine_for_settings(Settings(_env_file=None, database_url=database_url))
     try:
         with engine.connect() as connection:

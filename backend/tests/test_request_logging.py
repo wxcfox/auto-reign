@@ -276,6 +276,95 @@ def test_application_formatter_rejects_dynamic_message_and_unsafe_extra_values()
     assert "private-body" not in json.dumps(payload)
 
 
+def test_application_formatter_accepts_false_exc_info_with_safe_extra_type() -> None:
+    record = logging.LogRecord(
+        name="app.test",
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="safe_event",
+        args=(),
+        exc_info=None,
+    )
+    record.exc_info = False
+    record.exception_type = "RuntimeError"
+
+    payload = json.loads(JsonFormatter(clock=lambda: FIXED_TIME).format(record))
+
+    assert payload["event"] == "safe_event"
+    assert payload["exception_type"] == "RuntimeError"
+
+
+def test_application_formatter_emits_bounded_provider_metrics() -> None:
+    record = logging.LogRecord(
+        name="app.services.task_execution_service",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="provider_call_metrics",
+        args=(),
+        exc_info=None,
+    )
+    record.provider = "qwen"
+    record.model = "qwen3.7-plus"
+    record.provider_request_id = "request-1"
+    record.provider_status = "completed"
+    record.call_index = 1
+    record.input_tokens = 12
+    record.output_tokens = 5
+    record.duration_ms = 20.0
+
+    payload = json.loads(JsonFormatter(clock=lambda: FIXED_TIME).format(record))
+
+    assert payload == {
+        "timestamp": FIXED_TIME.isoformat(),
+        "level": "info",
+        "logger": "app.services.task_execution_service",
+        "event": "provider_call_metrics",
+        "provider": "qwen",
+        "model": "qwen3.7-plus",
+        "provider_request_id": "request-1",
+        "provider_status": "completed",
+        "call_index": 1,
+        "input_tokens": 12,
+        "output_tokens": 5,
+        "duration_ms": 20.0,
+    }
+
+
+def test_application_formatter_uses_only_current_chat_identifiers() -> None:
+    record = logging.LogRecord(
+        name="app.services.task_execution_service",
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="task_execution_failed",
+        args=(),
+        exc_info=None,
+    )
+    record.task_id = 7
+    record.subtask_id = 11
+    record.message_id = 5
+    record.context_id = 3
+    record.conversation_id = "legacy-conversation"
+    record.attachment_id = "legacy-attachment"
+
+    payload = json.loads(JsonFormatter(clock=lambda: FIXED_TIME).format(record))
+
+    assert payload == {
+        "timestamp": FIXED_TIME.isoformat(),
+        "level": "warning",
+        "logger": "app.services.task_execution_service",
+        "event": "task_execution_failed",
+        "context_id": 3,
+        "message_id": 5,
+        "subtask_id": 11,
+        "task_id": 7,
+    }
+    assert "legacy-conversation" not in json.dumps(payload)
+    assert "legacy-attachment" not in json.dumps(payload)
+
+
 def test_formatter_rejects_unsafe_logger_name_and_request_id() -> None:
     record = logging.LogRecord(
         name="app.secret\nlogger",

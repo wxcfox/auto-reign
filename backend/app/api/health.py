@@ -6,6 +6,9 @@ router = APIRouter(prefix="/api")
 @router.get("/health")
 def health(request: Request) -> dict[str, object]:
     settings = request.app.state.settings
+    chat_realtime = getattr(request.app.state, "chat_realtime", None)
+    realtime_backend = getattr(chat_realtime, "backend", "memory")
+    realtime_degraded = getattr(chat_realtime, "degraded", True)
     return {
         "status": "ok",
         "version": settings.app_version,
@@ -19,6 +22,10 @@ def health(request: Request) -> dict[str, object]:
             "openai": bool(settings.openai_api_key),
             "deepseek": bool(settings.deepseek_api_key),
             "qwen": bool(settings.qwen_api_key),
+        },
+        "chat_realtime": {
+            "backend": realtime_backend,
+            "degraded": realtime_degraded,
         },
     }
 

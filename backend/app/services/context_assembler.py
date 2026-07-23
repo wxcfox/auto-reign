@@ -1,31 +1,32 @@
 from __future__ import annotations
 
-import base64
-from collections.abc import Mapping
 from dataclasses import dataclass
 import json
 
 from app.core.errors import bad_request
-from app.services.attachment_runtime_loader import (
-    RuntimeAttachment,
-    RuntimeAttachmentRef,
+from app.services.runtime_types import (
+    RuntimeTaskTurn,
+    RuntimeImageContext,
+    RuntimeSelectedDocumentsContext,
+    RuntimeTextContext,
+    RuntimeUserTurn,
+    ToolDefinition,
 )
-from app.services.runtime_types import RuntimeConversationTurn, ToolDefinition
 from app.services.token_counter import RuntimeTokenCounter
 
 
 @dataclass(frozen=True)
 class ContextSelection:
-    turns: tuple[RuntimeConversationTurn, ...]
+    turns: tuple[RuntimeTaskTurn, ...]
     platform_prompt: str
     agent_prompt: str
     agents_md: str | None
     tool_definitions: tuple[ToolDefinition, ...]
-    includes_attachments: bool
     upper_bound_tokens: int
     input_token_limit: int
     token_budget: int
     tool_result_token_reserve: int
+
 
 class ContextAssembler:
     def __init__(
@@ -42,9 +43,8 @@ class ContextAssembler:
     def select_turns(
         self,
         *,
-        history: tuple[RuntimeConversationTurn, ...],
+        history: tuple[RuntimeTaskTurn, ...],
         base_system_prompt: str,
-        attachment_system_prompt: str | None,
         agent_prompt: str = "",
         agents_md: str | None = None,
         tool_definitions: tuple[ToolDefinition, ...] = (),
@@ -61,7 +61,7 @@ class ContextAssembler:
             raise ValueError("invalid tool result token reserve")
         input_limit = total_budget - reserve
 
-        selected_reversed: list[RuntimeConversationTurn] = []
+        selected_reversed: list[RuntimeTaskTurn] = []
         selected_count = self._count_selection(
             turns=(),
             platform_prompt=base_system_prompt,
@@ -69,22 +69,12 @@ class ContextAssembler:
             agents_md=agents_md,
             tool_definitions=tool_definitions,
         )
-        includes_attachments = False
-
         for index, turn in enumerate(reversed(history)):
             candidate_reversed = [*selected_reversed, turn]
             candidate_turns = tuple(reversed(candidate_reversed))
-            candidate_has_attachments = any(
-                item.user.attachment_refs for item in candidate_turns
-            )
-            platform_prompt = base_system_prompt
-            if candidate_has_attachments:
-                if attachment_system_prompt is None:
-                    raise ValueError("attachment system prompt is required")
-                platform_prompt = attachment_system_prompt
             candidate_count = self._count_selection(
                 turns=candidate_turns,
-                platform_prompt=platform_prompt,
+                platform_prompt=base_system_prompt,
                 agent_prompt=agent_prompt,
                 agents_md=agents_md,
                 tool_definitions=tool_definitions,
@@ -98,16 +88,9 @@ class ContextAssembler:
                 break
             selected_reversed.append(turn)
             selected_count = candidate_count
-            includes_attachments = candidate_has_attachments
 
         selected = tuple(reversed(selected_reversed))
-        platform_prompt = (
-            attachment_system_prompt
-            if includes_attachments
-            else base_system_prompt
-        )
-        if platform_prompt is None:
-            raise ValueError("selected platform prompt is required")
+        platform_prompt = base_system_prompt
         if selected_count > input_limit:
             raise bad_request(
                 "context_too_large",
@@ -119,7 +102,6 @@ class ContextAssembler:
             agent_prompt=agent_prompt,
             agents_md=agents_md,
             tool_definitions=tool_definitions,
-            includes_attachments=includes_attachments,
             upper_bound_tokens=selected_count,
             input_token_limit=input_limit,
             token_budget=total_budget,
@@ -129,16 +111,12 @@ class ContextAssembler:
     def render_selected(
         self,
         selection: ContextSelection,
-        *,
-        attachments: Mapping[str, RuntimeAttachment],
     ) -> list[dict[str, object]]:
         messages = _render_messages(
             platform_prompt=selection.platform_prompt,
             agent_prompt=selection.agent_prompt,
             agents_md=selection.agents_md,
             turns=selection.turns,
-            attachments=attachments,
-            use_attachment_upper_bounds=False,
         )
         actual_tokens = self.token_counter.count_model_input(
             messages,
@@ -154,7 +132,7 @@ class ContextAssembler:
     def _count_selection(
         self,
         *,
-        turns: tuple[RuntimeConversationTurn, ...],
+        turns: tuple[RuntimeTaskTurn, ...],
         platform_prompt: str,
         agent_prompt: str,
         agents_md: str | None,
@@ -165,8 +143,6 @@ class ContextAssembler:
             agent_prompt=agent_prompt,
             agents_md=agents_md,
             turns=turns,
-            attachments={},
-            use_attachment_upper_bounds=True,
         )
         return self.token_counter.count_model_input(
             messages,
@@ -179,9 +155,7 @@ def _render_messages(
     platform_prompt: str,
     agent_prompt: str,
     agents_md: str | None,
-    turns: tuple[RuntimeConversationTurn, ...],
-    attachments: Mapping[str, RuntimeAttachment],
-    use_attachment_upper_bounds: bool,
+    turns: tuple[RuntimeTaskTurn, ...],
 ) -> list[dict[str, object]]:
     messages: list[dict[str, object]] = [
         {"role": "system", "content": platform_prompt}
@@ -192,30 +166,7 @@ def _render_messages(
         messages.append({"role": "system", "content": agents_md})
 
     for turn in turns:
-        refs = turn.user.attachment_refs
-        if refs:
-            blocks: list[dict[str, object]] = [
-                {"type": "text", "text": turn.user.text}
-            ]
-            for ref in refs:
-                if use_attachment_upper_bounds:
-                    blocks.append(_attachment_upper_bound_block(ref))
-                    continue
-                attachment = attachments.get(ref.id)
-                if attachment is None:
-                    raise ValueError("selected attachment was not loaded")
-                if attachment.text is not None:
-                    blocks.append(
-                        {
-                            "type": "text",
-                            "text": attachment_text_block(attachment),
-                        }
-                    )
-                else:
-                    blocks.append(image_content_block(attachment))
-            messages.append({"role": "user", "content": blocks})
-        else:
-            messages.append({"role": "user", "content": turn.user.text})
+        messages.append({"role": "user", "content": _render_user(turn.user)})
         messages.extend(
             {"role": "assistant", "content": assistant.text}
             for assistant in turn.assistants
@@ -223,46 +174,60 @@ def _render_messages(
     return messages
 
 
-def _attachment_upper_bound_block(ref: RuntimeAttachmentRef) -> dict[str, object]:
-    if ref.media_type.startswith("image/"):
-        return {
-            "type": "image_url",
-            "image_url": {"url": f"data:{ref.media_type};base64,"},
-        }
-    parsed_size = max(ref.parsed_size_bytes or 0, 0)
-    placeholder = RuntimeAttachment(
-        id=ref.id,
-        filename=ref.filename,
-        media_type=ref.media_type,
-        text="\x00" * parsed_size,
-        image_bytes=None,
+def _render_user(user: RuntimeUserTurn) -> object:
+    renderable = tuple(
+        context
+        for context in user.contexts
+        if not isinstance(context, RuntimeSelectedDocumentsContext)
     )
-    return {"type": "text", "text": attachment_text_block(placeholder)}
+    if not renderable:
+        return user.text
+
+    content: list[dict[str, object]] = [
+        {"type": "text", "text": user.text},
+    ]
+    for context in renderable:
+        if isinstance(context, RuntimeTextContext):
+            content.append(
+                {
+                    "type": "text",
+                    "text": _context_text(context),
+                }
+            )
+        elif isinstance(context, RuntimeImageContext):
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            f"data:{context.mime_type};base64,"
+                            f"{context.image_base64}"
+                        )
+                    },
+                }
+            )
+    return content
 
 
-def attachment_text_block(attachment: RuntimeAttachment) -> str:
-    if attachment.text is None or attachment.image_bytes is not None:
-        raise ValueError("text attachment content is required")
+def _context_text(context: RuntimeTextContext) -> str:
+    source = (
+        "chat attachment"
+        if context.source_type == "attachment"
+        else "knowledge retrieval"
+    )
     metadata = json.dumps(
-        {
-            "id": attachment.id,
-            "filename": attachment.filename,
-            "media_type": attachment.media_type,
-            "trust": "untrusted",
-        },
+        {"source": source, "name": context.name},
         ensure_ascii=False,
+        sort_keys=True,
         separators=(",", ":"),
     )
-    return f"<attachment>\nmetadata={metadata}\n{attachment.text}\n</attachment>"
-
-
-def image_content_block(attachment: RuntimeAttachment) -> dict[str, object]:
-    if attachment.image_bytes is None or attachment.text is not None:
-        raise ValueError("image attachment content is required")
-    encoded = base64.b64encode(attachment.image_bytes).decode("ascii")
-    return {
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:{attachment.media_type};base64,{encoded}"
-        },
-    }
+    metadata_bytes = len(metadata.encode("utf-8"))
+    content_bytes = len(context.text.encode("utf-8"))
+    return (
+        "[UNTRUSTED_CONTEXT "
+        f"metadata_utf8_bytes={metadata_bytes} "
+        f"content_utf8_bytes={content_bytes}]\n"
+        f"{metadata}\n"
+        f"{context.text}\n"
+        "[END_UNTRUSTED_CONTEXT]"
+    )

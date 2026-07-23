@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { AuthGuard } from "@/components/AuthGuard";
 import { I18nProvider } from "@/components/I18nProvider";
+import { SocketProvider } from "@/contexts/SocketContext";
 
 import "./globals.css";
 
@@ -18,7 +19,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <I18nProvider>
           <AuthGuard>
-            <AppShell>{children}</AppShell>
+            <SocketProvider>
+              <AppShell>{children}</AppShell>
+            </SocketProvider>
           </AuthGuard>
         </I18nProvider>
       </body>

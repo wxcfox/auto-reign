@@ -30,12 +30,17 @@ from app.services.model_service_chat_model import (
     to_model_messages,
 )
 from app.services.runtime_types import (
+    AssistantMessageEvent,
     CapabilityContext,
+    RuntimeEvent,
     RuntimeObserver,
     RuntimeTerminalError,
+    TextDeltaEvent,
     ToolCall,
     ToolDefinition,
     ToolResult,
+    ToolResultEvent,
+    ToolStartEvent,
 )
 from app.services.token_counter import RuntimeTokenCounter
 from app.services.tool_registry import ToolRegistrySnapshot
@@ -73,7 +78,7 @@ class ReactLoop:
         context: CapabilityContext,
         registry: ToolRegistrySnapshot,
         observer: RuntimeObserver,
-    ) -> Iterator[str | ToolResult]:
+    ) -> Iterator[RuntimeEvent]:
         chat_model = ModelServiceChatModel(
             model_service=self.model_service,
             provider_name=provider,
@@ -99,6 +104,10 @@ class ReactLoop:
                 ),
                 version="v2",
             )
+        pending: AIMessageChunk | None = None
+        pending_reasoning: list[str] = []
+        active_calls: dict[str, ToolCall] = {}
+        starts_emitted = False
         try:
             for message, _metadata in graph.stream(
                 {"messages": convert_to_messages(messages)},
@@ -106,17 +115,61 @@ class ReactLoop:
                 stream_mode="messages",
             ):
                 if isinstance(message, AIMessageChunk):
-                    if isinstance(message.content, str) and message.content:
-                        yield message.content
+                    if pending is not None and _different_message(pending, message):
+                        event = _assistant_event(
+                            pending,
+                            reasoning_content="".join(pending_reasoning) or None,
+                            provider=provider,
+                            model=model,
+                        )
+                        yield event
+                        active_calls = {call.id: call for call in event.tool_calls}
+                        for call in event.tool_calls:
+                            yield ToolStartEvent(call=call)
+                        starts_emitted = bool(event.tool_calls)
+                        pending = None
+                        pending_reasoning = []
+                    pending = message if pending is None else pending + message
+                    reasoning = _chunk_reasoning(message)
+                    if reasoning:
+                        pending_reasoning.append(reasoning)
+                    for text in _chunk_text(message):
+                        yield TextDeltaEvent(content=text)
                     continue
                 if not isinstance(message, ToolMessage):
                     continue
+                if pending is not None:
+                    event = _assistant_event(
+                        pending,
+                        reasoning_content="".join(pending_reasoning) or None,
+                        provider=provider,
+                        model=model,
+                    )
+                    yield event
+                    active_calls = {call.id: call for call in event.tool_calls}
+                    for call in event.tool_calls:
+                        yield ToolStartEvent(call=call)
+                    starts_emitted = bool(event.tool_calls)
+                    pending = None
+                    pending_reasoning = []
                 result = message.artifact
                 if not isinstance(result, ToolResult):
                     raise TypeError("tool message did not preserve its audit artifact")
-                yield result
+                if message.tool_call_id != result.call_id:
+                    raise TypeError("tool message did not match its audit artifact")
+                call = active_calls.get(result.call_id)
+                if call is None or not starts_emitted:
+                    raise TypeError("tool result did not match an assistant tool call")
+                yield ToolResultEvent(call=call, result=result)
                 if result.metadata.get("terminal") is True:
                     raise _context_too_large_terminal()
+            if pending is not None:
+                yield _assistant_event(
+                    pending,
+                    reasoning_content="".join(pending_reasoning) or None,
+                    provider=provider,
+                    model=model,
+                )
         except (GraphRecursionError, ToolCallLimitExceeded) as error:
             raise RuntimeError("tool_call_limit_exceeded") from error
         except RuntimeError as error:
@@ -282,9 +335,9 @@ def _runtime_tool_call(value: object) -> ToolCall:
     arguments = value.get("args")
     if (
         not isinstance(call_id, str)
-        or not call_id
+        or not call_id.strip()
         or not isinstance(name, str)
-        or not name
+        or not name.strip()
         or not isinstance(arguments, dict)
     ):
         raise TypeError("invalid LangGraph tool call")
@@ -303,3 +356,97 @@ def _tool_message(call: ToolCall, result: ToolResult) -> ToolMessage:
 
 class ToolCallLimitExceeded(RuntimeError):
     pass
+
+
+def _different_message(left: AIMessageChunk, right: AIMessageChunk) -> bool:
+    return bool(left.id and right.id and left.id != right.id)
+
+
+def _chunk_text(chunk: AIMessageChunk) -> tuple[str, ...]:
+    values: list[str] = []
+    for block in chunk.content_blocks:
+        if isinstance(block, dict) and block.get("type") in {"text", "output_text"}:
+            text = block.get("text")
+            if isinstance(text, str) and text:
+                values.append(text)
+    return tuple(values)
+
+
+def _chunk_reasoning(chunk: AIMessageChunk) -> str | None:
+    values: list[str] = []
+    for block in chunk.content_blocks:
+        if isinstance(block, dict) and block.get("type") == "reasoning":
+            reasoning = block.get("reasoning")
+            if isinstance(reasoning, str) and reasoning:
+                values.append(reasoning)
+    if values:
+        return "".join(values)
+    value = chunk.additional_kwargs.get("reasoning_content")
+    if isinstance(value, str):
+        return value
+    value = chunk.response_metadata.get("reasoning_content")
+    return value if isinstance(value, str) else None
+
+
+def _assistant_event(
+    chunk: AIMessageChunk,
+    *,
+    reasoning_content: str | None,
+    provider: str,
+    model: str,
+) -> AssistantMessageEvent:
+    calls: list[ToolCall] = []
+    for value in chunk.tool_calls:
+        calls.append(_runtime_tool_call(value))
+    content = _assistant_content(chunk)
+    if calls and content == "":
+        content = None
+    if not (
+        content is None
+        or isinstance(content, str)
+        or (
+            isinstance(content, list)
+            and all(isinstance(block, dict) for block in content)
+        )
+    ):
+        raise TypeError("invalid assistant message content")
+    return AssistantMessageEvent(
+        content=content,
+        tool_calls=tuple(calls),
+        reasoning_content=reasoning_content,
+        provider=provider,
+        model=model,
+    )
+
+
+def _assistant_content(chunk: AIMessageChunk) -> object:
+    content = chunk.content
+    if isinstance(content, str) or content is None:
+        return content
+    if not isinstance(content, list):
+        raise TypeError("invalid assistant message content")
+    blocks: list[dict[str, object]] = []
+    text_parts: list[str] = []
+    only_text = True
+    for raw_block in content:
+        if isinstance(raw_block, str):
+            text_parts.append(raw_block)
+            blocks.append({"type": "text", "text": raw_block})
+            continue
+        if not isinstance(raw_block, dict):
+            raise TypeError("invalid assistant message content")
+        if raw_block.get("type") == "reasoning":
+            continue
+        block = dict(raw_block)
+        blocks.append(block)
+        if block.get("type") in {"text", "output_text"} and isinstance(
+            block.get("text"), str
+        ):
+            text_parts.append(block["text"])
+        else:
+            only_text = False
+    if not blocks:
+        return None
+    if only_text:
+        return "".join(text_parts)
+    return blocks

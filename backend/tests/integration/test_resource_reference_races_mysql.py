@@ -14,12 +14,12 @@ from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from app.core.config import Settings
 from app.db import models
 from app.db.session import create_engine_for_settings, make_session_factory
-from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.task_repository import TaskRepository
 from app.schemas.agents import AgentConfig, AgentPutRequest, KnowledgeScope
-from app.schemas.conversations import ConversationSendRequest
+from app.schemas.chat import ChatSendRequest
 from app.services.agent_service import AgentService
-from app.services.generation_service import GenerationService
 from app.services.knowledge_collection_service import KnowledgeCollectionService
+from app.services.task_execution_service import TaskExecutionService
 from app.services.workspace_resource_service import WorkspaceResourceService
 
 
@@ -103,6 +103,10 @@ def _validate_disposable_mysql_url(
         raise ValueError(
             "MYSQL_RESOURCE_RACE_DATABASE_URL must not name a system database"
         )
+    if not parsed_url.database.casefold().endswith("_test"):
+        raise _UnsafeDisposableDatabaseError(
+            "MYSQL_RESOURCE_RACE_DATABASE_URL database name must end with _test"
+        )
 
     try:
         default_url = make_url(default_database_url)
@@ -132,16 +136,27 @@ def _disposable_mysql_url() -> URL:
         pytest.skip("requires RUN_MYSQL_INTEGRATION=1")
     explicit_url = os.environ.get("MYSQL_RESOURCE_RACE_DATABASE_URL")
     if not explicit_url:
-        pytest.skip("requires an explicit disposable MYSQL_RESOURCE_RACE_DATABASE_URL")
+        pytest.fail(
+            "RUN_MYSQL_INTEGRATION=1 requires an explicit disposable "
+            "MYSQL_RESOURCE_RACE_DATABASE_URL"
+        )
     try:
         return _validate_disposable_mysql_url(
             explicit_url,
             default_database_url=Settings(_env_file=None).database_url,
         )
     except _UnsafeDisposableDatabaseError as error:
-        pytest.skip(str(error))
+        pytest.fail(str(error))
     except ValueError as error:
         pytest.fail(str(error))
+
+
+def test_integration_flag_requires_explicit_resource_race_url(monkeypatch) -> None:
+    monkeypatch.setenv("RUN_MYSQL_INTEGRATION", "1")
+    monkeypatch.delenv("MYSQL_RESOURCE_RACE_DATABASE_URL", raising=False)
+
+    with pytest.raises(pytest.fail.Exception, match="explicit disposable"):
+        _disposable_mysql_url()
 
 
 def _setup_state(session_factory, *, resource_type: str) -> _RaceState:
@@ -521,8 +536,11 @@ class _NoopRuntime:
         raise AssertionError("prepare/delete race must not invoke the runtime")
 
 
-def _generation_service(session_factory, settings: Settings) -> GenerationService:
-    return GenerationService(
+def _task_execution_service(
+    session_factory,
+    settings: Settings,
+) -> TaskExecutionService:
+    return TaskExecutionService(
         session_factory=session_factory,
         runtime=_NoopRuntime(),
         agent_service=AgentService(settings=settings),
@@ -556,10 +574,13 @@ def _race_prepare_lock_then_delete_wait(
                 prepare_locked.set()
                 assert release_prepare.wait(timeout=30)
 
-            _generation_service(lambda: prepare_session, settings)._prepare_turn(
+            _task_execution_service(
+                lambda: prepare_session,
+                settings,
+            ).prepare_send(
                 user_id=state.user_id,
-                request=ConversationSendRequest(
-                    text="prepare wins",
+                request=ChatSendRequest(
+                    message="prepare wins",
                     agent_id=state.agent_id,
                 ),
             )
@@ -685,13 +706,13 @@ def _race_delete_lock_then_prepare_wait(
                     prepare_target_reached.set()
 
             try:
-                _generation_service(
+                _task_execution_service(
                     lambda: prepare_session,
                     settings,
-                )._prepare_turn(
+                ).prepare_send(
                     user_id=state.user_id,
-                    request=ConversationSendRequest(
-                        text="delete wins",
+                    request=ChatSendRequest(
+                        message="delete wins",
                         agent_id=state.agent_id,
                     ),
                 )
@@ -758,7 +779,7 @@ def _run_agent_delete_and_prepare_race(ordering: str) -> None:
             if performance_schema_enabled != 1:
                 pytest.fail(
                     "MySQL integration prerequisite failed: Performance Schema "
-                    "must be enabled for the generation/delete lock proof."
+                    "must be enabled for the task preparation/delete lock proof."
                 )
             try:
                 connection.execute(_LOCK_WAIT_PREFLIGHT_QUERY)
@@ -792,56 +813,53 @@ def _run_agent_delete_and_prepare_race(ordering: str) -> None:
 
         with session_factory() as session:
             agent = session.get(models.Resource, state.agent_id)
-            conversations = list(session.scalars(select(models.Conversation)))
-            messages = list(
+            tasks = list(session.scalars(select(models.Task)))
+            subtasks = list(
                 session.scalars(
-                    select(models.Message).order_by(models.Message.sequence)
+                    select(models.Subtask).order_by(models.Subtask.message_id)
                 )
             )
             assert agent is not None
             assert agent.is_active is False
             assert agent.deleted_at is not None
             if ordering == "prepare_first":
-                assert len(conversations) == 1
-                assert [(item.role, item.status) for item in messages] == [
-                    ("user", "completed"),
-                    ("assistant", "pending"),
+                assert len(tasks) == 1
+                assert [(item.role, item.status) for item in subtasks] == [
+                    ("USER", "COMPLETED"),
+                    ("ASSISTANT", "PENDING"),
                 ]
-                ConversationRepository().recover_interrupted(session)
-                conversation_id = conversations[0].id
+                TaskRepository().recover_interrupted(session)
+                task_id = tasks[0].id
                 session.commit()
             else:
-                assert conversations == []
-                assert messages == []
-                conversation_id = None
+                assert tasks == []
+                assert subtasks == []
+                task_id = None
 
-        if conversation_id is not None:
+        if task_id is not None:
             with session_factory() as recovered_session:
-                recovered_conversation = recovered_session.get(
-                    models.Conversation,
-                    conversation_id,
+                recovered_task = recovered_session.get(
+                    models.Task,
+                    task_id,
                 )
                 recovered_assistant = recovered_session.scalar(
-                    select(models.Message).where(
-                        models.Message.user_id == state.user_id,
-                        models.Message.conversation_id == conversation_id,
-                        models.Message.role == "assistant",
+                    select(models.Subtask).where(
+                        models.Subtask.user_id == state.user_id,
+                        models.Subtask.task_id == task_id,
+                        models.Subtask.role == "ASSISTANT",
                     )
                 )
-                assert recovered_conversation is not None
+                assert recovered_task is not None
                 assert recovered_assistant is not None
-                assert recovered_conversation.status == "idle"
-                assert recovered_assistant.status == "failed"
-                assert (
-                    recovered_assistant.metadata_json["error_code"]
-                    == "generation_interrupted"
-                )
+                assert recovered_task.status == "FAILED"
+                assert recovered_assistant.status == "FAILED"
+                assert recovered_assistant.error_message == "generation_interrupted"
             with pytest.raises(HTTPException) as unavailable:
-                _generation_service(session_factory, settings)._prepare_turn(
+                _task_execution_service(session_factory, settings).prepare_send(
                     user_id=state.user_id,
-                    request=ConversationSendRequest(
-                        text="later turn",
-                        conversation_id=conversation_id,
+                    request=ChatSendRequest(
+                        message="later turn",
+                        task_id=task_id,
                     ),
                 )
             assert unavailable.value.detail["code"] == "agent_unavailable"
@@ -899,13 +917,13 @@ def test_disposable_database_guard_rejects_default_schema_aliases(
 
 def test_disposable_database_guard_accepts_a_distinct_schema_name() -> None:
     parsed = _validate_disposable_mysql_url(
-        "mysql+pymysql://user:pass@LOCALHOST./auto_reign_resource_race",
+        "mysql+pymysql://user:pass@LOCALHOST./auto_reign_resource_race_test",
         default_database_url=(
             "mysql+pymysql://user:pass@127.0.0.1:3306/auto_reign"
         ),
     )
 
-    assert parsed.database == "auto_reign_resource_race"
+    assert parsed.database == "auto_reign_resource_race_test"
 
 
 @pytest.mark.parametrize(
@@ -920,8 +938,18 @@ def test_disposable_database_guard_fails_closed_for_unverifiable_default_url(
 ) -> None:
     with pytest.raises(_UnsafeDisposableDatabaseError):
         _validate_disposable_mysql_url(
-            "mysql+pymysql://user:pass@localhost/auto_reign_resource_race",
+            "mysql+pymysql://user:pass@localhost/auto_reign_resource_race_test",
             default_database_url=default_url,
+        )
+
+
+def test_disposable_database_guard_rejects_non_test_schema() -> None:
+    with pytest.raises(_UnsafeDisposableDatabaseError, match="end with _test"):
+        _validate_disposable_mysql_url(
+            "mysql+pymysql://user:pass@localhost/production",
+            default_database_url=(
+                "mysql+pymysql://user:pass@localhost/auto_reign"
+            ),
         )
 
 

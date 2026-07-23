@@ -44,7 +44,7 @@ describe("AuthGuard", () => {
 
   it("preserves query strings when redirecting private pages to login", async () => {
     navigationMocks.pathname = "/chat";
-    navigationMocks.searchParams = new URLSearchParams("session=abc&mode=compact");
+    navigationMocks.searchParams = new URLSearchParams("task=7&mode=compact");
     vi.mocked(isAuthenticated).mockReturnValue(false);
 
     render(
@@ -55,7 +55,7 @@ describe("AuthGuard", () => {
 
     await waitFor(() =>
       expect(navigationMocks.replace).toHaveBeenCalledWith(
-        "/login?redirect=%2Fchat%3Fsession%3Dabc%26mode%3Dcompact",
+        "/login?redirect=%2Fchat%3Ftask%3D7%26mode%3Dcompact",
       ),
     );
   });
@@ -135,7 +135,7 @@ describe("AuthGuard", () => {
     expect(screen.getByText("Login page")).toBeInTheDocument();
 
     navigationMocks.pathname = "/chat";
-    navigationMocks.searchParams = new URLSearchParams("session=private");
+    navigationMocks.searchParams = new URLSearchParams("task=8");
     rerender(
       <AuthGuard>
         <PrivateChat />
@@ -146,7 +146,7 @@ describe("AuthGuard", () => {
     expect(screen.queryByText("Private chat")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(navigationMocks.replace).toHaveBeenCalledWith(
-        "/login?redirect=%2Fchat%3Fsession%3Dprivate",
+        "/login?redirect=%2Fchat%3Ftask%3D8",
       ),
     );
   });

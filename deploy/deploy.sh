@@ -45,10 +45,10 @@ echo "Creating pre-deployment backup..."
 AUTO_REIGN_VERSION="$version" AUTO_REIGN_ENV_FILE="$ENV_FILE" "$DEPLOY_DIR/backup.sh"
 
 echo "Pulling Auto Reign $version images..."
-compose pull mysql qdrant elasticsearch backend frontend migrate
+compose pull redis mysql qdrant elasticsearch backend frontend migrate
 
 echo "Starting storage services..."
-compose up -d mysql qdrant elasticsearch
+compose up -d redis mysql qdrant elasticsearch
 
 if [[ "$skip_migration" == false ]]; then
   echo "Applying database migrations..."

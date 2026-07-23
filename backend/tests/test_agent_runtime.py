@@ -5,12 +5,15 @@ from dataclasses import FrozenInstanceError, fields
 from datetime import UTC, datetime
 from inspect import signature
 import json
+from types import SimpleNamespace
 
 import pytest
+from langchain_core.messages import AIMessageChunk, ToolMessage
 from pydantic import ValidationError
 from sqlalchemy.orm import sessionmaker
 
 from app.schemas.agents import AgentConfig
+from app.core.config import Settings
 from app.schemas.knowledge_collections import KnowledgeCollectionConfig
 from app.services.agent_runtime import AgentRuntime, PreparedRuntimeTurn, RuntimeTurn
 from app.services.agent_home_service import AgentHomeService
@@ -19,23 +22,25 @@ from app.services.agent_service import (
     ResolvedKnowledgeScope,
     freeze_json,
 )
-from app.services.attachment_runtime_loader import (
-    RuntimeAttachment,
-    RuntimeAttachmentRef,
-)
 from app.services.context_assembler import ContextAssembler
+from app.services.message_chain import serialize_assistant_event
+from app.services.model_service import ModelService
 from app.services.platform_prompt_service import PlatformPromptService
 from app.services.runtime_types import (
+    AssistantMessageEvent,
     CapabilityContext,
     CapabilityProvider,
     ProviderCallMetrics,
     RuntimeObserver,
     RuntimeAssistantTurn,
-    RuntimeConversationTurn,
+    RuntimeTaskTurn,
     RuntimeUserTurn,
+    TextDeltaEvent,
     ToolCall,
     ToolDefinition,
     ToolResult,
+    ToolResultEvent,
+    ToolStartEvent,
 )
 from app.services.token_counter import RuntimeTokenCounter
 from tests.fake_object_store import FakeObjectStore
@@ -82,6 +87,10 @@ class FakeModelService:
 
 def _ignore_provider_metrics(_metrics: ProviderCallMetrics) -> None:
     return None
+
+
+def _text_deltas(events: list[object]) -> list[str]:
+    return [event.content for event in events if isinstance(event, TextDeltaEvent)]
 
 
 class RecordingPromptService(PlatformPromptService):
@@ -154,7 +163,7 @@ def runtime_turn(
     agent_prompt: str = "用简体中文简洁回答。",
     provider: str = "qwen",
     model: str = "qwen3.7-plus",
-    turns: tuple[RuntimeConversationTurn, ...] = (),
+    turns: tuple[RuntimeTaskTurn, ...] = (),
     token_budget: int = 40_000,
     with_knowledge: bool = False,
 ) -> RuntimeTurn:
@@ -175,24 +184,10 @@ def runtime_turn(
     )
 
 
-class RecordingAttachmentLoader:
-    def __init__(
-        self,
-        attachments: dict[str, RuntimeAttachment] | None = None,
-    ) -> None:
-        self.attachments = attachments or {}
-        self.calls: list[RuntimeAttachmentRef] = []
-
-    def load(self, ref: RuntimeAttachmentRef) -> RuntimeAttachment:
-        self.calls.append(ref)
-        return self.attachments[ref.id]
-
-
 def make_runtime(
     *,
     model: FakeModelService,
     prompt_service: PlatformPromptService | None = None,
-    attachment_loader: RecordingAttachmentLoader | None = None,
     providers: tuple[CapabilityProvider, ...] = (),
     token_budget: int = 2_048,
 ) -> AgentRuntime:
@@ -201,7 +196,6 @@ def make_runtime(
     return AgentRuntime(
         model_service=model,  # type: ignore[arg-type]
         prompt_service=prompt_service or PlatformPromptService(),
-        attachment_loader=attachment_loader or RecordingAttachmentLoader(),  # type: ignore[arg-type]
         context_assembler=ContextAssembler(
             token_budget=token_budget,
             token_counter=counter,
@@ -217,14 +211,12 @@ def _turn(
     message_id: str,
     text: str,
     *,
-    refs: tuple[RuntimeAttachmentRef, ...] = (),
     assistants: tuple[str, ...] = (),
-) -> RuntimeConversationTurn:
-    return RuntimeConversationTurn(
+) -> RuntimeTaskTurn:
+    return RuntimeTaskTurn(
         user=RuntimeUserTurn(
             message_id=message_id,
             text=text,
-            attachment_refs=refs,
         ),
         assistants=tuple(
             RuntimeAssistantTurn(
@@ -234,33 +226,6 @@ def _turn(
             for index, answer in enumerate(assistants)
         ),
     )
-
-
-def _attachment_ref(
-    attachment_id: str,
-    *,
-    media_type: str = "text/plain",
-    source_size_bytes: int = 4,
-    parsed_size_bytes: int | None = 4,
-) -> RuntimeAttachmentRef:
-    return RuntimeAttachmentRef(
-        id=attachment_id,
-        filename=("diagram.png" if media_type.startswith("image/") else "notes.txt"),
-        media_type=media_type,
-        source_object_key=f"users/7/attachments/{attachment_id}/source",
-        parsed_object_key=(
-            None
-            if media_type.startswith("image/")
-            else f"users/7/attachments/{attachment_id}/parsed"
-        ),
-        source_size_bytes=source_size_bytes,
-        source_content_hash="source-hash",
-        parsed_size_bytes=parsed_size_bytes,
-        parsed_content_hash=(
-            None if media_type.startswith("image/") else "parsed-hash"
-        ),
-    )
-
 
 def test_platform_prompt_places_platform_rules_before_agent_prompt() -> None:
     value = PlatformPromptService().build_platform_prompt(extra_modules=())
@@ -365,6 +330,19 @@ def test_runtime_dataclasses_keep_the_stable_protocol_surface() -> None:
         "session_factory",
         "token_budget",
     ]
+    assert [field.name for field in fields(AssistantMessageEvent)] == [
+        "content",
+        "tool_calls",
+        "reasoning_content",
+        "provider",
+        "model",
+        "compacted",
+        "summary_compacted",
+        "compaction_version",
+    ]
+    assert [field.name for field in fields(ToolStartEvent)] == ["call"]
+    assert [field.name for field in fields(ToolResultEvent)] == ["call", "result"]
+    assert [field.name for field in fields(TextDeltaEvent)] == ["content"]
 
     context = CapabilityContext(
         user_id=7,
@@ -387,6 +365,9 @@ def test_runtime_dataclasses_keep_the_stable_protocol_surface() -> None:
     assert result.metadata == {}
     with pytest.raises(FrozenInstanceError):
         context.user_id = 8  # type: ignore[misc]
+    event = AssistantMessageEvent(content="answer", provider="qwen", model="plus")
+    with pytest.raises(FrozenInstanceError):
+        event.content = "changed"  # type: ignore[misc]
 
 
 def test_tool_result_metadata_uses_an_independent_default() -> None:
@@ -444,9 +425,15 @@ def test_agent_runtime_streams_platform_agent_and_ordered_history_without_tools(
 
     prepared = runtime.prepare_turn(turn)
     assert isinstance(prepared, PreparedRuntimeTurn)
-    assert list(
+    events = list(
         runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
-    ) == ["你好", "，继续学习。"]
+    )
+    assert _text_deltas(events) == ["你好", "，继续学习。"]
+    assert events[-1] == AssistantMessageEvent(
+        content="你好，继续学习。",
+        provider="qwen",
+        model="qwen3.7-plus",
+    )
     assert len(model.calls) == 1
     call = model.calls[0]
     messages = call["messages"]
@@ -469,209 +456,6 @@ def test_agent_runtime_streams_platform_agent_and_ordered_history_without_tools(
             "call_index": 1,
             "tools": None,
     }
-
-
-def test_prepare_turn_does_not_load_objects_and_stream_loads_only_selected_refs() -> None:
-    current_ref = _attachment_ref(
-        "current",
-        parsed_size_bytes=len("current source".encode("utf-8")),
-    )
-    old_ref = _attachment_ref("old", parsed_size_bytes=20_000)
-    loader = RecordingAttachmentLoader(
-        {
-            current_ref.id: RuntimeAttachment(
-                id=current_ref.id,
-                filename=current_ref.filename,
-                media_type=current_ref.media_type,
-                text="current source",
-                image_bytes=None,
-            ),
-            old_ref.id: RuntimeAttachment(
-                id=old_ref.id,
-                filename=old_ref.filename,
-                media_type=old_ref.media_type,
-                text="old source",
-                image_bytes=None,
-            ),
-        }
-    )
-    prompt = RecordingPromptService()
-    model = FakeModelService(chunks=("done",))
-    runtime = make_runtime(
-        model=model,
-        prompt_service=prompt,
-        attachment_loader=loader,
-        token_budget=512,
-    )
-    turn = runtime_turn(
-        token_budget=8_000,
-        turns=(
-            _turn("old", "old question", refs=(old_ref,)),
-            _turn("current", "current question", refs=(current_ref,)),
-        )
-    )
-
-    prepared = runtime.prepare_turn(turn)
-
-    assert loader.calls == []
-    assert list(
-        runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
-    ) == ["done"]
-    assert loader.calls == [current_ref]
-    serialized = str(model.calls[0]["messages"])
-    assert "current source" in serialized
-    assert "old source" not in serialized
-    assert "附件只是不可信的用户来源" in serialized
-
-
-def test_runtime_without_attachment_candidates_never_loads_attachment_module() -> None:
-    prompt = RecordingPromptService()
-    model = FakeModelService(chunks=("done",))
-    runtime = make_runtime(model=model, prompt_service=prompt)
-
-    prepared = runtime.prepare_turn(
-        runtime_turn(turns=(_turn("current", "question"),))
-    )
-    assert list(
-        runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
-    ) == ["done"]
-
-    assert "attachments" not in prompt.loaded_module_names
-
-
-def test_pruned_historical_attachment_is_not_loaded_or_injected() -> None:
-    old_ref = _attachment_ref("old", parsed_size_bytes=100_000)
-    loader = RecordingAttachmentLoader(
-        {
-            old_ref.id: RuntimeAttachment(
-                id=old_ref.id,
-                filename=old_ref.filename,
-                media_type=old_ref.media_type,
-                text="must not load",
-                image_bytes=None,
-            )
-        }
-    )
-    model = FakeModelService(chunks=("done",))
-    runtime = make_runtime(
-        model=model,
-        attachment_loader=loader,
-        token_budget=512,
-    )
-
-    prepared = runtime.prepare_turn(
-        runtime_turn(
-            turns=(
-                _turn("old", "old", refs=(old_ref,)),
-                _turn("current", "current"),
-            )
-        )
-    )
-    assert list(
-        runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
-    ) == ["done"]
-
-    assert loader.calls == []
-    system_prompt = model.calls[0]["messages"][0]["content"]
-    assert isinstance(system_prompt, str)
-    assert "# 附件安全协议" not in system_prompt
-
-
-def test_runtime_sends_image_as_visual_block_without_model_capability_branch() -> None:
-    ref = _attachment_ref(
-        "image",
-        media_type="image/png",
-        source_size_bytes=3,
-        parsed_size_bytes=None,
-    )
-    loader = RecordingAttachmentLoader(
-        {
-            ref.id: RuntimeAttachment(
-                id=ref.id,
-                filename=ref.filename,
-                media_type=ref.media_type,
-                text=None,
-                image_bytes=b"png",
-            )
-        }
-    )
-    model = FakeModelService(chunks=("done",))
-    runtime = make_runtime(model=model, attachment_loader=loader)
-
-    prepared = runtime.prepare_turn(
-        runtime_turn(turns=(_turn("current", "inspect", refs=(ref,)),))
-    )
-    assert list(
-        runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
-    ) == ["done"]
-
-    messages = model.calls[0]["messages"]
-    assert messages[2] == {
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "inspect"},
-            {
-                "type": "image_url",
-                "image_url": {"url": "data:image/png;base64,cG5n"},
-            },
-        ],
-    }
-    assert loader.calls == [ref]
-
-
-def test_application_composes_one_store_and_one_runtime_graph(
-    client,
-    fake_object_store,
-) -> None:
-    state = client.app.state
-
-    assert state.agent_runtime is state.generation_service.runtime
-    assert state.agent_runtime.attachment_loader is state.attachment_runtime_loader
-    assert state.agent_runtime.context_assembler is state.context_assembler
-    assert state.attachment_runtime_loader.object_store is fake_object_store
-    assert state.attachment_service.store is fake_object_store
-    assert state.knowledge_retrieval_service.object_store is fake_object_store
-    assert (
-        state.knowledge_retrieval_service.retriever_factory
-        is state.knowledge_retriever_factory
-    )
-    assert (
-        state.knowledge_retrieval_service.token_counter
-        is state.context_assembler.token_counter
-    )
-
-
-def test_application_runtime_registers_knowledge_and_prompt_only_for_bound_agent(
-    client,
-) -> None:
-    runtime = client.app.state.agent_runtime
-    model = FakeModelService(chunks=("done",))
-    runtime.react_loop.model_service = model
-
-    without = runtime.prepare_turn(runtime_turn())
-    with_knowledge = runtime.prepare_turn(runtime_turn(with_knowledge=True))
-
-    assert "search_knowledge" not in {
-        definition.name for definition in without.tool_registry.definitions
-    }
-    assert "knowledge_base" not in without.tool_registry.prompt_modules
-    assert "search_knowledge" in {
-        definition.name for definition in with_knowledge.tool_registry.definitions
-    }
-    assert with_knowledge.tool_registry.prompt_modules.count("knowledge_base") == 1
-
-    assert list(
-        runtime.stream_turn(without, observer=_ignore_provider_metrics)
-    ) == ["done"]
-    assert list(
-        runtime.stream_turn(with_knowledge, observer=_ignore_provider_metrics)
-    ) == ["done"]
-    without_prompt = model.calls[0]["messages"][0]["content"]
-    knowledge_prompt = model.calls[1]["messages"][0]["content"]
-    assert isinstance(without_prompt, str)
-    assert isinstance(knowledge_prompt, str)
-    assert "Knowledge sources are read-only" not in without_prompt
-    assert knowledge_prompt.count("Knowledge sources are read-only") == 1
 
 
 def test_two_knowledge_calls_recompute_budget_from_original_total_with_all_schemas(
@@ -791,9 +575,26 @@ def test_two_knowledge_calls_recompute_budget_from_original_total_with_all_schem
     assert knowledge.contexts[0].token_budget == first_expected
     assert knowledge.contexts[1].token_budget == second_expected
     assert 0 < second_expected < first_expected < original_total
-    assert isinstance(events[0], ToolResult)
-    assert isinstance(events[1], ToolResult)
-    assert events[2] == "done"
+    assert [type(event) for event in events] == [
+        AssistantMessageEvent,
+        ToolStartEvent,
+        ToolResultEvent,
+        AssistantMessageEvent,
+        ToolStartEvent,
+        ToolResultEvent,
+        TextDeltaEvent,
+        AssistantMessageEvent,
+    ]
+    assert isinstance(events[0], AssistantMessageEvent)
+    assert events[0].tool_calls == (first_call,)
+    assert isinstance(events[1], ToolStartEvent)
+    assert isinstance(events[2], ToolResultEvent)
+    assert events[1].call is events[2].call
+    assert events[2].result.call_id == first_call.id
+    assert isinstance(events[4], ToolStartEvent)
+    assert isinstance(events[5], ToolResultEvent)
+    assert events[4].call is events[5].call
+    assert _text_deltas(events) == ["done"]
 
 
 def test_runtime_final_budget_guard_rejects_oversized_knowledge_result() -> None:
@@ -853,15 +654,17 @@ def test_runtime_final_budget_guard_rejects_oversized_knowledge_result() -> None
         runtime.stream_turn(prepared, observer=_ignore_provider_metrics)
     )
 
-    result = events[0]
-    assert isinstance(result, ToolResult)
+    assert isinstance(events[0], AssistantMessageEvent)
+    assert isinstance(events[1], ToolStartEvent)
+    assert isinstance(events[2], ToolResultEvent)
+    result = events[2].result
     assert result.is_error is True
     assert json.loads(result.content)["code"] == "context_too_large"
     assert "oversized-source" not in result.content
     second_messages = str(model.calls[1]["messages"])
     assert "context_too_large" in second_messages
     assert "oversized-source" not in second_messages
-    assert events[1] == "done"
+    assert _text_deltas(events) == ["done"]
 
 
 def test_agent_runtime_collects_prompt_modules_from_a_provider_without_tools(
@@ -899,12 +702,13 @@ def test_agent_runtime_collects_prompt_modules_from_a_provider_without_tools(
     providers.clear()
     turn = runtime_turn()
 
-    assert list(
+    events = list(
         runtime.stream_turn(
             runtime.prepare_turn(turn),
             observer=_ignore_provider_metrics,
         )
-    ) == ["done"]
+    )
+    assert _text_deltas(events) == ["done"]
     messages = model.calls[0]["messages"]
     assert isinstance(messages, list)
     assert "module:agent_home" in messages[0]["content"]
@@ -999,10 +803,255 @@ def test_agent_runtime_dispatches_tool_definitions_through_provider_loop() -> No
         "tool_call_id": "call-1",
         "content": '{"value":"found"}',
     }
-    assert isinstance(events[0], ToolResult)
-    assert events[1] == "done"
+    assert [type(event) for event in events] == [
+        AssistantMessageEvent,
+        ToolStartEvent,
+        ToolResultEvent,
+        TextDeltaEvent,
+        AssistantMessageEvent,
+    ]
+    assistant = events[0]
+    started = events[1]
+    completed = events[2]
+    assert isinstance(assistant, AssistantMessageEvent)
+    assert isinstance(started, ToolStartEvent)
+    assert isinstance(completed, ToolResultEvent)
+    assert assistant.tool_calls[0] is started.call
+    assert started.call is completed.call
+    assert completed.result.call_id == started.call.id
+    assert _text_deltas(events) == ["done"]
     assert executed[0][0].name == "lookup"
     assert executed[0][1] > 0
+
+
+def test_react_loop_accumulates_split_tool_arguments_and_reasoning(
+    monkeypatch,
+) -> None:
+    call = ToolCall(id="call-split", name="lookup", arguments={"query": "hello"})
+    result = ToolResult(call_id=call.id, content='{"value":"found"}')
+
+    class LookupProvider:
+        def prompt_modules(self, context: CapabilityContext) -> tuple[str, ...]:
+            return ()
+
+        def tool_definitions(
+            self, context: CapabilityContext
+        ) -> tuple[ToolDefinition, ...]:
+            return (
+                ToolDefinition(
+                    name="lookup",
+                    description="Look up a value.",
+                    input_schema={"type": "object"},
+                ),
+            )
+
+        def execute(self, call: ToolCall, context: CapabilityContext) -> ToolResult:
+            raise AssertionError("the fake graph supplies its audited result")
+
+    class FakeGraph:
+        def stream(self, *args, **kwargs):
+            del args, kwargs
+            yield (
+                AIMessageChunk(
+                    id="assistant-tool",
+                    content="",
+                    additional_kwargs={"reasoning_content": "先"},
+                    tool_call_chunks=[
+                        {
+                            "name": "lookup",
+                            "args": '{"query":',
+                            "id": call.id,
+                            "index": 0,
+                            "type": "tool_call_chunk",
+                        }
+                    ],
+                ),
+                {},
+            )
+            yield (
+                AIMessageChunk(
+                    id="assistant-tool",
+                    content="",
+                    additional_kwargs={"reasoning_content": "查"},
+                    tool_call_chunks=[
+                        {
+                            "name": None,
+                            "args": '"hello"}',
+                            "id": None,
+                            "index": 0,
+                            "type": "tool_call_chunk",
+                        }
+                    ],
+                ),
+                {},
+            )
+            yield (
+                ToolMessage(
+                    content=result.content,
+                    tool_call_id=call.id,
+                    name=call.name,
+                    artifact=result,
+                ),
+                {},
+            )
+            yield (AIMessageChunk(id="assistant-final", content="final "), {})
+            yield (AIMessageChunk(id="assistant-final", content="answer"), {})
+
+    monkeypatch.setattr("app.services.react_loop.create_react_agent", lambda **_: FakeGraph())
+    runtime = make_runtime(model=FakeModelService(chunks=()), providers=(LookupProvider(),))
+    turn = runtime_turn(turns=(_turn("current", "look it up"),))
+    prepared = runtime.prepare_turn(turn)
+    messages = runtime.context_assembler.render_selected(
+        runtime._select_turns(
+            context=turn.context,
+            agent_prompt=turn.agent_prompt,
+            turns=turn.turns,
+            provider_modules=prepared.tool_registry.prompt_modules,
+            definitions=prepared.tool_registry.definitions,
+            agents_md=None,
+        )
+    )
+
+    events = list(
+        runtime.react_loop.stream(
+            messages,
+            provider=turn.provider,
+            model=turn.model,
+            context=turn.context,
+            registry=prepared.tool_registry,
+            observer=_ignore_provider_metrics,
+        )
+    )
+
+    assert [type(event) for event in events] == [
+        AssistantMessageEvent,
+        ToolStartEvent,
+        ToolResultEvent,
+        TextDeltaEvent,
+        TextDeltaEvent,
+        AssistantMessageEvent,
+    ]
+    assistant = events[0]
+    started = events[1]
+    completed = events[2]
+    assert isinstance(assistant, AssistantMessageEvent)
+    assert assistant.content is None
+    assert assistant.reasoning_content == "先查"
+    assert assistant.provider == turn.provider
+    assert assistant.model == turn.model
+    assert assistant.tool_calls == (call,)
+    assert isinstance(started, ToolStartEvent)
+    assert isinstance(completed, ToolResultEvent)
+    assert assistant.tool_calls[0] is started.call
+    assert started.call is completed.call
+    assert completed.result is result
+    assert _text_deltas(events) == ["final ", "answer"]
+    assert events[-1] == AssistantMessageEvent(
+        content="final answer",
+        provider=turn.provider,
+        model=turn.model,
+    )
+
+
+def test_real_model_adapter_standardizes_provider_reasoning_into_assistant_event(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    provider_stream = [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        reasoning_content="先分析",
+                    )
+                )
+            ]
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=[
+                            {"type": "reasoning", "reasoning": "再判断"}
+                        ]
+                    )
+                )
+            ]
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(delta=SimpleNamespace(content="最终答案"))
+            ]
+        ),
+    ]
+    settings = Settings(
+        _env_file=None,
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        qdrant_url=":memory:",
+        qdrant_collection="test",
+        openai_api_key="provider-secret",
+        qwen_api_key=None,
+        deepseek_api_key=None,
+    )
+    completions = SimpleNamespace(create=lambda **_kwargs: provider_stream)
+    service = ModelService(
+        settings=settings,
+        client_factory=lambda **_kwargs: SimpleNamespace(
+            chat=SimpleNamespace(completions=completions)
+        ),
+    )
+    seen_content_blocks: list[list[dict[str, object]]] = []
+
+    class AdapterGraph:
+        def __init__(self, model) -> None:
+            self.model = model
+
+        def stream(self, payload, **_kwargs):
+            for chunk in self.model.stream(payload["messages"]):
+                seen_content_blocks.append(chunk.content_blocks)
+                yield chunk, {}
+
+    monkeypatch.setattr(
+        "app.services.react_loop.create_react_agent",
+        lambda *, model, **_kwargs: AdapterGraph(model),
+    )
+    counter = RuntimeTokenCounter(image_input_token_reserve=1_024)
+    runtime = AgentRuntime(
+        model_service=service,
+        prompt_service=PlatformPromptService(),
+        context_assembler=ContextAssembler(
+            token_budget=2_048,
+            token_counter=counter,
+        ),
+        agent_home=AgentHomeService(store=FakeObjectStore()),
+        token_counter=counter,
+        tool_result_token_reserve=1_024,
+    )
+    turn = runtime_turn(
+        provider="openai",
+        model="gpt-4.1-mini",
+        turns=(_turn("current", "answer"),),
+    )
+
+    events = list(
+        runtime.stream_turn(
+            runtime.prepare_turn(turn),
+            observer=_ignore_provider_metrics,
+        )
+    )
+
+    assistant = events[-1]
+    assert isinstance(assistant, AssistantMessageEvent)
+    assert assistant.content == "最终答案"
+    assert assistant.reasoning_content == "先分析再判断"
+    assert any(
+        block.get("type") == "reasoning"
+        for blocks in seen_content_blocks
+        for block in blocks
+    )
+    assert serialize_assistant_event(assistant)["reasoning_content"] == "先分析再判断"
 
 
 def test_agent_runtime_propagates_definition_hook_error_before_prompt_or_model() -> None:
@@ -1042,7 +1091,7 @@ def test_agent_runtime_propagates_definition_hook_error_before_prompt_or_model()
 def test_agent_runtime_rejects_reserved_prompt_modules_before_prompt_or_model() -> None:
     class ReservedModuleProvider:
         def prompt_modules(self, context: CapabilityContext) -> tuple[str, ...]:
-            return ("attachments",)
+            return ("core",)
 
         def tool_definitions(
             self,
@@ -1078,13 +1127,13 @@ def test_runtime_turn_objects_are_frozen_and_keep_history_order() -> None:
     assert [field.name for field in fields(RuntimeUserTurn)] == [
         "message_id",
         "text",
-        "attachment_refs",
+        "contexts",
     ]
     assert [field.name for field in fields(RuntimeAssistantTurn)] == [
         "message_id",
         "text",
     ]
-    assert [field.name for field in fields(RuntimeConversationTurn)] == [
+    assert [field.name for field in fields(RuntimeTaskTurn)] == [
         "user",
         "assistants",
     ]
@@ -1108,12 +1157,14 @@ def test_agent_runtime_reads_agent_prompt_from_each_turn() -> None:
 
     first = runtime.prepare_turn(runtime_turn(agent_prompt="First prompt"))
     second = runtime.prepare_turn(runtime_turn(agent_prompt="Second prompt"))
-    assert list(
+    first_events = list(
         runtime.stream_turn(first, observer=_ignore_provider_metrics)
-    ) == ["ok"]
-    assert list(
+    )
+    second_events = list(
         runtime.stream_turn(second, observer=_ignore_provider_metrics)
-    ) == ["ok"]
+    )
+    assert _text_deltas(first_events) == ["ok"]
+    assert _text_deltas(second_events) == ["ok"]
     assert [call["call_index"] for call in model.calls] == [1, 1]
 
     first_messages = model.calls[0]["messages"]
@@ -1133,7 +1184,7 @@ def test_agent_runtime_yields_partial_output_then_propagates_model_error() -> No
         observer=_ignore_provider_metrics,
     )
 
-    assert next(stream) == "partial"
+    assert next(stream) == TextDeltaEvent(content="partial")
     with pytest.raises(RuntimeError, match="^model stream failed$") as caught:
         next(stream)
     assert caught.value is error

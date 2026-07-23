@@ -344,6 +344,16 @@ a:focus-visible {
   font: inherit;
 }
 
+.sidebar-history-item .sidebar-task-status {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 .sidebar-history-action {
   justify-content: center;
   min-height: 28px;
@@ -1425,6 +1435,26 @@ a:focus-visible {
   font-size: 12px;
 }
 
+.subtask-contexts li {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.subtask-contexts li > small,
+.subtask-contexts li > details {
+  grid-column: 2 / -1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.subtask-contexts li > details pre {
+  max-height: 180px;
+  margin: 6px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .typing-line {
   display: inline-flex;
   align-items: center;
@@ -1532,6 +1562,14 @@ a:focus-visible {
   min-width: 0;
 }
 
+.attachment-picker__actions {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .attachment-picker__trigger {
   flex: 0 0 auto;
 }
@@ -1601,6 +1639,13 @@ a:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.attachment-drafts li > small {
+  flex: 0 0 auto;
+  margin-left: 5px;
+  color: inherit;
+  opacity: 0.75;
 }
 
 .attachment-drafts button {

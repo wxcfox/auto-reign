@@ -128,7 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Remove local Auto Reign runtime data and Docker "
-            "MySQL/Elasticsearch/Qdrant volumes. "
+            "MySQL/Redis/Elasticsearch/Qdrant volumes. "
             + REMOTE_OBJECT_WARNING
         )
     )
@@ -159,9 +159,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not result.removed_paths:
         print("No local filesystem runtime data found.")
     if not args.skip_docker and args.dry_run:
-        print("Docker MySQL, Elasticsearch, and Qdrant volumes would be reset.")
+        print("Docker MySQL, Redis, Elasticsearch, and Qdrant volumes would be reset.")
     elif not args.skip_docker:
-        print("Docker MySQL, Elasticsearch, and Qdrant volumes were reset.")
+        print("Docker MySQL, Redis, Elasticsearch, and Qdrant volumes were reset.")
     return 0
 
 

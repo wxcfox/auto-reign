@@ -25,15 +25,19 @@ from app.services.agent_service import (
 from app.services.context_assembler import ContextAssembler
 from app.services.platform_prompt_service import PlatformPromptService
 from app.services.runtime_types import (
+    AssistantMessageEvent,
     CapabilityContext,
     ProviderCallMetrics,
     RuntimeObserver,
     RuntimeTerminalError,
-    RuntimeConversationTurn,
+    RuntimeTaskTurn,
     RuntimeUserTurn,
+    TextDeltaEvent,
     ToolCall,
     ToolDefinition,
     ToolResult,
+    ToolResultEvent,
+    ToolStartEvent,
 )
 from app.services.token_counter import RuntimeTokenCounter
 from tests.fake_object_store import FakeObjectStore
@@ -52,11 +56,6 @@ def test_agent_home_runtime_has_no_workspace_rag_imports() -> None:
     assert "qdrant" not in home_sources.lower()
     assert "EmbeddingService" not in home_sources
     assert "WorkspaceVectorStore" not in home_sources
-
-
-class EmptyAttachmentLoader:
-    def load(self, _ref):
-        raise AssertionError("no attachment should be loaded")
 
 
 class ScriptedModel:
@@ -144,7 +143,7 @@ def _turn(*, home: bool = True, token_budget: int = 40_000) -> RuntimeTurn:
         provider="qwen",
         model="qwen3.7-plus",
         turns=(
-            RuntimeConversationTurn(
+            RuntimeTaskTurn(
                 user=RuntimeUserTurn(message_id="user-1", text="User question")
             ),
         ),
@@ -170,7 +169,6 @@ def _runtime(
     runtime = AgentRuntime(
         model_service=model,  # type: ignore[arg-type]
         prompt_service=PlatformPromptService(),
-        attachment_loader=EmptyAttachmentLoader(),  # type: ignore[arg-type]
         context_assembler=ContextAssembler(
             token_budget=40_000,
             token_counter=shared_counter,
@@ -183,11 +181,10 @@ def _runtime(
     return runtime, home, shared_counter
 
 
-def test_phase_three_runtime_constructor_extends_attachment_contract_without_db_session() -> None:
+def test_runtime_constructor_has_no_attachment_loader_or_db_session() -> None:
     assert tuple(inspect.signature(AgentRuntime).parameters) == (
         "model_service",
         "prompt_service",
-        "attachment_loader",
         "context_assembler",
         "agent_home",
         "token_counter",
@@ -203,9 +200,12 @@ def test_runtime_reads_current_agents_md_after_prepare_and_keeps_system_order() 
 
     first_prepared = runtime.prepare_turn(_turn())
     assert home.store.get_calls == []  # type: ignore[attr-defined]
-    assert list(
+    first_events = list(
         runtime.stream_turn(first_prepared, observer=_ignore_provider_metrics)
-    ) == ["first"]
+    )
+    assert [
+        event.content for event in first_events if isinstance(event, TextDeltaEvent)
+    ] == ["first"]
     root = home.read_file(user_id=7, workspace_id="workspace-1", path="AGENTS.md")
     home.write_file(
         user_id=7,
@@ -216,9 +216,12 @@ def test_runtime_reads_current_agents_md_after_prepare_and_keeps_system_order() 
     )
 
     second_prepared = runtime.prepare_turn(_turn())
-    assert list(
+    second_events = list(
         runtime.stream_turn(second_prepared, observer=_ignore_provider_metrics)
-    ) == ["second"]
+    )
+    assert [
+        event.content for event in second_events if isinstance(event, TextDeltaEvent)
+    ] == ["second"]
 
     first_system = [
         item["content"]
@@ -272,16 +275,24 @@ def test_runtime_never_promotes_file_tool_result_to_instruction_layer() -> None:
         )
     )
 
-    assert len(events) == 2
-    assert isinstance(events[0], ToolResult)
-    assert events[0].metadata == {
+    assert [type(event) for event in events] == [
+        AssistantMessageEvent,
+        ToolStartEvent,
+        ToolResultEvent,
+        TextDeltaEvent,
+        AssistantMessageEvent,
+    ]
+    completed = events[2]
+    assert isinstance(completed, ToolResultEvent)
+    result = completed.result
+    assert result.metadata == {
         "tool": "read_file",
         "path_sha256": path_sha256("notes/untrusted.md"),
         "etag": created.etag,
     }
-    assert malicious not in str(events[0].metadata)
-    assert "notes/untrusted.md" not in str(events[0].metadata)
-    assert events[1] == "handled as data"
+    assert malicious not in str(result.metadata)
+    assert "notes/untrusted.md" not in str(result.metadata)
+    assert events[3] == TextDeltaEvent(content="handled as data")
 
     followup = model.invocations[1]["messages"]
     system_text = "\n".join(
@@ -309,15 +320,22 @@ def test_successful_file_write_survives_later_provider_failure() -> None:
         runtime.prepare_turn(_turn()),
         observer=_ignore_provider_metrics,
     )
-    first = next(stream)
-    assert isinstance(first, ToolResult)
-    assert first.metadata == {
+    assistant = next(stream)
+    started = next(stream)
+    completed = next(stream)
+    assert isinstance(assistant, AssistantMessageEvent)
+    assert isinstance(started, ToolStartEvent)
+    assert isinstance(completed, ToolResultEvent)
+    assert assistant.tool_calls[0] is started.call
+    assert started.call is completed.call
+    result = completed.result
+    assert result.metadata == {
         "tool": "create_file",
         "path_sha256": path_sha256("notes/a.md"),
-        "etag": first.metadata["etag"],
+        "etag": result.metadata["etag"],
     }
-    assert "notes/a.md" not in str(first.metadata)
-    assert "kept" not in str(first.metadata)
+    assert "notes/a.md" not in str(result.metadata)
+    assert "kept" not in str(result.metadata)
     with pytest.raises(RuntimeError, match="provider failed"):
         list(stream)
 
@@ -405,7 +423,9 @@ def test_each_tool_call_recomputes_budget_from_original_total() -> None:
     )
 
     assert provider.execution_budgets == [55, 25]
-    assert [item for item in events if isinstance(item, str)] == ["done"]
+    assert [
+        item.content for item in events if isinstance(item, TextDeltaEvent)
+    ] == ["done"]
 
 
 def test_runtime_replaces_oversized_provider_result_before_followup_model_call() -> None:
@@ -448,12 +468,15 @@ def test_runtime_replaces_oversized_provider_result_before_followup_model_call()
         )
     )
 
-    result = next(item for item in events if isinstance(item, ToolResult))
+    completed = next(item for item in events if isinstance(item, ToolResultEvent))
+    result = completed.result
     assert result.is_error is True
     assert json.loads(result.content)["code"] == "context_too_large"
     assert "oversized private body" not in result.content
     assert "oversized private body" not in str(model.invocations[1]["messages"])
-    assert [item for item in events if isinstance(item, str)] == ["result rejected"]
+    assert [
+        item.content for item in events if isinstance(item, TextDeltaEvent)
+    ] == ["result rejected"]
 
 
 def test_runtime_stops_after_eight_tool_calls() -> None:
@@ -502,9 +525,13 @@ def test_runtime_audits_then_raises_when_minimum_error_envelope_does_not_fit() -
         runtime.prepare_turn(turn),
         observer=_ignore_provider_metrics,
     )
-    audit = next(stream)
-    assert isinstance(audit, ToolResult)
-    assert audit.metadata == {
+    assistant = next(stream)
+    started = next(stream)
+    completed = next(stream)
+    assert isinstance(assistant, AssistantMessageEvent)
+    assert isinstance(started, ToolStartEvent)
+    assert isinstance(completed, ToolResultEvent)
+    assert completed.result.metadata == {
         "tool": "lookup",
         "code": "context_too_large",
         "terminal": True,

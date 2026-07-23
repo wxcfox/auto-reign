@@ -91,18 +91,17 @@ def _knowledge_document_prefix(
 def load_object_references(
     session_factory: sessionmaker[Session],
 ) -> ObjectReferences:
+    """Load only Agent Home and Knowledge references stored in ObjectStore.
+
+    Chat SubtaskContext payloads are authoritative MySQL columns and must not
+    protect or classify any ObjectStore key.
+    """
     exact_keys: set[str] = set()
     protected_prefixes: set[str] = set()
     cleanup_pending_exact_keys: set[str] = set()
     cleanup_pending_prefixes: set[str] = set()
 
     with session_factory() as session:
-        attachment_rows = session.execute(
-            select(
-                models.Attachment.object_key,
-                models.Attachment.parsed_object_key,
-            )
-        ).all()
         document_rows = session.execute(
             select(
                 models.KnowledgeDocument.id,
@@ -125,10 +124,6 @@ def load_object_references(
                 models.Resource.deleted_at.is_(None),
             )
         ).all()
-
-    for object_key, parsed_object_key in attachment_rows:
-        _add_key(exact_keys, object_key)
-        _add_key(exact_keys, parsed_object_key)
 
     for row in document_rows:
         if row.is_active:
@@ -289,7 +284,10 @@ def run_audit(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Report ObjectStore/MySQL reference differences without mutation."
+        description=(
+            "Report Agent Home/Knowledge ObjectStore and MySQL reference "
+            "differences without mutation."
+        )
     )
     parser.add_argument(
         "--show-keys",

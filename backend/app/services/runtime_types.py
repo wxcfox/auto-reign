@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypeAlias
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.services.agent_service import ResolvedAgentConfig
-from app.services.attachment_runtime_loader import RuntimeAttachmentRef
 
 
 @dataclass(frozen=True)
@@ -30,6 +29,47 @@ class ToolResult:
     content: str
     is_error: bool = False
     metadata: dict[str, object] = field(default_factory=dict)
+
+
+AssistantContent: TypeAlias = str | list[dict[str, object]] | None
+
+
+@dataclass(frozen=True)
+class AssistantMessageEvent:
+    content: AssistantContent
+    tool_calls: tuple[ToolCall, ...] = ()
+    reasoning_content: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    compacted: bool = False
+    summary_compacted: bool = False
+    compaction_version: int | None = None
+
+
+@dataclass(frozen=True)
+class ToolStartEvent:
+    call: ToolCall
+
+
+@dataclass(frozen=True)
+class ToolResultEvent:
+    call: ToolCall
+    result: ToolResult
+
+
+@dataclass(frozen=True)
+class TextDeltaEvent:
+    content: str
+
+
+@dataclass(frozen=True)
+class ProviderReasoningDelta:
+    content: str
+
+
+RuntimeEvent: TypeAlias = (
+    AssistantMessageEvent | ToolStartEvent | ToolResultEvent | TextDeltaEvent
+)
 
 
 @dataclass(frozen=True)
@@ -72,14 +112,43 @@ class RuntimeAssistantTurn:
 
 
 @dataclass(frozen=True)
-class RuntimeUserTurn:
-    message_id: str
+class RuntimeTextContext:
+    context_id: int
+    source_type: Literal["attachment", "knowledge_base"]
+    name: str
     text: str
-    attachment_refs: tuple[RuntimeAttachmentRef, ...] = ()
 
 
 @dataclass(frozen=True)
-class RuntimeConversationTurn:
+class RuntimeImageContext:
+    context_id: int
+    name: str
+    mime_type: str
+    image_base64: str
+
+
+@dataclass(frozen=True)
+class RuntimeSelectedDocumentsContext:
+    context_id: int
+    name: str
+    knowledge_id: str
+    document_ids: tuple[str, ...]
+
+
+RuntimeUserContext: TypeAlias = (
+    RuntimeTextContext | RuntimeImageContext | RuntimeSelectedDocumentsContext
+)
+
+
+@dataclass(frozen=True)
+class RuntimeUserTurn:
+    message_id: str
+    text: str
+    contexts: tuple[RuntimeUserContext, ...] = ()
+
+
+@dataclass(frozen=True)
+class RuntimeTaskTurn:
     user: RuntimeUserTurn
     assistants: tuple[RuntimeAssistantTurn, ...] = ()
 

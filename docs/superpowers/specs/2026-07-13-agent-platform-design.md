@@ -33,7 +33,7 @@
 
 Auto Reign 的简化与新增：
 
-- 不照搬 CRD、Team/Bot/Ghost、Task/Subtask、通用 namespace 或 status 子对象。
+- 不引入当前产品不需要的 CRD、Team/Bot/Ghost、Task/Subtask、通用 namespace 或 status 子对象。
 - 首期不引入 Celery、Redis、Elasticsearch 或独立检索 Agent。
 - 新增 Agent Home：以对象存储文件和根 `AGENTS.md` 支持逐用户隔离的长期自我演进。
 - 保持 Agent Home 与未来 Git/POSIX 代码 Workspace 为两种不同存储语义。

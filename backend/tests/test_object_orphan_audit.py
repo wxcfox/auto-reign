@@ -102,28 +102,6 @@ def _create_document(
         return document
 
 
-def _create_attachment(factory, *, owner_id: int) -> models.Attachment:
-    attachment_id = str(uuid4())
-    prefix = f"users/{owner_id}/attachments/{attachment_id}/"
-    with session_scope(factory) as session:
-        attachment = models.Attachment(
-            id=attachment_id,
-            user_id=owner_id,
-            message_id=None,
-            original_filename="notes.txt",
-            object_key=f"{prefix}notes.txt",
-            parsed_object_key=f"{prefix}parsed.txt",
-            mime_type="text/plain",
-            size_bytes=5,
-            content_hash="hash",
-            parsed_size_bytes=5,
-            parsed_content_hash="parsed-hash",
-        )
-        session.add(attachment)
-        session.flush()
-        return attachment
-
-
 def _put_all(store: FakeObjectStore, *keys: str) -> None:
     for key in keys:
         store.put(key, b"object")
@@ -139,21 +117,17 @@ def test_orphan_audit_reports_exact_references_without_deleting(
         owner_id=owner_id,
         name="资料库",
     )
-    attachment = _create_attachment(audit_session_factory, owner_id=owner_id)
     document = _create_document(
         audit_session_factory,
         owner_id=owner_id,
         collection_id=collection_id,
         active=True,
     )
-    assert attachment.parsed_object_key is not None
     assert document.parsed_object_key is not None
-    orphan_key = "users/1/attachments/orphan/source.txt"
+    orphan_key = "users/1/knowledge/orphan/source.txt"
     store = FakeObjectStore()
     _put_all(
         store,
-        attachment.object_key,
-        attachment.parsed_object_key,
         document.source_object_key,
         document.parsed_object_key,
         orphan_key,
@@ -168,8 +142,8 @@ def test_orphan_audit_reports_exact_references_without_deleting(
 
     assert report.audited_at == FIXED_TIME
     assert report.backend == "local"
-    assert report.referenced_count == 4
-    assert report.stored_count == 5
+    assert report.referenced_count == 2
+    assert report.stored_count == 3
     assert report.candidate_orphan_keys == (orphan_key,)
     assert report.missing_referenced_keys == ()
     assert report.cleanup_pending_keys == ()
@@ -181,10 +155,20 @@ def test_active_reference_missing_from_store_is_reported(
     audit_session_factory,
 ) -> None:
     owner_id = _create_user(audit_session_factory, username="alice")
-    attachment = _create_attachment(audit_session_factory, owner_id=owner_id)
+    collection_id = _create_collection(
+        audit_session_factory,
+        owner_id=owner_id,
+        name="资料库",
+    )
+    document = _create_document(
+        audit_session_factory,
+        owner_id=owner_id,
+        collection_id=collection_id,
+        active=True,
+    )
     store = FakeObjectStore()
-    store.put(attachment.object_key, b"source")
-    assert attachment.parsed_object_key is not None
+    store.put(document.source_object_key, b"source")
+    assert document.parsed_object_key is not None
 
     report = audit_module.audit_object_orphans(
         session_factory=audit_session_factory,
@@ -193,7 +177,7 @@ def test_active_reference_missing_from_store_is_reported(
         clock=lambda: FIXED_TIME,
     )
 
-    assert report.missing_referenced_keys == (attachment.parsed_object_key,)
+    assert report.missing_referenced_keys == (document.parsed_object_key,)
 
 
 def test_successfully_cleaned_inactive_document_is_not_reported_missing(
@@ -336,10 +320,47 @@ def test_agent_home_prefixes_remain_protected_until_workspace_tombstone(
     assert all(key not in report.candidate_orphan_keys for key in protected_keys)
 
 
+def test_mysql_chat_contexts_do_not_create_object_store_references(
+    audit_module,
+    audit_session_factory,
+) -> None:
+    owner_id = _create_user(audit_session_factory, username="alice")
+    with session_scope(audit_session_factory) as session:
+        context = models.SubtaskContext(
+            user_id=owner_id,
+            subtask_id=0,
+            context_type="attachment",
+            name="inline.txt",
+            status="ready",
+            binary_data=b"stored-in-mysql",
+            extracted_text="stored in MySQL",
+            mime_type="text/plain",
+            file_extension=".txt",
+            file_size=15,
+        )
+        session.add(context)
+
+    legacy_chat_key = "users/1/attachments/legacy-object"
+    store = FakeObjectStore()
+    store.put(legacy_chat_key, b"legacy")
+
+    report = audit_module.audit_object_orphans(
+        session_factory=audit_session_factory,
+        object_store=store,
+        backend="local",
+        clock=lambda: FIXED_TIME,
+    )
+
+    assert report.referenced_count == 0
+    assert report.candidate_orphan_keys == (legacy_chat_key,)
+    assert report.missing_referenced_keys == ()
+    assert store.delete_calls == []
+
+
 def test_default_report_only_outputs_counts_and_show_keys_is_explicit(
     audit_module,
 ) -> None:
-    secret_key = "users/1/attachments/private-customer-name/source.txt"
+    secret_key = "users/1/knowledge/private-customer-name/source.txt"
     report = audit_module.OrphanAuditReport(
         audited_at=FIXED_TIME,
         backend="s3",
@@ -399,8 +420,18 @@ def test_local_audit_does_not_create_an_absent_object_root(
     tmp_path: Path,
 ) -> None:
     owner_id = _create_user(audit_session_factory, username="alice")
-    attachment = _create_attachment(audit_session_factory, owner_id=owner_id)
-    assert attachment.parsed_object_key is not None
+    collection_id = _create_collection(
+        audit_session_factory,
+        owner_id=owner_id,
+        name="资料库",
+    )
+    document = _create_document(
+        audit_session_factory,
+        owner_id=owner_id,
+        collection_id=collection_id,
+        active=True,
+    )
+    assert document.parsed_object_key is not None
     object_root = tmp_path / "absent-objects"
     settings = Settings(
         _env_file=None,
@@ -432,7 +463,7 @@ def test_local_audit_does_not_create_an_absent_object_root(
     assert not object_root.exists()
     assert report.stored_count == 0
     assert report.missing_referenced_keys == tuple(
-        sorted((attachment.object_key, attachment.parsed_object_key))
+        sorted((document.source_object_key, document.parsed_object_key))
     )
 
 
@@ -441,7 +472,7 @@ def test_local_cli_outputs_one_stable_json_line_and_fail_on_findings(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    key = "users/1/attachments/orphan/source.txt"
+    key = "users/1/knowledge/orphan/source.txt"
     report = audit_module.OrphanAuditReport(
         audited_at=FIXED_TIME,
         backend="local",

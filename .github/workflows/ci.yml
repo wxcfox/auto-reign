@@ -13,9 +13,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --project backend --frozen
+      - name: Verify a single Alembic head
+        run: scripts/check-alembic-heads.sh
+      - name: Verify authoritative documentation impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_ref="$PR_BASE_SHA"
+          else
+            base_ref="$PUSH_BEFORE_SHA"
+            if [[ "$base_ref" =~ ^0+$ ]]; then
+              base_ref="--root"
+            fi
+          fi
+          scripts/check-docs-impact.sh "$base_ref"
+
   backend:
     runs-on: ubuntu-latest
     services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
       mysql:
         image: mysql:8.4
         env:
@@ -69,11 +106,35 @@ jobs:
           MYSQL_MIGRATION_DATABASE_URL: mysql+pymysql://auto_reign:auto_reign@127.0.0.1:3306/auto_reign_migration_test
           RUN_MYSQL_INTEGRATION: "1"
         run: uv run pytest -v tests/integration/test_mysql_schema.py
-      - name: Run MySQL attachment binding integration
+      - name: Run MySQL SubtaskContext binding integration
         env:
-          MYSQL_ATTACHMENT_BINDING_DATABASE_URL: mysql+pymysql://auto_reign:auto_reign@127.0.0.1:3306/auto_reign_migration_test
+          MYSQL_SUBTASK_CONTEXT_DATABASE_URL: mysql+pymysql://auto_reign:auto_reign@127.0.0.1:3306/auto_reign_migration_test
           RUN_MYSQL_INTEGRATION: "1"
-        run: uv run pytest -v tests/integration/test_attachment_binding_mysql.py
+        run: uv run pytest -v tests/integration/test_subtask_context_binding_mysql.py
+      - name: Run MySQL concurrency and generation integration
+        env:
+          MYSQL_BOOTSTRAP_RACE_DATABASE_URL: mysql+pymysql://auto_reign:auto_reign@127.0.0.1:3306/auto_reign_migration_test
+          # The lock-wait proof reads performance_schema; this disposable
+          # service-container database therefore uses the CI-only root user.
+          MYSQL_RESOURCE_RACE_DATABASE_URL: mysql+pymysql://root:root@127.0.0.1:3306/auto_reign_migration_test
+          RUN_MYSQL_INTEGRATION: "1"
+        run: >-
+          uv run pytest -v
+          tests/integration/test_bootstrap_race_mysql.py
+          tests/integration/test_resource_reference_races_mysql.py
+          tests/integration/test_knowledge_reference_mysql.py
+          tests/integration/test_knowledge_worker_mysql.py
+      - name: Run Redis stream atomicity integration
+        env:
+          REDIS_TEST_URL: redis://127.0.0.1:6379/15
+          RUN_REDIS_INTEGRATION: "1"
+        run: uv run pytest -v tests/test_chat_stream_store.py -k real_redis
+      - name: Run MySQL and Redis Task room integration
+        env:
+          MYSQL_MIGRATION_DATABASE_URL: mysql+pymysql://auto_reign:auto_reign@127.0.0.1:3306/auto_reign_migration_test
+          REDIS_URL: redis://127.0.0.1:6379/15
+          RUN_MYSQL_INTEGRATION: "1"
+        run: uv run pytest -v tests/integration/test_task_room_mysql_redis.py
 
   frontend:
     runs-on: ubuntu-latest

@@ -37,12 +37,30 @@ class _MySQLRaceUserRepository(UserRepository):
         return user
 
 
+def _normalized_host(host: str | None) -> str:
+    normalized = (host or "").casefold().rstrip(".")
+    if normalized in {"localhost", "127.0.0.1", "::1"}:
+        return "loopback"
+    return normalized
+
+
+def _database_identity(url: URL) -> tuple[str, int, str | None]:
+    return (
+        _normalized_host(url.host),
+        url.port or 3306,
+        url.database.casefold() if url.database else None,
+    )
+
+
 def _disposable_mysql_url() -> URL:
     if os.environ.get("RUN_MYSQL_INTEGRATION") != "1":
         pytest.skip("requires RUN_MYSQL_INTEGRATION=1")
     explicit_url = os.environ.get("MYSQL_BOOTSTRAP_RACE_DATABASE_URL")
     if not explicit_url:
-        pytest.skip("requires an explicit disposable MYSQL_BOOTSTRAP_RACE_DATABASE_URL")
+        pytest.fail(
+            "RUN_MYSQL_INTEGRATION=1 requires an explicit disposable "
+            "MYSQL_BOOTSTRAP_RACE_DATABASE_URL"
+        )
 
     try:
         parsed_url = make_url(explicit_url)
@@ -52,26 +70,69 @@ def _disposable_mysql_url() -> URL:
         pytest.fail("MYSQL_BOOTSTRAP_RACE_DATABASE_URL must use a MySQL driver")
     if not parsed_url.database:
         pytest.fail("MYSQL_BOOTSTRAP_RACE_DATABASE_URL must name a disposable database")
+    if not parsed_url.database.casefold().endswith("_test"):
+        pytest.fail(
+            "MYSQL_BOOTSTRAP_RACE_DATABASE_URL database name must end with _test"
+        )
+    if parsed_url.database.casefold() in {
+        "information_schema",
+        "mysql",
+        "performance_schema",
+        "sys",
+    }:
+        pytest.fail("MYSQL_BOOTSTRAP_RACE_DATABASE_URL must not name a system database")
 
     default_url = os.environ.get("DATABASE_URL")
     if default_url:
         try:
             parsed_default_url = make_url(default_url)
-            disposable_identity = (
-                parsed_url.host,
-                parsed_url.port or 3306,
-                parsed_url.database,
-            )
-            default_identity = (
-                parsed_default_url.host,
-                parsed_default_url.port or 3306,
-                parsed_default_url.database,
-            )
+            disposable_identity = _database_identity(parsed_url)
+            default_identity = _database_identity(parsed_default_url)
             if disposable_identity == default_identity:
-                pytest.skip("the disposable race database must differ from DATABASE_URL")
-        except ArgumentError:
-            pass
+                pytest.fail(
+                    "MYSQL_BOOTSTRAP_RACE_DATABASE_URL must differ from DATABASE_URL"
+                )
+        except ArgumentError as error:
+            pytest.fail(
+                "cannot prove the bootstrap race database is disposable because "
+                "DATABASE_URL is invalid"
+            )
+            raise AssertionError from error
     return parsed_url
+
+
+def test_integration_flag_requires_explicit_bootstrap_url(monkeypatch) -> None:
+    monkeypatch.setenv("RUN_MYSQL_INTEGRATION", "1")
+    monkeypatch.delenv("MYSQL_BOOTSTRAP_RACE_DATABASE_URL", raising=False)
+
+    with pytest.raises(pytest.fail.Exception, match="explicit disposable"):
+        _disposable_mysql_url()
+
+
+def test_bootstrap_database_guard_rejects_non_test_schema(monkeypatch) -> None:
+    monkeypatch.setenv("RUN_MYSQL_INTEGRATION", "1")
+    monkeypatch.setenv(
+        "MYSQL_BOOTSTRAP_RACE_DATABASE_URL",
+        "mysql+pymysql://user:pass@127.0.0.1/production",
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="end with _test"):
+        _disposable_mysql_url()
+
+
+def test_bootstrap_database_guard_rejects_loopback_alias(monkeypatch) -> None:
+    monkeypatch.setenv("RUN_MYSQL_INTEGRATION", "1")
+    monkeypatch.setenv(
+        "MYSQL_BOOTSTRAP_RACE_DATABASE_URL",
+        "mysql+pymysql://user:pass@LOCALHOST./AUTO_REIGN_TEST",
+    )
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "mysql+pymysql://user:pass@127.0.0.1:3306/auto_reign_test",
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="must differ"):
+        _disposable_mysql_url()
 
 
 def test_concurrent_bootstrap_on_disposable_mysql_database() -> None:

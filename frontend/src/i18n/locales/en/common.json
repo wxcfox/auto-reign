@@ -37,12 +37,13 @@
     "global_knowledge": "Global knowledge",
     "users": "User management",
     "history": "History",
-    "empty_history": "No conversations yet",
-    "untitled_session": "Untitled conversation"
+    "empty_history": "No tasks yet",
+    "untitled_task": "Untitled task"
   },
   "states": {
     "loading": "Loading...",
-    "working": "Working..."
+    "working": "Working...",
+    "task_running": "Task is running"
   },
   "permissions": {
     "loading": "Checking permissions…",
@@ -51,13 +52,13 @@
   },
   "actions": {
     "cancel": "Cancel",
-    "conversation_actions": "Actions for {{title}}",
-    "conversation_name": "Conversation name",
-    "delete_conversation": "Delete",
-    "delete_conversation_confirm": "Delete conversation \"{{title}}\"?",
+    "task_actions": "Actions for {{title}}",
+    "task_name": "Task name",
+    "delete_task": "Delete",
+    "delete_task_confirm": "Delete task \"{{title}}\"?",
     "save": "Save",
-    "rename_conversation": "Rename",
-    "rename_conversation_description": "Keep it short and easy to recognize.",
+    "rename_task": "Rename",
+    "rename_task_description": "Keep it short and easy to recognize.",
     "new_chat": "New chat"
   },
   "errors": {
