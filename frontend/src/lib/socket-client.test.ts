@@ -98,6 +98,7 @@ describe("SocketConnectionClient", () => {
           auth: { token: "token-a" },
           autoConnect: false,
           transports: ["websocket"],
+          reconnection: false,
         },
       ],
     ]);
@@ -137,6 +138,20 @@ describe("SocketConnectionClient", () => {
     vi.advanceTimersByTime(1);
     expect(sockets[0]!.connectCalls).toBe(2);
     expect(sockets).toHaveLength(1);
+  });
+
+  it("does not reconnect after a terminal server- or client-forced disconnect", () => {
+    const { client, sockets } = makeClient();
+    client.connect("token-a");
+    sockets[0]!.simulateConnect();
+
+    sockets[0]!.trigger("disconnect", "io server disconnect");
+    vi.advanceTimersByTime(60_000);
+    expect(sockets[0]!.connectCalls).toBe(1);
+
+    sockets[0]!.trigger("disconnect", "io client disconnect");
+    vi.advanceTimersByTime(60_000);
+    expect(sockets[0]!.connectCalls).toBe(1);
   });
 
   it("stops retrying once the server rejects the identity", () => {

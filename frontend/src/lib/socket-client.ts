@@ -129,6 +129,7 @@ export class SocketConnectionClient<
       auth: { token },
       autoConnect: false,
       transports: TRANSPORTS,
+      reconnection: false,
     });
     this.bindSocketHandlers(socket, generation);
     this.socket = socket;
@@ -168,10 +169,13 @@ export class SocketConnectionClient<
       if (shouldNotifyReconnect) this.notifyReconnect();
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason: string) => {
       if (generation !== this.generation) return;
       this.isConnected = false;
       this.notifyState();
+      if (reason === "io server disconnect" || reason === "io client disconnect") {
+        return;
+      }
       this.scheduleReconnect(generation);
     });
 

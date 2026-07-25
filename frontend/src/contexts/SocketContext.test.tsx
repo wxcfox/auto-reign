@@ -131,6 +131,7 @@ describe("SocketProvider", () => {
       auth: { token: "private-token-value" },
       autoConnect: false,
       transports: ["websocket"],
+      reconnection: false,
     });
     expect(fake.timeoutValue).toBeNull();
   });
@@ -514,6 +515,7 @@ describe("SocketProvider", () => {
         auth: { token: "rotated-private-token" },
         autoConnect: false,
         transports: ["websocket"],
+        reconnection: false,
       },
     ]);
     expect(second.connected).toBe(true);
