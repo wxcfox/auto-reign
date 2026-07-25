@@ -178,7 +178,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-证书由 Certbot 或现有证书管理系统维护。Nginx 必须在前端 `/` location 前匹配 `/socket.io/`，使用 HTTP/1.1、转发 `Upgrade`/`Connection`、关闭 buffering 并设置长读写 timeout。网页客户端连接 Engine.IO path `/socket.io` 后加入 Socket.IO namespace `/chat`；不要把 `/chat` 配成 backend HTTP location。REST 继续通过同域 `/api` 暴露。
+证书由 Certbot 或现有证书管理系统维护。Nginx 必须在前端 `/` location 前匹配 `/socket.io/`，使用 HTTP/1.1、转发 `Upgrade`/`Connection`、关闭 buffering 并设置长读写 timeout。网页客户端连接 Engine.IO path `/socket.io` 后加入 Socket.IO namespace `/chat`；不要把 `/chat` 配成 backend HTTP location。前端只使用 WebSocket transport（不走 HTTP long-polling），因此该 location 收到的始终是一次 Upgrade 请求而不是普通轮询流量。REST 继续通过同域 `/api` 暴露。
 
 ## 手工部署
 

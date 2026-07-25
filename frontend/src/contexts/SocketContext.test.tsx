@@ -130,6 +130,7 @@ describe("SocketProvider", () => {
       path: "/socket.io",
       auth: { token: "private-token-value" },
       autoConnect: false,
+      transports: ["websocket"],
     });
     expect(fake.timeoutValue).toBeNull();
   });
@@ -512,6 +513,7 @@ describe("SocketProvider", () => {
         path: "/socket.io",
         auth: { token: "rotated-private-token" },
         autoConnect: false,
+        transports: ["websocket"],
       },
     ]);
     expect(second.connected).toBe(true);
