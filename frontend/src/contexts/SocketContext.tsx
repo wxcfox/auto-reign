@@ -1,6 +1,6 @@
 "use client";
 
-import { io, type ManagerOptions, type Socket, type SocketOptions } from "socket.io-client";
+import { io, type Socket } from "socket.io-client";
 import {
   createContext,
   useCallback,
@@ -12,6 +12,10 @@ import {
 } from "react";
 
 import { getAuthToken, subscribeAuthToken } from "@/lib/auth";
+import {
+  SocketConnectionClient,
+  type ConnectionSocketFactory,
+} from "@/lib/socket-client";
 import type {
   ChatCancelAck,
   ChatRetryAck,
@@ -43,10 +47,10 @@ const SERVER_EVENT_NAMES: readonly SocketEventName[] = [
 ];
 
 export type ChatSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-export type SocketFactory = (
-  uri: string,
-  options: Partial<ManagerOptions & SocketOptions>,
-) => ChatSocket;
+export type SocketFactory = ConnectionSocketFactory<
+  ServerToClientEvents,
+  ClientToServerEvents
+>;
 
 export class SocketClientError extends Error {
   constructor(public readonly code: string) {
@@ -91,13 +95,9 @@ export function SocketProvider({
   ackTimeoutMs = DEFAULT_ACK_TIMEOUT_MS,
 }: SocketProviderProps) {
   const [authToken, setAuthTokenSnapshot] = useState<string | null>(() => getAuthToken());
-  const socketRef = useRef<ChatSocket | null>(null);
   const joinedTasksRef = useRef(new Map<number, Promise<TaskJoinAck>>());
   const pendingRejectorsRef = useRef(new Set<(error: SocketClientError) => void>());
-  const reconnectCallbacksRef = useRef(new Set<() => void>());
   const handlerRegistrationsRef = useRef(new Set<HandlerRegistration>());
-  const hasConnectedRef = useRef(false);
-  const reconnectPendingRef = useRef(false);
   const unmountedRef = useRef(false);
   const [connected, setConnected] = useState(false);
 
@@ -109,6 +109,19 @@ export function SocketProvider({
       reject(error);
     }
   }, []);
+
+  const clientRef = useRef<SocketConnectionClient<
+    ServerToClientEvents,
+    ClientToServerEvents
+  > | null>(null);
+  if (clientRef.current === null) {
+    clientRef.current = new SocketConnectionClient({
+      socketFactory,
+      uri: socketNamespaceUrl(),
+      path: "/socket.io",
+    });
+  }
+  const client = clientRef.current;
 
   useEffect(() => {
     const syncToken = () => setAuthTokenSnapshot(getAuthToken());
@@ -126,79 +139,47 @@ export function SocketProvider({
   }, [rejectPending]);
 
   useEffect(() => {
-    const joinedTasks = joinedTasksRef.current;
     const handlerRegistrations = handlerRegistrationsRef.current;
-    if (!authToken) {
-      socketRef.current = null;
-      setConnected(false);
-      return () => {
-        joinedTasks.clear();
-        rejectPending(
-          unmountedRef.current ? "socket_unmounted" : "socket_disconnected",
-        );
-      };
-    }
-
-    const socket = socketFactory(socketNamespaceUrl(), {
-      path: "/socket.io",
-      auth: { token: authToken },
-      autoConnect: false,
-    });
-    socketRef.current = socket;
-
-    const handleConnect = () => {
-      setConnected(true);
-      if (hasConnectedRef.current && reconnectPendingRef.current) {
-        reconnectPendingRef.current = false;
-        for (const callback of reconnectCallbacksRef.current) {
-          callback();
+    let previousSocket: ChatSocket | null = null;
+    return client.subscribe((state) => {
+      setConnected(state.isConnected);
+      if (!state.isConnected) {
+        joinedTasksRef.current.clear();
+        rejectPending("socket_disconnected");
+      }
+      if (state.socket !== previousSocket) {
+        previousSocket = state.socket;
+        if (state.socket) {
+          for (const registration of handlerRegistrations) {
+            attachHandlerRegistration(registration, state.socket);
+          }
         }
       }
-      hasConnectedRef.current = true;
-    };
-    const handleDisconnect = () => {
-      setConnected(false);
-      joinedTasks.clear();
-      reconnectPendingRef.current = hasConnectedRef.current;
-      rejectPending("socket_disconnected");
-    };
-    const handleConnectError = () => {
-      setConnected(false);
-      rejectPending("socket_disconnected");
-    };
+    });
+  }, [client, rejectPending]);
 
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", handleConnectError);
-    for (const registration of handlerRegistrations) {
-      attachHandlerRegistration(registration, socket);
+  useEffect(() => {
+    const handlerRegistrations = handlerRegistrationsRef.current;
+    if (!authToken) {
+      return;
     }
-    socket.connect();
-
+    client.connect(authToken);
     return () => {
-      joinedTasks.clear();
-      rejectPending(
-        unmountedRef.current ? "socket_unmounted" : "socket_disconnected",
-      );
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("connect_error", handleConnectError);
       for (const registration of handlerRegistrations) {
         detachHandlerRegistration(registration);
       }
-      socket.removeAllListeners();
-      socket.disconnect();
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-      hasConnectedRef.current = false;
-      reconnectPendingRef.current = false;
-      setConnected(false);
+      client.disconnect();
     };
-  }, [authToken, rejectPending, socketFactory]);
+  }, [authToken, client]);
+
+  useEffect(() => {
+    return () => {
+      client.dispose();
+    };
+  }, [client]);
 
   const requireSocket = useCallback(() => {
-    const socket = socketRef.current;
+    const socket = client.getSocket();
     if (!socket) {
       throw new SocketClientError("socket_unavailable");
     }
@@ -206,7 +187,7 @@ export function SocketProvider({
       throw new SocketClientError("socket_disconnected");
     }
     return socket;
-  }, []);
+  }, [client]);
 
   const awaitAck = useCallback(
     <T,>(request: () => Promise<unknown>, validator: (value: unknown) => value is T) => {
@@ -374,25 +355,28 @@ export function SocketProvider({
     [ackTimeoutMs, awaitAck, requireSocket],
   );
 
-  const registerHandlers = useCallback((handlers: SocketEventHandlers) => {
-    const registration: HandlerRegistration = {
-      handlers,
-      socket: null,
-      listeners: [],
-    };
-    handlerRegistrationsRef.current.add(registration);
-    const socket = socketRef.current;
-    if (socket) attachHandlerRegistration(registration, socket);
-    return () => {
-      handlerRegistrationsRef.current.delete(registration);
-      detachHandlerRegistration(registration);
-    };
-  }, []);
+  const registerHandlers = useCallback(
+    (handlers: SocketEventHandlers) => {
+      const registration: HandlerRegistration = {
+        handlers,
+        socket: null,
+        listeners: [],
+      };
+      handlerRegistrationsRef.current.add(registration);
+      const socket = client.getSocket();
+      if (socket) attachHandlerRegistration(registration, socket);
+      return () => {
+        handlerRegistrationsRef.current.delete(registration);
+        detachHandlerRegistration(registration);
+      };
+    },
+    [client],
+  );
 
-  const onReconnect = useCallback((callback: () => void) => {
-    reconnectCallbacksRef.current.add(callback);
-    return () => reconnectCallbacksRef.current.delete(callback);
-  }, []);
+  const onReconnect = useCallback(
+    (callback: () => void) => client.onReconnect(callback),
+    [client],
+  );
 
   const value: SocketContextValue = {
     connected,

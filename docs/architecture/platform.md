@@ -68,7 +68,7 @@ Task 的发送、模型覆盖和删除按当前状态校验；聊天链路没有
 
 ## Socket.IO Task room
 
-网页连接 Engine.IO HTTP path `/socket.io`，再加入 Socket.IO namespace `/chat`；`/chat` 不是 Nginx HTTP location。连接使用 access token，服务端独立校验账号 active 与 `token_version`。
+网页连接 Engine.IO HTTP path `/socket.io`，再加入 Socket.IO namespace `/chat`；`/chat` 不是 Nginx HTTP location。前端固定 `transports: ["websocket"]`，跳过 HTTP long-polling 握手直接建立 WebSocket，断线由客户端自身的连接层按指数退避重连，而不是依赖 Engine.IO 默认的 polling-then-upgrade 流程。连接使用 access token，服务端独立校验账号 active 与 `token_version`；服务端拒绝身份（`invalid_token` 等）时客户端停止自动重连。
 
 客户端事件包括：
 
