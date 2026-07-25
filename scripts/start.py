@@ -373,6 +373,34 @@ def require_commands(commands: Sequence[str]) -> None:
         raise RuntimeError(f"Missing required command(s): {', '.join(missing)}")
 
 
+def require_pnpm_version(
+    root: Path,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> None:
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    package_manager = package.get("packageManager")
+    if not isinstance(package_manager, str) or not package_manager.startswith("pnpm@"):
+        raise RuntimeError("package.json must declare packageManager as pnpm@<version>")
+    expected = package_manager.removeprefix("pnpm@").split("+", maxsplit=1)[0]
+    result = runner(
+        ["pnpm", "--version"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    actual = result.stdout.strip()
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"Unable to determine PNPM version: {detail}")
+    if actual != expected:
+        raise RuntimeError(
+            f"PNPM {expected} is required by package.json, found {actual}. "
+            f"Install it with: corepack prepare pnpm@{expected} --activate"
+        )
+
+
 def run_command(
     args: Sequence[str],
     *,
@@ -597,7 +625,11 @@ def prepare_backend(root: Path, env: MutableMapping[str, str]) -> None:
 def prepare_frontend(root: Path, env: MutableMapping[str, str]) -> None:
     frontend_dir = root / "frontend"
     if not (frontend_dir / "node_modules").exists():
-        run_command(["npm", "install"], cwd=frontend_dir, env=env)
+        run_command(
+            ["pnpm", "install", "--frozen-lockfile"],
+            cwd=root,
+            env=env,
+        )
 
 
 def launch_managed_process(
@@ -678,7 +710,7 @@ def ensure_frontend(
     process_env = frontend_env(env, backend.port)
     pid = launch_managed_process(
         command=[
-            "npm",
+            "pnpm",
             "run",
             "dev",
             "--",
@@ -761,7 +793,8 @@ def preflight_host_ports(paths: RuntimePaths, env: MutableMapping[str, str]) -> 
 
 def start_stack(paths: RuntimePaths, env: MutableMapping[str, str]) -> int:
     ensure_runtime_dirs(paths)
-    require_commands(["docker", "uv", "node", "npm"])
+    require_commands(["docker", "uv", "node", "pnpm"])
+    require_pnpm_version(paths.root)
     preflight_host_ports(paths, env)
     verify_docker()
     start_dependency_containers(paths.root, env)

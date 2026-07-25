@@ -1,10 +1,10 @@
-# Auto Reign 通用 Agent 平台架构
+# 平台架构
 
-本文是 Auto Reign 的长期架构权威。当前运行方式见[项目说明](../README.md)，Knowledge Document 的入库和检索见[Knowledge Collection 数据流](knowledge-data-flow.md)，生产配置与运维边界见[生产部署](production-deployment.md)。
+本文是 Auto Reign 的长期架构权威。当前运行方式见[项目说明](../../README.md)，Knowledge Document 的入库和检索见[Knowledge 架构](knowledge.md)，生产配置与运维边界见[生产部署](../operations/production.md)。
 
 ## 产品边界
 
-Auto Reign 是本地优先、多账号严格隔离的通用 Agent 聊天平台。普通问答、模拟面试、学习记录或其他应用都使用同一套 Task、Subtask 和 Runtime；差异来自 Agent 配置与用户输入，不来自平台级专用会话类型或业务状态机。
+Auto Reign 是可自部署、多账号严格隔离的 Agent 聊天与知识工作平台。普通问答、模拟面试、学习记录或其他应用都使用同一套 Task、Subtask 和 Runtime；差异来自 Agent 配置与用户输入，不来自平台级专用会话类型或业务状态机。
 
 当前核心能力包括：
 
@@ -122,7 +122,7 @@ system 层级为：
 - selected-document 只在其当前 User Subtask 执行时投影为 Knowledge 选择；普通附件文本/图片可随所属历史 Turn 使用；
 - 原始 Subtask/SubtaskContext 不因预算选择而删除或改写。
 
-`messages_chain` 支持 `compacted`、`summary_compacted`、`compaction_version`，`result` 支持 `context_compactions`，用于忠实保存 Runtime 实际提供的压缩标记。当前 Task/Subtask 阶段尚未启用生成式摘要压缩器或三阶段压缩策略，不能把这些字段解释为已经实现生成式压缩。后续实现必须保持原始 MySQL 历史不变，只治理单次 live model state，并为失败和超限提供确定性降级。
+`messages_chain` 支持 `compacted`、`summary_compacted`、`compaction_version`，`result` 支持 `context_compactions`，用于忠实保存 Runtime 实际提供的压缩标记。当前实现尚未启用生成式摘要压缩器或三阶段压缩策略，不能把这些字段解释为已经实现生成式压缩。后续实现必须保持原始 MySQL 历史不变，只治理单次 live model state，并为失败和超限提供确定性降级。
 
 ## Agent Home 与 Knowledge
 
@@ -136,7 +136,7 @@ Agent Home 物理身份是 `(workspace_id, effective_user_id)`，对象前缀为
 | Agent Home | ObjectStore | 精确 list/read/create/write 工具 |
 | Knowledge | MySQL Document + ObjectStore 原文/解析文本 + Retriever 投影 | `search_knowledge(query)` |
 
-Knowledge Document 的当前 splitter 以配置的字符 `chunk_size` 和精确 `chunk_overlap` 产生有序 source range，优先在段落、换行、中文句号、英文句号或空格处回退切分，并保存 `chunk_index/source_start/source_end`。它不会改写原文，Retriever 命中后仍回读 generation 对应的权威解析文本验证范围。更完整的数据流见[Knowledge Collection 数据流](knowledge-data-flow.md)。
+Knowledge Document 的当前 splitter 以配置的字符 `chunk_size` 和精确 `chunk_overlap` 产生有序 source range，优先在段落、换行、中文句号、英文句号或空格处回退切分，并保存 `chunk_index/source_start/source_end`。它不会改写原文，Retriever 命中后仍回读 generation 对应的权威解析文本验证范围。更完整的数据流见[Knowledge 架构](knowledge.md)。
 
 ## LLM 与确定性代码边界
 

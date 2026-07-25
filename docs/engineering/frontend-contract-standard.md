@@ -128,9 +128,10 @@ Spec 应为有明显布局影响的功能给出目标断点或验收视口，不
 
 ```sh
 cd frontend
-npm test
-npm run lint
-npm run build
+pnpm test
+pnpm run lint
+pnpm run typecheck
+pnpm run build
 ```
 
 Pull request 同时确认：

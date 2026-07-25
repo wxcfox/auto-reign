@@ -22,12 +22,12 @@
 | 文档 | 职责 |
 | --- | --- |
 | `README.md` | 当前可运行能力、启动方式、配置和开发检查 |
-| `docs/workbench-architecture.md` | 平台长期架构、不变量与权威边界 |
-| `docs/*.md` | Knowledge、生产部署等当前有效的专题流程 |
-| `docs/superpowers/specs/*.md` | 已批准但尚需独立表达的复杂行为契约或设计记录 |
-| `docs/superpowers/plans/*.md` | 从已批准 Spec 拆出的临时实施任务 |
+| `docs/architecture/*.md` | 平台长期架构、领域数据流、不变量与权威边界 |
+| `docs/operations/*.md` | 当前有效的部署与运维流程 |
+| `docs/specs/*.md` | 已批准但尚未实施的复杂行为契约 |
+| `docs/plans/*.md` | 从已批准 Spec 拆出的临时实施任务 |
 
-实施计划不是第二份架构文档。功能完成后，应把仍然有效的事实沉淀到权威长期文档，并删除已经完成的一次性计划。
+Spec 不是历史归档。功能完成后，应把仍然有效的事实沉淀到权威长期文档，并删除已经完成的一次性计划和被当前实现替代的 Spec。
 
 ## 证据优先
 

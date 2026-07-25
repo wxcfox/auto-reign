@@ -19,6 +19,8 @@ describe("root route", () => {
   });
 
   it("describes the generic Agent chat platform", () => {
-    expect(metadata.description).toBe("Local-first Agent chat platform");
+    expect(metadata.description).toBe(
+      "Self-hosted multi-account Agent chat platform",
+    );
   });
 });

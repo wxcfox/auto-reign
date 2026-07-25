@@ -10,7 +10,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Auto Reign",
-  description: "Local-first Agent chat platform",
+  description: "Self-hosted multi-account Agent chat platform",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -1,14 +1,16 @@
-# Auto Reign Knowledge Splitter 设计
+# Knowledge Splitter 设计
 
 ## 文档状态
 
 - 日期：2026-07-22
-- 状态：已批准，待实施
+- 状态：已批准，尚未实施
 - 范围：规范化 splitter 配置、文件类型路由、Markdown 增强、层级索引与检索、Semantic Splitter
 - 数据兼容：不兼容 Auto Reign 旧 splitter 配置或旧 chunk 投影；用户已显式执行 `./reset-data.sh --yes`
 - 设计基线：可持久化的 splitter 配置、确定性文件路由、层级检索和 generation 原子切换
 
-本文定义第三阶段的 Knowledge chunk 行为。目标不是把所有文件按固定字符数硬切，而是在语义完整、检索精准和返回上下文充足之间建立可验证的平衡。
+> 本文描述待实施的目标契约，不代表当前运行行为。当前 splitter 的行为以[Knowledge 架构](../architecture/knowledge.md)为准。
+
+本文定义 Knowledge chunk 的后续方案。目标不是把所有文件按固定字符数硬切，而是在语义完整、检索精准和返回上下文充足之间建立可验证的平衡。
 
 ## 目标
 

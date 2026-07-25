@@ -1,8 +1,8 @@
-# Knowledge Collection 数据流
+# Knowledge 架构
 
 聊天附件、Agent Home 和 Knowledge 是三种不同来源：聊天附件全量保存在 MySQL `subtask_contexts` 并绑定一条 User Subtask，在所属 Turn 进入有界历史时作为消息上下文；Agent Home 是可写、可演进的长期 ObjectStore 文件；Knowledge 是用户或管理员显式维护的只读参考资料，只有 Knowledge Document 会进入 Elasticsearch 或 Qdrant Retriever。
 
-本文是 Knowledge Collection、Knowledge Document、ObjectStore、索引 Worker、共享 Retriever 与聊天 Runtime 的当前数据流权威。通用资源、权限、Runtime 和预算边界见[通用 Agent 平台架构](workbench-architecture.md)。
+本文是 Knowledge Collection、Knowledge Document、ObjectStore、索引 Worker、共享 Retriever 与聊天 Runtime 的当前数据流权威。通用资源、权限、Runtime 和预算边界见[平台架构](platform.md)。
 
 ## 当前范围
 

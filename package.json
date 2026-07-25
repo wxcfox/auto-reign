@@ -1,0 +1,11 @@
+{
+  "name": "auto-reign-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "pnpm --filter auto-reign-frontend build",
+    "lint": "pnpm --filter auto-reign-frontend lint",
+    "test": "pnpm --filter auto-reign-frontend test",
+    "typecheck": "pnpm --filter auto-reign-frontend typecheck"
+  }
+}

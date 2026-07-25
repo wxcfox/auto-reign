@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import os
 import shlex
 import subprocess
@@ -188,11 +189,59 @@ def test_nginx_routes_socketio_transport_before_frontend() -> None:
     assert "location /chat" not in nginx
 
 
+def test_ci_is_split_into_stable_lint_and_test_workflows() -> None:
+    lint = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
+    )
+    tests = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+    )
+
+    assert not (ROOT / ".github" / "workflows" / "ci.yml").exists()
+    assert set(lint["jobs"]) == {
+        "governance",
+        "backend-lint",
+        "frontend-lint",
+        "lint-summary",
+    }
+    assert set(tests["jobs"]) == {
+        "backend",
+        "backend-integration",
+        "frontend",
+        "compose",
+        "container-build",
+        "test-summary",
+    }
+    assert lint["jobs"]["lint-summary"]["if"] == "always()"
+    assert tests["jobs"]["test-summary"]["if"] == "always()"
+
+
+def test_ci_checkouts_do_not_persist_credentials_during_validation() -> None:
+    for workflow_name in ("lint.yml", "test.yml"):
+        workflow = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / workflow_name).read_text(
+                encoding="utf-8"
+            )
+        )
+        checkout_steps = [
+            step
+            for job in workflow["jobs"].values()
+            for step in job["steps"]
+            if step.get("uses") == "actions/checkout@v4"
+        ]
+
+        assert checkout_steps
+        assert all(
+            step.get("with", {}).get("persist-credentials") is False
+            for step in checkout_steps
+        )
+
+
 def test_ci_provisions_redis_and_runs_task_runtime_integrations() -> None:
     workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
     )
-    backend = workflow["jobs"]["backend"]
+    backend = workflow["jobs"]["backend-integration"]
 
     redis = backend["services"]["redis"]
     assert redis["image"] == "redis:7.4-alpine"
@@ -202,6 +251,50 @@ def test_ci_provisions_redis_and_runs_task_runtime_integrations() -> None:
     assert "tests/integration/test_subtask_context_binding_mysql.py" in commands
     assert "tests/integration/test_task_room_mysql_redis.py" in commands
     assert "test_attachment_binding_mysql.py" not in commands
+
+
+def test_frontend_uses_one_root_pnpm_lock_across_ci_release_and_docker() -> None:
+    workspace_package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
+    frontend_package = json.loads(
+        (ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
+    )
+
+    assert workspace_package["packageManager"] == "pnpm@11.7.0"
+    assert workspace["packages"] == ["frontend"]
+    assert workspace["overrides"] == {
+        "postcss": "8.5.18",
+        "sharp": "0.35.3",
+    }
+    assert workspace["allowBuilds"] == {
+        "esbuild": True,
+        "sharp": True,
+        "unrs-resolver": True,
+    }
+    assert (ROOT / "pnpm-lock.yaml").exists()
+    assert not (ROOT / "frontend" / "package-lock.json").exists()
+    assert frontend_package["scripts"]["typecheck"] == "tsc --noEmit"
+
+    workflows = "\n".join(
+        (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        for name in ("lint.yml", "test.yml", "release.yml")
+    )
+    assert "pnpm/action-setup@v6" in workflows
+    assert workflows.count("actions/setup-node@v6") == 3
+    assert "actions/setup-node@v4" not in workflows
+    assert "pnpm install --frozen-lockfile" in workflows
+    assert workflows.count("pnpm audit") == 2
+    assert "pnpm audit --prod" not in workflows
+    assert "package-lock.json" not in workflows
+    assert "npm ci" not in workflows
+
+    audit_config = workspace["auditConfig"]
+    assert audit_config["ignoreGhsas"] == ["GHSA-mh99-v99m-4gvg"]
+
+    dockerfile = (ROOT / "frontend" / "Dockerfile").read_text(encoding="utf-8")
+    assert "pnpm install --frozen-lockfile" in dockerfile
+    assert "npm ci" not in dockerfile
+    assert 'CMD ["node", "frontend/server.js"]' in dockerfile
 
 
 def test_deploy_prepares_redis_before_migrations() -> None:

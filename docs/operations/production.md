@@ -1,4 +1,4 @@
-# 生产部署
+# 生产部署与运维
 
 Auto Reign 使用 GitHub Actions 发布明确版本，生产服务器由管理员手工更新。仓库不保存服务器 SSH 凭据，也不从 GitHub Actions 直接部署主机。生产只支持单个 FastAPI service、单个 Uvicorn 进程和单一 S3-compatible ObjectStore。
 
@@ -53,6 +53,13 @@ auto-reign-frontend:sha-<commit>
 ```
 
 全部镜像成功后才创建 `v0.1.0` annotated Tag 和 GitHub Release。版本号和 Tag 不允许覆盖，生产不使用 `latest`。
+
+Pull Request 门禁按职责拆分：
+
+- `Lint Summary` 汇总文档影响、Alembic 单 head、Ruff、ESLint 和 TypeScript；
+- `Test Summary` 汇总后端默认测试、MySQL/Redis/Elasticsearch 真实集成、前端测试与构建、Compose 校验和前后端镜像构建。
+
+前端开发、CI、Release 和镜像构建都使用根 `pnpm-lock.yaml` 与 `pnpm install --frozen-lockfile`。仓库不同时维护 npm lock，避免不同入口解析出不同依赖版本。Release workflow 仍从选定的 `main` commit 重新执行核心后端与前端检查，不能只依赖先前 PR 的状态。
 
 ## 初始化 ECS
 

@@ -26,7 +26,7 @@
 
 写 migration 前必须：
 
-1. 阅读相关 Spec、`docs/workbench-architecture.md` 和领域专题文档；
+1. 阅读相关 Spec、`docs/architecture/platform.md` 和领域专题文档；
 2. 检查当前 SQLAlchemy model、repository、schema 与测试；
 3. 运行 `uv run alembic heads`，确认只有一个 head；
 4. 判断已有库能否无损升级；
