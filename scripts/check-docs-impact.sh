@@ -31,7 +31,7 @@ else
   fi
 fi
 
-requires_workbench=0
+requires_platform=0
 requires_knowledge=0
 requires_deployment=0
 
@@ -103,7 +103,7 @@ while IFS= read -r path; do
     frontend/src/lib/types.ts|\
     frontend/src/i18n/locales/*/agents.json|\
     frontend/src/i18n/locales/*/workspaces.json)
-      requires_workbench=1
+      requires_platform=1
       ;;
   esac
 
@@ -147,18 +147,24 @@ while IFS= read -r path; do
   esac
 done <<< "$changed_files"
 
+document_changed_and_exists() {
+  local path="$1"
+  grep -Fxq "$path" <<< "$changed_files" \
+    && git -C "$REPO_ROOT" cat-file -e "HEAD:$path" >/dev/null 2>&1
+}
+
 missing_docs=()
-if [[ "$requires_workbench" -eq 1 ]] \
-  && ! grep -Fxq "docs/workbench-architecture.md" <<< "$changed_files"; then
-  missing_docs+=("docs/workbench-architecture.md")
+if [[ "$requires_platform" -eq 1 ]] \
+  && ! document_changed_and_exists "docs/architecture/platform.md"; then
+  missing_docs+=("docs/architecture/platform.md")
 fi
 if [[ "$requires_knowledge" -eq 1 ]] \
-  && ! grep -Fxq "docs/knowledge-data-flow.md" <<< "$changed_files"; then
-  missing_docs+=("docs/knowledge-data-flow.md")
+  && ! document_changed_and_exists "docs/architecture/knowledge.md"; then
+  missing_docs+=("docs/architecture/knowledge.md")
 fi
 if [[ "$requires_deployment" -eq 1 ]] \
-  && ! grep -Fxq "docs/production-deployment.md" <<< "$changed_files"; then
-  missing_docs+=("docs/production-deployment.md")
+  && ! document_changed_and_exists "docs/operations/production.md"; then
+  missing_docs+=("docs/operations/production.md")
 fi
 
 if [[ "${#missing_docs[@]}" -gt 0 ]]; then

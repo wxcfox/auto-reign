@@ -17,6 +17,7 @@ import {
   setTaskModel,
 } from "@/lib/api";
 import type {
+  AssistantPartialResult,
   Subtask,
   SubtaskContextBrief,
   TaskDetailResponse,
@@ -377,7 +378,7 @@ describe("Task room component flow", () => {
 
   it("retries a failed Assistant in place and renders the same Subtask ID", async () => {
     const socket = new FlowSocket();
-    const failedResult = {
+    const failedResult: AssistantPartialResult = {
       value: "partial answer",
       blocks: [
         {

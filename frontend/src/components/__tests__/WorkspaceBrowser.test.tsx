@@ -87,7 +87,7 @@ describe("WorkspaceBrowser", () => {
 
   it("navigates direct child directories and back to the root", async () => {
     vi.mocked(listWorkspaceFiles).mockImplementation(async (_scope, _workspaceId, directory) => ({
-      directory,
+      directory: directory ?? "",
       items:
         directory === "notes"
           ? [
@@ -152,7 +152,7 @@ describe("WorkspaceBrowser", () => {
   it("resets navigation when the physical workspace identity changes", async () => {
     vi.mocked(listWorkspaceFiles).mockImplementation(
       async (_scope, workspaceId, directory) => ({
-        directory,
+        directory: directory ?? "",
         items:
           workspaceId === "ws-1" && directory === ""
             ? [

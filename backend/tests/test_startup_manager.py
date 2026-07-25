@@ -181,7 +181,7 @@ def test_healthy_managed_process_is_reused(tmp_path) -> None:
     state = start_module.healthy_managed_state(
         state_path,
         health_url_for=lambda item: f"http://127.0.0.1:{item.port}/",
-        command_for_pid=lambda pid: "npm next-marker",
+        command_for_pid=lambda pid: "pnpm next-marker",
         http_probe=lambda _url, _timeout: True,
     )
 
@@ -221,6 +221,63 @@ def test_dependency_lifecycle_includes_redis(tmp_path, monkeypatch) -> None:
 
     assert commands[0][-4:] == ["mysql", "redis", "qdrant", "elasticsearch"]
     assert commands[1][-4:] == ["mysql", "redis", "qdrant", "elasticsearch"]
+
+
+def test_prepare_frontend_uses_the_frozen_workspace_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "frontend").mkdir()
+    commands: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        start_module,
+        "run_command",
+        lambda args, *, cwd, **_kwargs: commands.append((list(args), cwd)),
+    )
+
+    start_module.prepare_frontend(tmp_path, {})
+
+    assert commands == [
+        (["pnpm", "install", "--frozen-lockfile"], tmp_path),
+    ]
+
+
+def test_require_pnpm_version_accepts_workspace_contract(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"packageManager": "pnpm@11.7.0"}',
+        encoding="utf-8",
+    )
+
+    start_module.require_pnpm_version(
+        tmp_path,
+        runner=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=["pnpm", "--version"],
+            returncode=0,
+            stdout="11.7.0\n",
+            stderr="",
+        ),
+    )
+
+
+def test_require_pnpm_version_rejects_incompatible_version(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"packageManager": "pnpm@11.7.0"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"PNPM 11\.7\.0 is required by package\.json, found 10\.0\.0",
+    ):
+        start_module.require_pnpm_version(
+            tmp_path,
+            runner=lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                args=["pnpm", "--version"],
+                returncode=0,
+                stdout="10.0.0\n",
+                stderr="",
+            ),
+        )
 
 
 def test_wait_for_dependencies_checks_redis_tcp_and_health(tmp_path, monkeypatch) -> None:
@@ -263,6 +320,7 @@ def test_start_stack_checks_ports_before_dependencies_and_migrations(tmp_path, m
     side_effects: list[str] = []
 
     monkeypatch.setattr(start_module, "require_commands", lambda commands: None)
+    monkeypatch.setattr(start_module, "require_pnpm_version", lambda root: None)
     monkeypatch.setattr(start_module, "verify_docker", lambda: None)
     monkeypatch.setattr(
         start_module,
@@ -282,7 +340,7 @@ def test_start_stack_checks_ports_before_dependencies_and_migrations(tmp_path, m
     monkeypatch.setattr(
         start_module,
         "prepare_frontend",
-        lambda _root, _runtime_env: side_effects.append("npm"),
+        lambda _root, _runtime_env: side_effects.append("pnpm"),
     )
     monkeypatch.setattr(start_module, "require_no_checkout_service_listener", lambda service_cwd, service_name: None)
 

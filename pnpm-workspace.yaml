@@ -1,0 +1,20 @@
+packages:
+  - frontend
+
+confirmModulesPurge: false
+
+overrides:
+  postcss: 8.5.18
+  sharp: 0.35.3
+
+# Current ESLint/Next plugins still depend on minimatch 3, whose
+# brace-expansion 1.x dependency has no compatible patched release.
+# Remove this exception when those plugins migrate to minimatch 10+.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-mh99-v99m-4gvg
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

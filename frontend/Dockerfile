@@ -1,18 +1,29 @@
-FROM node:22-alpine AS dependencies
+FROM node:22-alpine AS base
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+FROM base AS dependencies
 
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY frontend/package.json ./frontend/package.json
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter auto-reign-frontend...
 
-FROM node:22-alpine AS builder
+FROM base AS builder
 
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY . .
+COPY --from=dependencies /app/frontend/node_modules ./frontend/node_modules
+COPY frontend ./frontend
 
 ARG NEXT_PUBLIC_API_BASE_URL=
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
-RUN npm run build
+RUN pnpm build
 
 FROM node:22-alpine AS runner
 
@@ -21,9 +32,9 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 WORKDIR /app
 
-COPY --from=builder --chown=node:node /app/.next/standalone ./
-COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/frontend/.next/standalone ./
+COPY --from=builder --chown=node:node /app/frontend/.next/static ./frontend/.next/static
 
 USER node
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "frontend/server.js"]

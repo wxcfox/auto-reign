@@ -59,7 +59,7 @@
 - 上传、索引、检索和删除等跨服务生命周期；
 - 无法由组件测试证明的路由、浏览器 API 或生产代理行为。
 
-当前仓库的权威前端命令是 `npm test` 和 `npm run build`。在引入浏览器端到端框架前，Spec 必须同时定义稳定启动、测试数据隔离、截图或 trace 产物和 CI 命令，不能用临时手工步骤冒充持续验收。
+当前仓库使用根 `pnpm-lock.yaml` 作为唯一前端依赖锁，权威前端命令是 `pnpm run lint`、`pnpm run typecheck`、`pnpm test` 和 `pnpm run build`。在引入浏览器端到端框架前，Spec 必须同时定义稳定启动、测试数据隔离、截图或 trace 产物和 CI 命令，不能用临时手工步骤冒充持续验收。
 
 ## Test double 边界
 
@@ -149,9 +149,10 @@ uv run ruff check .
 
 ```sh
 cd frontend
-npm test
-npm run lint
-npm run build
+pnpm test
+pnpm run lint
+pnpm run typecheck
+pnpm run build
 ```
 
 容器配置运行：
@@ -160,7 +161,7 @@ npm run build
 docker compose config
 ```
 
-生产 Compose 或镜像发生变化时，还要执行 `.github/workflows/ci.yml` 中对应的 production config 与 build 检查。
+生产 Compose 或镜像发生变化时，还要执行 `.github/workflows/test.yml` 中对应的 production config 与 build 检查。
 
 ## 测试证据
 

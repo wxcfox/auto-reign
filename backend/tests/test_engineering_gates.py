@@ -64,9 +64,9 @@ def docs_gate_repository(tmp_path: Path) -> tuple[Path, str]:
     (repository / "scripts").mkdir()
     shutil.copy2(DOCS_GATE, repository / "scripts" / DOCS_GATE.name)
     _write(repository, "README.md", "baseline\n")
-    _write(repository, "docs/workbench-architecture.md", "baseline\n")
-    _write(repository, "docs/knowledge-data-flow.md", "baseline\n")
-    _write(repository, "docs/production-deployment.md", "baseline\n")
+    _write(repository, "docs/architecture/platform.md", "baseline\n")
+    _write(repository, "docs/architecture/knowledge.md", "baseline\n")
+    _write(repository, "docs/operations/production.md", "baseline\n")
     base = _commit(repository, "baseline")
     return repository, base
 
@@ -76,7 +76,7 @@ def test_docs_impact_accepts_mapped_authoritative_document(
 ) -> None:
     repository, base = docs_gate_repository
     _write(repository, "backend/app/services/task_service.py", "changed\n")
-    _write(repository, "docs/workbench-architecture.md", "updated\n")
+    _write(repository, "docs/architecture/platform.md", "updated\n")
     _commit(repository, "update task contract")
 
     result = _run(
@@ -101,7 +101,7 @@ def test_docs_impact_rejects_high_impact_change_without_documentation(
     )
 
     assert result.returncode == 1
-    assert "docs/knowledge-data-flow.md" in result.stderr
+    assert "docs/architecture/knowledge.md" in result.stderr
 
 
 def test_docs_impact_rejects_deployment_change_without_documentation(
@@ -117,7 +117,7 @@ def test_docs_impact_rejects_deployment_change_without_documentation(
     )
 
     assert result.returncode == 1
-    assert "docs/production-deployment.md" in result.stderr
+    assert "docs/operations/production.md" in result.stderr
 
 
 def test_docs_impact_rejects_readme_as_cross_domain_substitute(
@@ -135,8 +135,8 @@ def test_docs_impact_rejects_readme_as_cross_domain_substitute(
     )
 
     assert result.returncode == 1
-    assert "docs/workbench-architecture.md" in result.stderr
-    assert "docs/knowledge-data-flow.md" in result.stderr
+    assert "docs/architecture/platform.md" in result.stderr
+    assert "docs/architecture/knowledge.md" in result.stderr
 
 
 def test_docs_impact_accepts_all_mapped_cross_domain_documents(
@@ -145,8 +145,8 @@ def test_docs_impact_accepts_all_mapped_cross_domain_documents(
     repository, base = docs_gate_repository
     _write(repository, "backend/app/services/task_service.py", "changed\n")
     _write(repository, "backend/app/services/knowledge_index_worker.py", "changed\n")
-    _write(repository, "docs/workbench-architecture.md", "updated\n")
-    _write(repository, "docs/knowledge-data-flow.md", "updated\n")
+    _write(repository, "docs/architecture/platform.md", "updated\n")
+    _write(repository, "docs/architecture/knowledge.md", "updated\n")
     _commit(repository, "document cross-domain behavior")
 
     result = _run(
@@ -155,6 +155,42 @@ def test_docs_impact_accepts_all_mapped_cross_domain_documents(
     )
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("impact_path", "document_path"),
+    [
+        (
+            "backend/app/services/task_service.py",
+            "docs/architecture/platform.md",
+        ),
+        (
+            "backend/app/services/knowledge_index_worker.py",
+            "docs/architecture/knowledge.md",
+        ),
+        (
+            "deploy/compose.prod.yml",
+            "docs/operations/production.md",
+        ),
+    ],
+)
+def test_docs_impact_rejects_deleted_authoritative_document(
+    docs_gate_repository: tuple[Path, str],
+    impact_path: str,
+    document_path: str,
+) -> None:
+    repository, base = docs_gate_repository
+    _write(repository, impact_path, "changed\n")
+    (repository / document_path).unlink()
+    _commit(repository, "delete required documentation")
+
+    result = _run(
+        ["bash", str(repository / "scripts" / DOCS_GATE.name), base],
+        cwd=repository,
+    )
+
+    assert result.returncode == 1
+    assert document_path in result.stderr
 
 
 def test_docs_impact_rejects_deleted_high_impact_path(
@@ -172,7 +208,7 @@ def test_docs_impact_rejects_deleted_high_impact_path(
     )
 
     assert result.returncode == 1
-    assert "docs/workbench-architecture.md" in result.stderr
+    assert "docs/architecture/platform.md" in result.stderr
 
 
 def test_docs_impact_rejects_high_impact_path_renamed_out_of_scope(
@@ -193,7 +229,7 @@ def test_docs_impact_rejects_high_impact_path_renamed_out_of_scope(
     )
 
     assert result.returncode == 1
-    assert "docs/workbench-architecture.md" in result.stderr
+    assert "docs/architecture/platform.md" in result.stderr
 
 
 def test_docs_impact_maps_agent_and_workspace_contracts(
@@ -210,7 +246,7 @@ def test_docs_impact_maps_agent_and_workspace_contracts(
     )
 
     assert result.returncode == 1
-    assert "docs/workbench-architecture.md" in result.stderr
+    assert "docs/architecture/platform.md" in result.stderr
 
 
 def test_docs_impact_accepts_unrelated_change(

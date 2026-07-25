@@ -1,7 +1,7 @@
 [project]
 name = "auto-reign-backend"
 version = "0.1.0"
-description = "Local-first general Agent chat platform with optional Agent Home and Knowledge RAG."
+description = "Self-hosted multi-account Agent chat platform with optional Agent Home and Knowledge."
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.16,<2",

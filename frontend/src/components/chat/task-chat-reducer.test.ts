@@ -490,6 +490,7 @@ describe("reduceTaskChat", () => {
       localKey: "optimistic",
       taskId: 7,
       prompt: "not durable",
+      contexts: [],
     });
     expect(maxDurableMessageId(state)).toBe(6);
     expect(reconnectCursorMessageId(state)).toBe(5);

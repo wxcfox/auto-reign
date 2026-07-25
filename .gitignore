@@ -16,6 +16,9 @@ frontend/.next/
 frontend/next-env.d.ts
 frontend/coverage/
 frontend/.turbo/
+.pnpm-store/
+node_modules/
+*.tsbuildinfo
 .pids/
 logs/
 deploy/*.env
