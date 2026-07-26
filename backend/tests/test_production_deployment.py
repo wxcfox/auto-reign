@@ -227,7 +227,7 @@ def test_ci_checkouts_do_not_persist_credentials_during_validation() -> None:
             step
             for job in workflow["jobs"].values()
             for step in job["steps"]
-            if step.get("uses") == "actions/checkout@v4"
+            if step.get("uses") == "actions/checkout@v6"
         ]
 
         assert checkout_steps

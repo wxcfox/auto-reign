@@ -89,7 +89,7 @@ Embedding 请求由 provider-compatible wrapper 逐个发送 chunk，每个 HTTP
 
 当前 splitter 按 Collection 配置的字符 `chunk_size` 与精确 `chunk_overlap` 产生有序、覆盖原文的 source range。未到文末时依次优先在段落、换行、中文句号、英文句号或空格处寻找不早于半个 chunk 的边界；找不到安全边界才在最大长度硬切。每个 chunk 保存 `chunk_index`、`source_start` 和 `source_end`，正文保持原文，不做 LLM 摘要或改写。
 
-`20260720_0005` 不兼容历史 Collection 检索配置或旧 Qdrant-only 投影。迁移会把历史 Collection 配置直接重置为 Elasticsearch、vector、默认 Top K、阈值、hybrid 权重和分块参数，并把所有历史 active Document 固定绑定到 Elasticsearch，清空旧 generation 的 parsed pointer、索引时间、失败与 attempt 状态，递增 `index_generation` 并改为 `queued`。Worker 随后从仍保留的 source object 重新解析并建立新投影；完成前 Document 不能以虚假的 `ready` 进入直接原文或 RAG。系统不双读旧配置或旧 Qdrant generation，也不把旧索引当作迁移来源。
+Knowledge 的 schema 由 `backend/alembic/` 中的 Alembic migration 管理。涉及 Collection、Document 或 generation 的 schema 变化必须先明确已有数据的兼容结论，再决定向前迁移、显式重置或备份恢复；不能在应用启动时静默删除旧索引或旧对象。当前运行时只读取当前 schema 和当前 generation，不维护旧配置的双读兼容路径。
 
 ## 统一 Retriever 投影
 

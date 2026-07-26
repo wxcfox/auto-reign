@@ -1,6 +1,6 @@
 # 生产部署与运维
 
-Auto Reign 使用 GitHub Actions 发布明确版本，生产服务器由管理员手工更新。仓库不保存服务器 SSH 凭据，也不从 GitHub Actions 直接部署主机。生产只支持单个 FastAPI service、单个 Uvicorn 进程和单一 S3-compatible ObjectStore。
+Auto Reign 使用 GitHub Actions 发布明确版本，生产服务器由管理员手工更新。仓库不保存服务器 SSH 凭据，也不从 GitHub Actions 直接部署主机。当前生产部署是单机模式：一个 FastAPI 进程、一个 Uvicorn 进程和一个 S3-compatible ObjectStore。
 
 ```text
 Pull Request -> main -> Publish Release -> Git Tag + GitHub Release + ACR 镜像
@@ -9,9 +9,7 @@ Pull Request -> main -> Publish Release -> Git Tag + GitHub Release + ACR 镜像
                                          管理员登录 ECS 手工部署
 ```
 
-`./start.sh` 只用于本地开发。生产服务器不从源码构建应用。
-
-本地开发时，`scripts/start.py` 以 `pnpm run dev --hostname 127.0.0.1 --port <FRONTEND_PORT>`（默认端口 3100，可用 `FRONTEND_PORT` 覆盖）启动 Next.js 开发服务器，命令中不插入 pnpm 的 `--` 参数分隔符——保留该分隔符会导致 `--hostname`/`--port` 未被正确传给 Next.js，监听地址与端口不生效。启动后脚本轮询前端健康端点确认就绪；超时后会清理已启动的子进程并显式失败（`RuntimeError("Frontend failed to start...")`），不会把未就绪的前端标记为可用。
+`./start.sh` 只用于本地开发。生产服务器只拉取已发布镜像，不从源码构建应用。
 
 ## 部署拓扑
 
@@ -30,20 +28,22 @@ FastAPI -> MySQL（业务与生成审计权威状态）
 
 Redis、MySQL、Elasticsearch 和 Qdrant 只在 Compose 内部网络中可见。FastAPI 和 Next.js 只映射宿主机回环地址；安全组和 Nginx 不应公开 backend、frontend 或数据服务的内部端口。
 
-生产 Compose 包含 Redis 7.4、MySQL、Elasticsearch、Qdrant、一次性 migrate、backend 和 frontend。Redis 只保存带 TTL 的实时运行态，不是 Task/Subtask 历史或备份权威；当前不部署 Kibana、Celery 或独立 Knowledge worker container。Elasticsearch 只是 Knowledge Retriever，不是日志栈。
+生产 Compose 包含 Redis、MySQL、Elasticsearch、Qdrant、一次性 migration、backend 和 frontend。Redis 只保存可丢失的实时状态，MySQL 保存业务与聊天历史，Elasticsearch/Qdrant 是可重建的 Knowledge 检索投影。
 
 ## 发布镜像
 
-当前项目使用阿里云 ACR。GitHub-hosted runner 使用公网 Endpoint 推送，杭州 ECS 使用 VPC Endpoint 拉取；为两端分别创建最小权限凭据，不复用管理员密码。
+当前项目使用阿里云 ACR。GitHub-hosted runner 使用公网 Endpoint 推送，杭州 ECS 使用 VPC Endpoint 拉取；两端使用不同的最小权限凭据，不复用管理员密码。
 
-GitHub `Settings -> Secrets and variables -> Actions` 至少配置：
+在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中配置：
 
-```text
-ACR_REGISTRY=<公网 ACR Endpoint>
-ACR_NAMESPACE=<ACR Namespace>
-ACR_USERNAME=<推送账号>
-ACR_PASSWORD=<推送密码>
-```
+| 类型 | 名称 | 用途 |
+| --- | --- | --- |
+| Repository variable | `ACR_REGISTRY` | 公网 ACR Endpoint |
+| Repository variable | `ACR_NAMESPACE` | ACR 命名空间 |
+| Repository secret | `ACR_USERNAME` | GitHub Actions 推送账号 |
+| Repository secret | `ACR_PASSWORD` | GitHub Actions 推送密码 |
+
+ECS 另外配置 ACR VPC Endpoint 的拉取凭据。GitHub 推送账号和 ECS 拉取账号应分开。
 
 普通 PR 合并到 `main` 后只运行 CI，不自动创建 Tag。需要发布时在 `Actions -> Publish Release` 输入明确 SemVer，例如 `0.1.0`。Workflow 从当时的 `main` HEAD 重跑检查，构建 `linux/amd64` backend/frontend 镜像，并推送版本和 commit 标签：
 
@@ -61,11 +61,11 @@ Pull Request 门禁按职责拆分：
 - `Lint Summary` 汇总文档影响、Alembic 单 head、Ruff、ESLint 和 TypeScript；
 - `Test Summary` 汇总后端默认测试、MySQL/Redis/Elasticsearch 真实集成、前端测试与构建、Compose 校验和前后端镜像构建。
 
-前端开发、CI、Release 和镜像构建都使用根 `pnpm-lock.yaml` 与 `pnpm install --frozen-lockfile`。仓库不同时维护 npm lock，避免不同入口解析出不同依赖版本。Release workflow 仍从选定的 `main` commit 重新执行核心后端与前端检查，不能只依赖先前 PR 的状态。
+Release workflow 会重新执行核心后端与前端检查，不能只依赖先前 PR 的状态。应用镜像来自 ACR；Redis、MySQL、Elasticsearch 和 Qdrant 默认使用上游镜像，ECS 必须能够访问这些镜像源。长期生产建议将基础镜像同步到 ACR，并在生产 env 中通过 `*_IMAGE` 配置覆盖。
 
 ## 初始化 ECS
 
-要求 Linux x86_64、Git、Docker Engine 和 Docker Compose v2.24+。建议使用独立部署用户：
+要求 Linux x86_64、Git、Docker Engine 和 Docker Compose v2.24+。长期运行建议使用独立 `deploy` 用户；为了快速完成单机部署，也可以先使用 root，但必须限制 SSH 来源并保护生产 env 文件：
 
 ```sh
 sudo adduser deploy
@@ -87,7 +87,7 @@ sudo chown -R 1000:1000 /srv/auto-reign/elasticsearch
 
 `/srv/auto-reign/data` 只是容器本地 runtime 目录。聊天附件二进制、图片 Base64 和解析文本保存在 MySQL；Agent Home 与 Knowledge 文件保存在远端 S3-compatible ObjectStore。`/srv/auto-reign/redis` 即使持久挂载也只承载可丢失的实时状态。
 
-克隆仓库只为使用版本对应的 `deploy/`、迁移和运维文件：
+服务器只需要仓库中的版本对应 `deploy/`、迁移和运维文件：
 
 ```sh
 git clone https://github.com/wxcfox/auto-reign.git /opt/auto-reign
@@ -103,6 +103,20 @@ sudo chmod 600 /etc/auto-reign/auto-reign.env
 ```
 
 使用 `openssl rand` 或等价密码管理工具生成独立 MySQL 密码和 JWT Secret。生产必须显式配置非空 `JWT_SECRET_KEY`；development 默认值和旧 sentinel `auto-reign-local-dev-secret-change-me` 都会被拒绝，不会生成或回退到本地 JWT 文件。
+
+生产 env 至少需要填写：
+
+- `ACR_REGISTRY`：ECS 可访问的 ACR VPC Endpoint；
+- `ACR_NAMESPACE` 和 `AUTO_REIGN_VERSION`：目标命名空间与发布版本；
+- MySQL、JWT、OSS、Elasticsearch 和模型 Provider 配置；
+- `DEPLOY_HEALTHCHECK_URL`：域名和 HTTPS 就绪后再填写，否则留空。
+
+ACR 登录凭据由执行部署的同一个宿主机用户通过 `docker login` 管理，不写入应用 env。首次部署前使用 ECS 专用的 Pull 凭据登录 ACR。`docker login`、`docker compose` 和 `deploy.sh` 必须由同一个 OS 用户执行：使用 `deploy` 用户部署时就以 `deploy` 用户登录；使用 root 快速部署时就以 root 登录，不要混用两个用户的 Docker credential store。
+
+```sh
+sudo -iu deploy
+docker login <ACR_VPC_ENDPOINT>
+```
 
 ### 必需运行边界
 
@@ -130,7 +144,7 @@ S3_NAMESPACE_APP_EXCLUSIVE=true
 S3_ADDRESSING_STYLE=virtual
 ```
 
-同时填写 MySQL、ACR、Elasticsearch 密码和实际使用的模型或 Embedding Provider 配置。Elasticsearch 与 Qdrant 的地址、认证和索引配置只由部署者维护，不通过 Collection API 暴露。Secret 只保存在权限为 `0600` 的生产 env 或外部 Secret 管理系统中，不能提交仓库、写入前端或输出日志。
+同时填写 MySQL、Elasticsearch 和实际使用的模型或 Embedding Provider 配置。Elasticsearch 与 Qdrant 的地址、认证和索引配置只由部署者维护，不通过 Collection API 暴露。Secret 只保存在权限为 `0600` 的生产 env 或外部 Secret 管理系统中，不能提交仓库、写入前端或输出日志。
 
 应用运行时的对象大小、上下文预算、Knowledge 检索、Worker、模型超时和工具轮次上限也应显式填写；这些配置由 `Settings` 统一读取，完整示例见 `deploy/auto-reign.env.example`。Compose 固定把 backend 的 `REDIS_URL` 指向内部 `redis:6379/0`，并注入容器路径、数据库 URL、Retriever URL 和发布版本等拓扑值。
 
@@ -150,17 +164,12 @@ production validator 固定要求：
 
 - [Alibaba Cloud OSS S3 compatibility](https://www.alibabacloud.com/help/en/oss/developer-reference/compatibility-with-amazon-s3)
 - [OSS PutObject](https://www.alibabacloud.com/help/en/oss/developer-reference/putobject)
-- [AWS conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
 
-AWS 文档只说明 AWS S3 合约，不能据此假定 OSS 支持相同 conditional PUT。v1 的同 Key 串行化使用进程内锁，不把 AWS conditional write 当作 OSS 正确性前提，因此不能增加第二个 FastAPI 进程或 replica。
+当前生产只支持一个 backend 进程，不要自行增加 replica。多实例需要先完成任务领取、取消和 ObjectStore 并发写入设计。
 
 ## 首次管理员设置
 
-空库启动会创建 fixed `admin`，但不会创建默认密码。`credential_bootstrap_status=pending` 时，`/setup` 是一次性、未认证的管理员密码 claim；这不是公开注册功能。
-
-部署者必须在本机、SSH 隧道或受信管理网络中完成 `/setup`，确认管理员登录和 `/admin/users` 可用后，再向公网开放 Nginx。不要让 pending `/setup` 在未知公网访问者可达时长期运行。
-
-完成后 bootstrap 状态单向变为 `completed`，再次调用 endpoint 永久返回 409。重启、环境变量或配置开关都不能重新开放。系统没有注册页面、注册 API 或临时注册开关；普通用户只能由管理员在 `/admin/users` 创建、启停和重置密码，fixed admin 不受该页面管理。
+空库启动会创建固定的 `admin` 用户，但不会生成默认密码。首次部署后，必须在本机、SSH 隧道或受信管理网络中访问 `/setup` 完成一次性初始化，再通过 `/admin/users` 创建普通用户。`/setup` 完成后永久关闭，不是公开注册入口。
 
 ## Nginx 与网络
 
@@ -172,7 +181,7 @@ ECS 安全组只开放：
 | `80/tcp` | 公网 | HTTP 和证书签发 |
 | `443/tcp` | 公网 | HTTPS |
 
-不要开放 backend/frontend loopback 端口、Redis、MySQL、Elasticsearch 或 Qdrant。安装并检查仓库 Nginx 配置：
+不要开放 backend/frontend loopback 端口、Redis、MySQL、Elasticsearch 或 Qdrant。将 `server_name` 改成实际域名后安装并检查仓库 Nginx 配置：
 
 ```sh
 sudo cp deploy/nginx/auto-reign.conf /etc/nginx/conf.d/auto-reign.conf
@@ -180,11 +189,11 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-证书由 Certbot 或现有证书管理系统维护。Nginx 必须在前端 `/` location 前匹配 `/socket.io/`，使用 HTTP/1.1、转发 `Upgrade`/`Connection`、关闭 buffering 并设置长读写 timeout。网页客户端连接 Engine.IO path `/socket.io` 后加入 Socket.IO namespace `/chat`；不要把 `/chat` 配成 backend HTTP location。前端只使用 WebSocket transport（不走 HTTP long-polling），因此该 location 收到的始终是一次 Upgrade 请求而不是普通轮询流量。REST 继续通过同域 `/api` 暴露。
+证书由 Certbot 或现有证书管理系统维护。仓库配置已经包含 `/api/`、`/socket.io/` 和前端 `/` 的转发规则，不要把 Socket.IO namespace `/chat` 配成独立 Nginx location。
 
 ## 手工部署
 
-登录 ECS，切换到已经存在 GitHub Release 的版本：
+首次部署或升级都使用已经存在的 GitHub Release。切换到对应 Tag 后执行部署：
 
 ```sh
 cd /opt/auto-reign
@@ -203,6 +212,16 @@ AUTO_REIGN_ENV_FILE=/etc/auto-reign/auto-reign.env \
 5. 更新单 backend 和 frontend；
 6. 执行内部与可选公网健康检查；
 7. 写入 deployed version。
+
+后续发布只需替换版本号；不需要重新创建目录或重复登录 ACR：
+
+```sh
+cd /opt/auto-reign
+git fetch --force --tags origin
+git switch --detach v0.1.1
+AUTO_REIGN_ENV_FILE=/etc/auto-reign/auto-reign.env \
+  ./deploy/deploy.sh 0.1.1
+```
 
 查看状态：
 
