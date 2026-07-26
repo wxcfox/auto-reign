@@ -77,9 +77,8 @@ cp .env.example .env
 ## 产品入口
 
 - `/chat?task={task_id}`：创建或继续 Task；
-- `/agents`、`/workspaces`、`/knowledge`：用户私有资源管理；
-- `/admin/agents`、`/admin/workspaces`、`/admin/knowledge`：管理员全局资源管理；
-- `/admin/users`：普通用户管理；
+- `/agents`、`/workspaces`、`/knowledge`：资源管理，所有角色入口一致；管理员在 `/agents` 与 `/knowledge` 的「公共」分页发布公共资源，在 `/workspaces` 的新建表单里选择归属；
+- `/admin/users`：普通用户管理，管理员唯一的专属入口；
 - `/setup`、`/login`：管理员初始化和账号登录。
 
 新 Task 在发送第一条输入前可选择 Agent、模型和 Context。首条输入发送后 Agent 锁定；模型可在 Task 非运行态时切换或清除覆盖。Agent 已不可用时，已有 Task 仍可查看，但不能继续生成。

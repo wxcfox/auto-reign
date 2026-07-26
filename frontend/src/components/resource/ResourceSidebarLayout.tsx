@@ -6,7 +6,8 @@ import type { ResourceScope } from "./useResourceSidebarSelection";
 
 export type ResourceSidebarLayoutProps = {
   children: ReactNode;
-  scope: ResourceScope;
+  /** Present only on surfaces that still split Personal and Public. */
+  scope?: ResourceScope;
   sidebar: ReactNode;
   titleId: string;
 };

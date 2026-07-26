@@ -284,7 +284,10 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
       })),
     [rows],
   );
-  const selection = useResourceSidebarSelection(items, scope);
+  const selection = useResourceSidebarSelection(items, {
+    resetKey: scope,
+    tabs: scope === "private",
+  });
   const selectedRow =
     rows.find((row) => row.collection.id === selection.selectedItem?.id) ?? null;
 
@@ -349,6 +352,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
             noResults: t("states.noResults"),
             openItem: (name) => t("sidebar.openLabel", { name }),
             personalTab: t("sidebar.personalTab"),
+            publicBadge: t("sidebar.globalTab"),
             searchLabel: t("sidebar.searchLabel"),
             searchPlaceholder: t("sidebar.searchPlaceholder"),
           }}

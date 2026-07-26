@@ -602,3 +602,13 @@
     max-height: 200px;
   }
 }
+
+/* A public definition someone else owns; its files still belong to the caller. */
+.resource-status-badge[data-scope="global"] {
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+  color: var(--accent-strong);
+}
+
+.resource-scope-note {
+  margin: 0 0 4px;
+}

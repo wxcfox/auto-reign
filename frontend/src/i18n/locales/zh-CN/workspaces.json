@@ -12,7 +12,7 @@
     "loading": "正在加载工作区…"
   },
   "personal": {
-    "title": "智能体工作区",
+    "title": "工作区",
     "summary": "管理自己的 Agent Home 定义，并打开按当前账号严格隔离的文件。",
     "ownedTitle": "我的工作区",
     "ownedSummary": "管理自己的启用和停用定义，文件始终与其他账号隔离。",
@@ -50,8 +50,8 @@
   "sidebar": {
     "searchLabel": "搜索工作区",
     "searchPlaceholder": "搜索工作区…",
-    "personalTab": "个人工作区",
-    "globalTab": "公共工作区",
+    "personalTab": "个人",
+    "globalTab": "公共",
     "openLabel": "打开 {{name}}",
     "mainEmpty": "请选择或创建一个工作区查看文件。",
     "collapse": "收起",
@@ -64,7 +64,10 @@
     "initialAgentsMdHintGlobal": "修改只影响之后首次初始化该工作区的用户，绝不会覆盖任何已有的 AGENTS.md。",
     "editTitle": "编辑工作区",
     "nameTaken": "已存在同名工作区。",
-    "saveError": "工作区保存失败。"
+    "saveError": "工作区保存失败。",
+    "scope": "归属",
+    "scopePrivate": "个人（仅自己可用）",
+    "scopeGlobal": "公共（所有用户可用）"
   },
   "browser": {
     "breadcrumb": "工作区目录",
@@ -123,5 +126,8 @@
     "accessDenied": "你无权访问该工作区。",
     "workspaceUnavailable": "Agent Home 暂时不可用。",
     "workspaceConflict": "文件已发生变化，请重新加载后再保存。"
+  },
+  "detail": {
+    "publicTemplateNote": "公共工作区是模版：这里的文件属于你个人，可直接编辑；模版内容只在你首次使用时写入一次。"
   }
 }

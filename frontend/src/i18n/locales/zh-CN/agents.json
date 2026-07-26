@@ -90,7 +90,10 @@
     "delete": "删除",
     "delete_label": "删除 {{name}}",
     "delete_confirm": "删除 {{name}}？",
-    "working": "处理中…"
+    "working": "处理中…",
+    "copy": "复制",
+    "copy_label": "复制 {{name}}",
+    "copy_name": "{{name}} 副本"
   },
   "errors": {
     "name_required": "请输入智能体名称。",
@@ -105,6 +108,12 @@
     "save_failed": "智能体保存失败。",
     "workspace_created_agent_failed": "工作区 {{name}} 已创建，但智能体保存失败。",
     "delete_failed": "智能体删除失败。",
-    "status_failed": "智能体状态修改失败。"
+    "status_failed": "智能体状态修改失败。",
+    "copy_failed": "智能体复制失败。",
+    "copy_name_taken": "已存在同名智能体，请先重命名已有的副本。"
+  },
+  "tabs": {
+    "personal": "个人",
+    "global": "公共"
   }
 }

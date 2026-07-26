@@ -22,6 +22,8 @@ export type ResourceSidebarLabels = {
   noResults: string;
   openItem: (name: string) => string;
   personalTab: string;
+  /** Marks a row whose definition is public; used when tabs are hidden. */
+  publicBadge: string;
   searchLabel: string;
   searchPlaceholder: string;
 };
@@ -123,6 +125,7 @@ export function ResourceSidebar({
                   key={item.id}
                   labels={labels}
                   onSelect={selection.selectItem}
+                  showScopeBadge={!showTabs}
                 />
               ))}
             </ul>
@@ -138,9 +141,16 @@ type ResourceSidebarRowProps = {
   item: ResourceItem;
   labels: ResourceSidebarLabels;
   onSelect: (id: string) => void;
+  showScopeBadge: boolean;
 };
 
-function ResourceSidebarRow({ active, item, labels, onSelect }: ResourceSidebarRowProps) {
+function ResourceSidebarRow({
+  active,
+  item,
+  labels,
+  onSelect,
+  showScopeBadge,
+}: ResourceSidebarRowProps) {
   return (
     <li>
       <button
@@ -151,6 +161,11 @@ function ResourceSidebarRow({ active, item, labels, onSelect }: ResourceSidebarR
         type="button"
       >
         <span className="resource-sidebar-list-item__name">{item.name}</span>
+        {showScopeBadge && item.scope === "global" ? (
+          <span className="resource-status-badge" data-scope="global">
+            {labels.publicBadge}
+          </span>
+        ) : null}
         <span className="resource-status-badge">
           {item.isActive ? labels.activeBadge : labels.inactiveBadge}
         </span>

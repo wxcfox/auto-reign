@@ -12,7 +12,7 @@
     "loading": "Loading workspace…"
   },
   "personal": {
-    "title": "Agent workspaces",
+    "title": "Workspaces",
     "summary": "Manage your Agent Home definitions and open the files isolated to your account.",
     "ownedTitle": "My workspaces",
     "ownedSummary": "Your active and inactive definitions. Files remain isolated to your account.",
@@ -50,8 +50,8 @@
   "sidebar": {
     "searchLabel": "Search workspaces",
     "searchPlaceholder": "Search workspaces...",
-    "personalTab": "Personal workspace",
-    "globalTab": "Public workspace",
+    "personalTab": "Personal",
+    "globalTab": "Public",
     "openLabel": "Open {{name}}",
     "mainEmpty": "Select or create a workspace to view its files.",
     "collapse": "Collapse",
@@ -64,7 +64,10 @@
     "initialAgentsMdHintGlobal": "Changes affect only users who initialize this workspace for the first time in the future. Existing AGENTS.md files are never overwritten.",
     "editTitle": "Edit workspace",
     "nameTaken": "A workspace with this name already exists.",
-    "saveError": "Could not save workspace."
+    "saveError": "Could not save workspace.",
+    "scope": "Availability",
+    "scopePrivate": "Personal (only you)",
+    "scopeGlobal": "Public (every user)"
   },
   "browser": {
     "breadcrumb": "Workspace folders",
@@ -123,5 +126,8 @@
     "accessDenied": "You do not have access to this workspace.",
     "workspaceUnavailable": "This Agent Home is temporarily unavailable.",
     "workspaceConflict": "The file changed. Reload it before saving again."
+  },
+  "detail": {
+    "publicTemplateNote": "A public workspace is a template: these files are yours alone and you can edit them directly. The template content is written once, the first time you use it."
   }
 }

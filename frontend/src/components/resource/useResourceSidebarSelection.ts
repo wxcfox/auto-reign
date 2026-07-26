@@ -26,37 +26,52 @@ export type ResourceSidebarSelection = {
   selectItem: (id: string) => void;
 };
 
+export type ResourceSidebarOptions = {
+  /**
+   * Whether the sidebar splits items into Personal and Public tabs. Resources
+   * whose public form is genuinely shared (agents, knowledge) want the split;
+   * Workspaces do not, because a public Workspace is only a template and its
+   * files always belong to the caller.
+   */
+  tabs: boolean;
+  /** Resetting this discards tab, query, and selection state. */
+  resetKey: string;
+};
+
 export function useResourceSidebarSelection(
   items: ResourceItem[],
-  scope: ResourceScope,
+  options: ResourceSidebarOptions,
 ): ResourceSidebarSelection {
+  const { resetKey, tabs } = options;
   const [tab, setTab] = useState<ResourceTab>("personal");
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [renderedScope, setRenderedScope] = useState(scope);
+  const [renderedKey, setRenderedKey] = useState(resetKey);
 
-  // The management pages swap `scope` by re-rendering rather than remounting.
-  if (renderedScope !== scope) {
-    setRenderedScope(scope);
+  // The management pages swap resource surfaces by re-rendering, not remounting.
+  if (renderedKey !== resetKey) {
+    setRenderedKey(resetKey);
     setTab("personal");
     setQuery("");
     setCollapsed(false);
     setSelectedId(null);
   }
 
-  const showTabs = scope === "private";
-  const activeTab: ResourceTab = showTabs ? tab : "global";
+  const showTabs = tabs;
+  const activeTab: ResourceTab = showTabs ? tab : "personal";
 
   const visibleItems = useMemo(() => {
-    const tabItems = items.filter((item) =>
-      activeTab === "personal" ? item.scope === "private" : item.scope === "global",
-    );
+    const tabItems = showTabs
+      ? items.filter((item) =>
+          activeTab === "personal" ? item.scope === "private" : item.scope === "global",
+        )
+      : items;
     const normalizedQuery = query.trim().toLowerCase();
     return normalizedQuery
       ? tabItems.filter((item) => item.name.toLowerCase().includes(normalizedQuery))
       : tabItems;
-  }, [activeTab, items, query]);
+  }, [activeTab, items, query, showTabs]);
 
   // Selection follows the filtered list so the detail pane never shows a row the
   // sidebar has filtered away.

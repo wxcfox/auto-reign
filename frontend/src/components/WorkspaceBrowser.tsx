@@ -6,24 +6,17 @@ import { useEffect, useState } from "react";
 import { WorkspaceEditor } from "@/components/WorkspaceEditor";
 import { useTranslation } from "@/hooks/useTranslation";
 import { deleteWorkspaceFile, listWorkspaceFiles } from "@/lib/api";
-import type { WorkspaceFileItem, WorkspaceScope } from "@/lib/types";
+import type { WorkspaceFileItem } from "@/lib/types";
 
 export type WorkspaceBrowserProps = {
-  scope: WorkspaceScope;
   workspaceId: string;
 };
 
-export function WorkspaceBrowser({ scope, workspaceId }: WorkspaceBrowserProps) {
-  return (
-    <WorkspaceBrowserInstance
-      key={`${scope}:${workspaceId}`}
-      scope={scope}
-      workspaceId={workspaceId}
-    />
-  );
+export function WorkspaceBrowser({ workspaceId }: WorkspaceBrowserProps) {
+  return <WorkspaceBrowserInstance key={workspaceId} workspaceId={workspaceId} />;
 }
 
-function WorkspaceBrowserInstance({ scope, workspaceId }: WorkspaceBrowserProps) {
+function WorkspaceBrowserInstance({ workspaceId }: WorkspaceBrowserProps) {
   const { t } = useTranslation("workspaces");
   const [directory, setDirectory] = useState("");
   const [items, setItems] = useState<WorkspaceFileItem[]>([]);
@@ -38,7 +31,7 @@ function WorkspaceBrowserInstance({ scope, workspaceId }: WorkspaceBrowserProps)
     let active = true;
     setLoading(true);
     setLoadError(false);
-    listWorkspaceFiles(scope, workspaceId, directory)
+    listWorkspaceFiles(workspaceId, directory)
       .then((response) => {
         if (active) {
           setItems(response.items);
@@ -58,7 +51,7 @@ function WorkspaceBrowserInstance({ scope, workspaceId }: WorkspaceBrowserProps)
     return () => {
       active = false;
     };
-  }, [directory, reloadVersion, scope, workspaceId]);
+  }, [directory, reloadVersion, workspaceId]);
 
   function openDirectory(path: string) {
     setDirectory(path);
@@ -82,7 +75,7 @@ function WorkspaceBrowserInstance({ scope, workspaceId }: WorkspaceBrowserProps)
     setDeletingPath(item.path);
     setDeleteError(false);
     try {
-      await deleteWorkspaceFile(scope, workspaceId, item.path);
+      await deleteWorkspaceFile(workspaceId, item.path);
       setSelectedPath((current) => (current === item.path ? null : current));
       setReloadVersion((current) => current + 1);
     } catch {
@@ -97,7 +90,6 @@ function WorkspaceBrowserInstance({ scope, workspaceId }: WorkspaceBrowserProps)
   return (
     <section
       className="workspace-browser agent-home-browser"
-      data-scope={scope}
       data-workspace-id={workspaceId}
       data-testid="workspace-browser"
     >
@@ -226,7 +218,6 @@ function WorkspaceBrowserInstance({ scope, workspaceId }: WorkspaceBrowserProps)
           <WorkspaceEditor
             onFileUpdated={() => setReloadVersion((current) => current + 1)}
             path={selectedPath}
-            scope={scope}
             workspaceId={workspaceId}
           />
         </section>

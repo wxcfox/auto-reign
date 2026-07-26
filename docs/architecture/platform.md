@@ -20,7 +20,7 @@ Auto Reign 是可自部署、多账号严格隔离的 Agent 聊天与知识工�
 
 | 概念 | 配置或身份 | 生命周期 |
 | --- | --- | --- |
-| Agent | `system_prompt`、可选默认模型、Agent Home 和 Knowledge scope | global 或 private；Task 固定引用，下一轮读取最新配置 |
+| Agent | `system_prompt`、可选默认模型、Agent Home 和 Knowledge scope | global 或 private；Task 固定引用，下一轮读取最新配置；可复制为私有副本，副本沿用原有引用 |
 | Workspace | `workspace_type=agent_home`、`initial_agents_md` | 多个 Agent 可共享定义；文件实例按用户隔离 |
 | Knowledge Collection | Retriever、mode、chunk、overlap、Top K、threshold、hybrid 权重 | 显式包含 Document；Agent 可绑定整库或子集 |
 | Knowledge Document | Collection、owner、对象 Key、状态、hash、generation | 原文显式上传；解析与 Retriever 投影可重建 |
@@ -128,7 +128,11 @@ system 层级为：
 
 Agent Home 物理身份是 `(workspace_id, effective_user_id)`，对象前缀为 `users/{effective_user_id}/workspaces/{workspace_id}/`。普通聊天不会自动写 Home；只有用户明确要求持久保存时模型才使用文件工具。已有文件写入必须携带最近读取的 ETag，根 `AGENTS.md` 可编辑但不可删除。
 
-`/workspaces` 管理页面按个人/公共定义分组浏览，选中一个 Workspace 后以表格形式展示其目录内容；文件内容只在显式打开某一项后才通过 `readWorkspaceFile` 单独请求，不随目录列表预加载，与 Agent Home 精确 list/read 工具的按需访问语义一致。
+`/workspaces` 管理页面对所有角色都是一个扁平列表，不分个人/公共分页：Workspace 的 `scope` 只决定谁能改定义，文件实例永远落在调用者自己的前缀下，因此按归属分页没有语义。公共定义在列表里以徽标标记，是否可编辑由 `can_manage` 决定。选中一个 Workspace 后以表格形式展示其目录内容；文件内容只在显式打开某一项后才通过 `readWorkspaceFile` 单独请求，不随目录列表预加载，与 Agent Home 精确 list/read 工具的按需访问语义一致。
+
+公共 Agent 是一份共享定义，用户想微调时复制出私有副本再改，而不是就地覆盖。复制只搬运引用：`home_workspace_id` 保持指向同一个 Workspace，副本因此继续读写调用者已经积累的那批文件；`knowledge_scopes` 同样保留对公共 Collection 的引用，不复制文档。副本与源定义此后互不影响，管理员对源的更新不会流向副本。若源引用的公共资源之后被停用或删除，副本运行时以 `resource_reference_invalid` 明确失败，不会静默降级。
+
+Agent Home 文件访问只有 `/api/workspaces/{id}/files*` 一套路由，对公共 Workspace 同样适用：可见性是唯一的访问边界，管理员没有、也不需要读取其他用户文件实例的入口。
 
 三类来源严格分离：
 

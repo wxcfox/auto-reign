@@ -39,6 +39,17 @@ def private_workspace(client, auth_headers) -> dict[str, object]:
 
 
 @pytest.fixture
+def admin_private_workspace(client, admin_headers) -> dict[str, object]:
+    response = client.post(
+        "/api/workspaces",
+        headers=admin_headers,
+        json=_workspace_payload("Admin Private Agent Home"),
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+@pytest.fixture
 def global_workspace(client, admin_headers) -> dict[str, object]:
     response = client.post(
         "/api/admin/workspaces",
@@ -187,26 +198,41 @@ def test_workspace_file_api_hides_other_users_private_workspace(
     assert response.json()["detail"]["code"] == "resource_not_found"
 
 
-def test_admin_file_api_uses_admin_prefix_for_global_workspace(
+def test_non_admin_can_browse_a_global_workspace_under_its_own_prefix(
     client,
-    admin_headers,
+    auth_headers,
     global_workspace,
     fake_object_store,
 ) -> None:
+    """A public Workspace is a template, so every user reads its own instance."""
     workspace_id = global_workspace["id"]
     response = client.get(
-        f"/api/admin/workspaces/{workspace_id}/files",
-        headers=admin_headers,
+        f"/api/workspaces/{workspace_id}/files",
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
-    current = client.get("/api/auth/me", headers=admin_headers)
+    current = client.get("/api/auth/me", headers=auth_headers)
     assert current.status_code == 200
-    admin_id = current.json()["id"]
+    user_id = current.json()["id"]
     assert fake_object_store.keys() == [
-        f"users/{admin_id}/workspaces/{workspace_id}/AGENTS.md"
+        f"users/{user_id}/workspaces/{workspace_id}/AGENTS.md"
     ]
     assert all("users/0/" not in key for key in fake_object_store.keys())
+
+
+def test_admin_file_routes_are_gone(
+    client,
+    admin_headers,
+    global_workspace,
+) -> None:
+    """File access never routes through the admin surface."""
+    response = client.get(
+        f"/api/admin/workspaces/{global_workspace['id']}/files",
+        headers=admin_headers,
+    )
+
+    assert response.status_code in {404, 405}
 
 
 def test_global_workspace_has_an_isolated_file_instance_per_actor(
@@ -217,12 +243,12 @@ def test_global_workspace_has_an_isolated_file_instance_per_actor(
 ) -> None:
     workspace_id = global_workspace["id"]
     admin_opened = client.get(
-        f"/api/admin/workspaces/{workspace_id}/files/content?path=AGENTS.md",
+        f"/api/workspaces/{workspace_id}/files/content?path=AGENTS.md",
         headers=admin_headers,
     )
     assert admin_opened.status_code == 200
     assert client.put(
-        f"/api/admin/workspaces/{workspace_id}/files/content",
+        f"/api/workspaces/{workspace_id}/files/content",
         headers=admin_headers,
         json={
             "path": "AGENTS.md",
@@ -239,29 +265,24 @@ def test_global_workspace_has_an_isolated_file_instance_per_actor(
     assert user_opened.json()["content"] == "# Global initial rules"
 
 
-def test_admin_file_api_requires_global_workspace(
+def test_file_access_still_refuses_a_workspace_the_actor_cannot_see(
     client,
-    admin_headers,
     auth_headers,
-    private_workspace,
+    admin_private_workspace,
 ) -> None:
+    """Visibility remains the file-access boundary between accounts."""
     response = client.get(
-        f"/api/admin/workspaces/{private_workspace['id']}/files",
-        headers=admin_headers,
+        f"/api/workspaces/{admin_private_workspace['id']}/files",
+        headers=auth_headers,
     )
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "resource_not_found"
-    assert client.get(
-        f"/api/admin/workspaces/{private_workspace['id']}/files",
-        headers=auth_headers,
-    ).status_code == 403
 
 
-def test_private_and_admin_routes_reuse_the_app_agent_home_service(
+def test_private_and_global_workspaces_reuse_the_app_agent_home_service(
     client,
     auth_headers,
-    admin_headers,
     private_workspace,
     global_workspace,
 ) -> None:
@@ -271,8 +292,8 @@ def test_private_and_admin_routes_reuse_the_app_agent_home_service(
         headers=auth_headers,
     )
     global_response = client.get(
-        f"/api/admin/workspaces/{global_workspace['id']}/files",
-        headers=admin_headers,
+        f"/api/workspaces/{global_workspace['id']}/files",
+        headers=auth_headers,
     )
 
     assert private.status_code == 200
