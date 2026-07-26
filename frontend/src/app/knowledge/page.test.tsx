@@ -5,26 +5,18 @@ import KnowledgePage from "./page";
 import { KnowledgeCollectionList } from "@/components/KnowledgeCollectionList";
 
 vi.mock("@/components/KnowledgeCollectionList", () => ({
-  KnowledgeCollectionList: vi.fn(({ scope }: { scope: string }) => (
-    <div data-scope={scope}>Knowledge management</div>
-  )),
+  KnowledgeCollectionList: vi.fn(() => <div>Knowledge management</div>),
 }));
 
-describe("personal knowledge route", () => {
+describe("knowledge route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
 
-  it("renders private Knowledge management without an admin guard", () => {
+  it("renders one Knowledge list for every role, with the tab carrying the scope", () => {
     render(<KnowledgePage />);
 
-    expect(screen.getByText("Knowledge management")).toHaveAttribute(
-      "data-scope",
-      "private",
-    );
-    expect(KnowledgeCollectionList).toHaveBeenCalledWith(
-      expect.objectContaining({ scope: "private" }),
-      undefined,
-    );
+    expect(screen.getByText("Knowledge management")).toBeInTheDocument();
+    expect(KnowledgeCollectionList).toHaveBeenCalledWith({}, undefined);
   });
 });

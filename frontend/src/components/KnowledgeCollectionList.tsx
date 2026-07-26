@@ -16,6 +16,7 @@ import { ResourceDetailHeader } from "@/components/resource/ResourceDetailHeader
 import { ResourceSidebar } from "@/components/resource/ResourceSidebar";
 import { ResourceSidebarLayout } from "@/components/resource/ResourceSidebarLayout";
 import { useResourceSidebarSelection } from "@/components/resource/useResourceSidebarSelection";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   deleteKnowledgeCollection,
@@ -24,10 +25,6 @@ import {
 } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
 import type { KnowledgeCollection, ResourceScope } from "@/lib/types";
-
-export type KnowledgeCollectionListProps = {
-  scope: ResourceScope;
-};
 
 type EditingCollection = KnowledgeCollection | "new" | null;
 type CollectionRow = { collection: KnowledgeCollection; manageable: boolean };
@@ -42,14 +39,14 @@ function dedupeCollections(...groups: KnowledgeCollection[][]): KnowledgeCollect
   return [...result.values()];
 }
 
-export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps) {
+export function KnowledgeCollectionList() {
   const { t } = useTranslation("knowledge");
+  const { user } = useCurrentUser();
   const titleId = useId();
   const editorTitleId = useId();
   const [ownedCollections, setOwnedCollections] = useState<KnowledgeCollection[]>([]);
   const [sharedCollections, setSharedCollections] = useState<KnowledgeCollection[]>([]);
   const [editing, setEditing] = useState<EditingCollection>(null);
-  const [loadedScope, setLoadedScope] = useState<ResourceScope | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -71,39 +68,23 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
         setPageErrorKey(null);
       }
       try {
-        if (scope === "private") {
-          const [ownedResult, globalResult] = await Promise.all([
-            listKnowledgeCollections("owned", { includeInactive: true }),
-            listKnowledgeCollections("global"),
-          ]);
-          if (!mountedRef.current || loadGenerationRef.current !== generation) {
-            return false;
-          }
-          const collections = dedupeCollections(
-            ownedResult.collections,
-            globalResult.collections,
-          );
-          setOwnedCollections(
-            collections.filter((collection) => collection.scope === "private"),
-          );
-          setSharedCollections(
-            collections.filter((collection) => collection.scope === "global"),
-          );
-        } else {
-          const result = await listKnowledgeCollections("global", {
-            includeInactive: true,
-          });
-          if (!mountedRef.current || loadGenerationRef.current !== generation) {
-            return false;
-          }
-          setOwnedCollections(
-            dedupeCollections(result.collections).filter(
-              (collection) => collection.scope === "global",
-            ),
-          );
-          setSharedCollections([]);
+        const [ownedResult, globalResult] = await Promise.all([
+          listKnowledgeCollections("owned", { includeInactive: true }),
+          listKnowledgeCollections("global"),
+        ]);
+        if (!mountedRef.current || loadGenerationRef.current !== generation) {
+          return false;
         }
-        setLoadedScope(scope);
+        const collections = dedupeCollections(
+          ownedResult.collections,
+          globalResult.collections,
+        );
+        setOwnedCollections(
+          collections.filter((collection) => collection.scope === "private"),
+        );
+        setSharedCollections(
+          collections.filter((collection) => collection.scope === "global"),
+        );
         setLoadState("ready");
         return true;
       } catch {
@@ -117,7 +98,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
         return false;
       }
     },
-    [scope],
+    [],
   );
 
   useEffect(() => {
@@ -125,7 +106,6 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     mountedRef.current = true;
     activeMutationRef.current = null;
     setEditing(null);
-    setLoadedScope(null);
     setFormBusy(false);
     setPendingCollectionId(null);
     setPageErrorKey(null);
@@ -164,8 +144,10 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     }
   }
 
+  // A public collection is genuinely shared, so only can_manage decides who
+  // may edit it. The active tab decides only where a new one is created.
   function canManageDefinition(collection: KnowledgeCollection) {
-    return collection.can_manage && collection.scope === scope;
+    return collection.can_manage;
   }
 
   function openEditor(target: Exclude<EditingCollection, null>) {
@@ -210,7 +192,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     setPendingCollectionId(collection.id);
     setPageErrorKey(null);
     try {
-      await updateKnowledgeCollection(scope, collection.id, {
+      await updateKnowledgeCollection(collection.scope, collection.id, {
         name: collection.name,
         config: collection.config,
         is_active: !collection.is_active,
@@ -249,7 +231,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     setPendingCollectionId(collection.id);
     setPageErrorKey(null);
     try {
-      await deleteKnowledgeCollection(scope, collection.id);
+      await deleteKnowledgeCollection(collection.scope, collection.id);
       if (isCurrentMutation(mutation, lifecycleGeneration)) {
         await load(false);
       }
@@ -268,8 +250,14 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
 
   const rows: CollectionRow[] = useMemo(
     () => [
-      ...ownedCollections.map((collection) => ({ collection, manageable: true })),
-      ...sharedCollections.map((collection) => ({ collection, manageable: false })),
+      ...ownedCollections.map((collection) => ({
+        collection,
+        manageable: collection.can_manage,
+      })),
+      ...sharedCollections.map((collection) => ({
+        collection,
+        manageable: collection.can_manage,
+      })),
     ],
     [ownedCollections, sharedCollections],
   );
@@ -285,16 +273,13 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     [rows],
   );
   const selection = useResourceSidebarSelection(items, {
-    resetKey: scope,
-    tabs: scope === "private",
+    resetKey: "knowledge",
+    tabs: true,
   });
   const selectedRow =
     rows.find((row) => row.collection.id === selection.selectedItem?.id) ?? null;
 
-  if (
-    loadState === "loading" ||
-    (loadState === "ready" && loadedScope !== scope)
-  ) {
+  if (loadState === "loading") {
     return (
       <section className="management-page">
         <p className="knowledge-state" role="status">
@@ -317,10 +302,17 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
 
   const controlsDisabled =
     pendingCollectionId !== null || formBusy || editing !== null;
-  const pageTitle = scope === "global" ? t("global.title") : t("personal.title");
+  // Creating follows the tab you are standing on; publishing is admin-only.
+  const activeScope: ResourceScope =
+    selection.tab === "global" ? "global" : "private";
+  const canCreateHere = selection.tab === "personal" || user?.role === "admin";
+  const editorScope: ResourceScope =
+    editing === "new" ? activeScope : (editing?.scope ?? activeScope);
+  const pageTitle =
+    selection.tab === "global" ? t("global.title") : t("personal.title");
   const editorTitle =
     editing === "new"
-      ? scope === "global"
+      ? activeScope === "global"
         ? t("editor.createGlobalTitle")
         : t("editor.createTitle")
       : editing === null
@@ -328,7 +320,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
         : t("editor.editTitle", { name: editing.name });
 
   const selectedCanManage = selectedRow
-    ? selectedRow.manageable && canManageDefinition(selectedRow.collection)
+    ? canManageDefinition(selectedRow.collection)
     : false;
   const selectedRowPending =
     selectedRow !== null && pendingCollectionId === selectedRow.collection.id;
@@ -337,14 +329,17 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
 
   return (
     <ResourceSidebarLayout
-      scope={scope}
       sidebar={
         <ResourceSidebar
+          canCreate={canCreateHere}
           createDisabled={controlsDisabled}
           labels={{
             activeBadge: t("states.active"),
             collapse: t("sidebar.collapse"),
-            create: scope === "global" ? t("actions.createGlobal") : t("actions.create"),
+            create:
+              activeScope === "global"
+                ? t("actions.createGlobal")
+                : t("actions.create"),
             empty: t("states.empty"),
             expand: t("sidebar.expand"),
             globalTab: t("sidebar.globalTab"),
@@ -374,7 +369,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
             onCancel={closeEditor}
             onSaved={handleSaved}
             onSavingChange={setFormBusy}
-            scope={scope}
+            scope={editorScope}
           />
         </section>
       ) : null}

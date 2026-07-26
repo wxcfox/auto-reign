@@ -7,15 +7,17 @@ import i18next from "@/i18n/setup";
 import {
   createKnowledgeCollection,
   deleteKnowledgeCollection,
+  getCurrentUser,
   listKnowledgeCollections,
   updateKnowledgeCollection,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
-import type { KnowledgeCollection } from "@/lib/types";
+import type { KnowledgeCollection, User } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
   createKnowledgeCollection: vi.fn(),
   deleteKnowledgeCollection: vi.fn(),
+  getCurrentUser: vi.fn(),
   listKnowledgeCollections: vi.fn(),
   updateKnowledgeCollection: vi.fn(),
 }));
@@ -45,14 +47,29 @@ const privateCollection: KnowledgeCollection = {
   updated_at: "2026-07-13T00:00:00Z",
 };
 
+// As an ordinary account sees it: visible and usable, but not editable. The
+// backend flips can_manage to true for an administrator.
 const globalCollection: KnowledgeCollection = {
   ...privateCollection,
   id: "global-collection",
   name: "Global handbook",
   scope: "global",
-  can_manage: true,
+  can_manage: false,
   is_active: true,
 };
+
+const adminManagedGlobalCollection: KnowledgeCollection = {
+  ...globalCollection,
+  can_manage: true,
+};
+
+function mockUser(role: User["role"] = "user") {
+  vi.mocked(getCurrentUser).mockResolvedValue({
+    id: 7,
+    username: "alice",
+    role,
+  } as User);
+}
 
 function mockPrivateLists(
   owned: KnowledgeCollection[] = [privateCollection],
@@ -66,12 +83,13 @@ function mockPrivateLists(
 describe("KnowledgeCollectionList management page", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
+    mockUser();
     await i18next.changeLanguage("en");
   });
 
   it("loads owned inactive and active global collections in parallel, dedupes, and keeps shared definitions read-only", async () => {
     mockPrivateLists([privateCollection, globalCollection], [globalCollection]);
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
 
     await waitFor(() => {
       expect(listKnowledgeCollections).toHaveBeenCalledWith("owned", {
@@ -99,7 +117,7 @@ describe("KnowledgeCollectionList management page", () => {
       name: "Private references",
       is_active: true,
     });
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
     fireEvent.click(screen.getByRole("button", { name: /^create knowledge base$/i }));
@@ -135,21 +153,16 @@ describe("KnowledgeCollectionList management page", () => {
       .not.toBeInTheDocument();
   });
 
-  it("uses global list and mutation authority for the selected collection", async () => {
-    vi.mocked(listKnowledgeCollections).mockResolvedValue({
-      collections: [globalCollection],
-    });
+  it("uses global mutation authority for a public collection on the Public tab", async () => {
+    mockUser("admin");
+    mockPrivateLists([], [adminManagedGlobalCollection]);
     vi.mocked(updateKnowledgeCollection).mockResolvedValue({
-      ...globalCollection,
-      config: { ...globalCollection.config, top_k: 10 },
+      ...adminManagedGlobalCollection,
+      config: { ...adminManagedGlobalCollection.config, top_k: 10 },
     });
-    render(<KnowledgeCollectionList scope="global" />);
+    render(<KnowledgeCollectionList />);
 
-    await waitFor(() =>
-      expect(listKnowledgeCollections).toHaveBeenCalledWith("global", {
-        includeInactive: true,
-      }),
-    );
+    fireEvent.click(await screen.findByRole("tab", { name: /public/i }));
     await screen.findByRole("heading", { name: globalCollection.name });
     fireEvent.click(screen.getByRole("button", { name: /edit global handbook/i }));
     const editor = screen.getByRole("region", { name: /edit global handbook/i });
@@ -181,7 +194,7 @@ describe("KnowledgeCollectionList management page", () => {
         resolveUpdate = resolve;
       }),
     );
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
     const enable = screen.getByRole("button", { name: /enable my manuals/i });
@@ -205,7 +218,7 @@ describe("KnowledgeCollectionList management page", () => {
 
   it("honors can_manage even for an owned-looking response", async () => {
     mockPrivateLists([{ ...privateCollection, can_manage: false }], []);
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
     expect(screen.queryByRole("button", { name: /edit my manuals/i }))
@@ -225,7 +238,7 @@ describe("KnowledgeCollectionList management page", () => {
         status: 409,
       }),
     );
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
     fireEvent.click(screen.getByRole("button", { name: /delete my manuals/i }));
@@ -238,71 +251,90 @@ describe("KnowledgeCollectionList management page", () => {
     confirmSpy.mockRestore();
   });
 
-  it("ignores stale private results after switching to global management", async () => {
-    let resolveOwned!: (value: { collections: KnowledgeCollection[] }) => void;
-    let resolveShared!: (value: { collections: KnowledgeCollection[] }) => void;
-    vi.mocked(listKnowledgeCollections).mockImplementation((listScope, options) => {
-      if (listScope === "owned") {
-        return new Promise((resolve) => {
-          resolveOwned = resolve;
-        });
-      }
-      if (!options?.includeInactive) {
-        return new Promise((resolve) => {
-          resolveShared = resolve;
-        });
-      }
-      return Promise.resolve({ collections: [globalCollection] });
-    });
-    const view = render(<KnowledgeCollectionList scope="private" />);
-
-    view.rerender(<KnowledgeCollectionList scope="global" />);
-    expect(await screen.findByRole("heading", { name: globalCollection.name }))
-      .toBeInTheDocument();
-    await act(async () => {
-      resolveOwned({ collections: [privateCollection] });
-      resolveShared({ collections: [] });
-      await Promise.resolve();
-    });
-    expect(screen.queryByText(privateCollection.name)).not.toBeInTheDocument();
-  });
-
-  it("hides a ready private scope immediately while the next global scope is pending", async () => {
-    let resolveGlobal!: (value: { collections: KnowledgeCollection[] }) => void;
-    vi.mocked(listKnowledgeCollections).mockImplementation((listScope, options) => {
-      if (listScope === "owned") {
-        return Promise.resolve({ collections: [privateCollection] });
-      }
-      if (!options?.includeInactive) {
-        return Promise.resolve({ collections: [globalCollection] });
-      }
-      return new Promise((resolve) => {
-        resolveGlobal = resolve;
-      });
-    });
-    const view = render(<KnowledgeCollectionList scope="private" />);
+  it("hides creation from a non-admin standing on the Public tab", async () => {
+    mockPrivateLists([privateCollection], [globalCollection]);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
-    view.rerender(<KnowledgeCollectionList scope="global" />);
+    expect(
+      screen.getByRole("button", { name: /create knowledge base/i }),
+    ).toBeInTheDocument();
 
-    expect(screen.getByRole("status")).toHaveTextContent(/loading/i);
-    expect(screen.queryByText(privateCollection.name)).not.toBeInTheDocument();
-    expect(screen.queryByText(globalCollection.name)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /public/i }));
 
-    await act(async () => {
-      resolveGlobal({ collections: [globalCollection] });
-      await Promise.resolve();
-    });
-    expect(await screen.findByRole("heading", { name: globalCollection.name }))
-      .toBeInTheDocument();
+    await screen.findByRole("heading", { name: globalCollection.name });
+    expect(screen.queryByRole("button", { name: /create/i })).not.toBeInTheDocument();
   });
+
+  it("publishes through the admin endpoint when an admin creates on the Public tab", async () => {
+    mockUser("admin");
+    mockPrivateLists([privateCollection], [globalCollection]);
+    vi.mocked(createKnowledgeCollection).mockResolvedValue({
+      ...globalCollection,
+      id: "new-global",
+      name: "Team handbook",
+    });
+    render(<KnowledgeCollectionList />);
+    await screen.findByRole("heading", { name: privateCollection.name });
+
+    fireEvent.click(screen.getByRole("tab", { name: /public/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /create public knowledge base/i }),
+    );
+    const editor = screen.getByRole("region", { name: /create public knowledge base/i });
+    fireEvent.change(within(editor).getByLabelText(/^name$/i), {
+      target: { value: "Team handbook" },
+    });
+    // The form's submit keeps the neutral label; the tab carries the scope.
+    fireEvent.click(
+      within(editor).getByRole("button", { name: /^create knowledge base$/i }),
+    );
+
+    // The tab decides the scope; creating here must reach every user, so it has
+    // to go to the admin base rather than silently minting a private collection.
+    await waitFor(() =>
+      expect(createKnowledgeCollection).toHaveBeenCalledWith("global", {
+        name: "Team handbook",
+        config: { ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG },
+      }),
+    );
+  });
+
+  it("creates a private collection when an admin stays on the Personal tab", async () => {
+    mockUser("admin");
+    mockPrivateLists([privateCollection], [globalCollection]);
+    vi.mocked(createKnowledgeCollection).mockResolvedValue({
+      ...privateCollection,
+      id: "new-private",
+      name: "Personal notes",
+    });
+    render(<KnowledgeCollectionList />);
+    await screen.findByRole("heading", { name: privateCollection.name });
+
+    fireEvent.click(screen.getByRole("button", { name: /^create knowledge base$/i }));
+    const editor = screen.getByRole("region", { name: /^create knowledge base$/i });
+    fireEvent.change(within(editor).getByLabelText(/^name$/i), {
+      target: { value: "Personal notes" },
+    });
+    fireEvent.click(
+      within(editor).getByRole("button", { name: /^create knowledge base$/i }),
+    );
+
+    await waitFor(() =>
+      expect(createKnowledgeCollection).toHaveBeenCalledWith("private", {
+        name: "Personal notes",
+        config: { ...DEFAULT_KNOWLEDGE_COLLECTION_CONFIG },
+      }),
+    );
+  });
+
 
   it("renders a recoverable stable error in Chinese", async () => {
     await i18next.changeLanguage("zh-CN");
     vi.mocked(listKnowledgeCollections)
       .mockRejectedValueOnce(new Error("database secret"))
       .mockResolvedValue({ collections: [] });
-    render(<KnowledgeCollectionList scope="global" />);
+    render(<KnowledgeCollectionList />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("资料库加载失败。");
     expect(screen.queryByText(/database secret/i)).not.toBeInTheDocument();
@@ -312,7 +344,7 @@ describe("KnowledgeCollectionList management page", () => {
 
   it("selects a collection from the sidebar and shows its documents on the right", async () => {
     mockPrivateLists([privateCollection], [globalCollection]);
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
     expect(screen.getByTestId("document-table")).toHaveTextContent(privateCollection.id);
@@ -332,7 +364,7 @@ describe("KnowledgeCollectionList management page", () => {
 
   it("shows a distinct message when a search query filters out every collection", async () => {
     mockPrivateLists([privateCollection], [globalCollection]);
-    render(<KnowledgeCollectionList scope="private" />);
+    render(<KnowledgeCollectionList />);
     await screen.findByRole("heading", { name: privateCollection.name });
 
     fireEvent.change(screen.getByLabelText(/search knowledge bases/i), {

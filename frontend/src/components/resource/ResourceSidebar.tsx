@@ -29,6 +29,8 @@ export type ResourceSidebarLabels = {
 };
 
 export type ResourceSidebarProps = {
+  /** Hidden where the caller may not publish, e.g. a non-admin on Public. */
+  canCreate?: boolean;
   createDisabled: boolean;
   labels: ResourceSidebarLabels;
   onCreate: () => void;
@@ -38,6 +40,7 @@ export type ResourceSidebarProps = {
 };
 
 export function ResourceSidebar({
+  canCreate = true,
   createDisabled,
   labels,
   onCreate,
@@ -95,15 +98,17 @@ export function ResourceSidebar({
               type="search"
               value={query}
             />
-            <button
-              aria-label={labels.create}
-              className="sidebar-collapse-button"
-              disabled={createDisabled}
-              onClick={onCreate}
-              type="button"
-            >
-              <Plus aria-hidden="true" size={18} />
-            </button>
+            {canCreate ? (
+              <button
+                aria-label={labels.create}
+                className="sidebar-collapse-button"
+                disabled={createDisabled}
+                onClick={onCreate}
+                type="button"
+              >
+                <Plus aria-hidden="true" size={18} />
+              </button>
+            ) : null}
             <button
               aria-label={labels.collapse}
               className="sidebar-collapse-button"
