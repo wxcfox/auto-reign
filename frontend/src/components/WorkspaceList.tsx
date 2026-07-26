@@ -1,15 +1,21 @@
 "use client";
 
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
+import { ResourceDetailHeader } from "@/components/resource/ResourceDetailHeader";
+import { ResourceSidebar } from "@/components/resource/ResourceSidebar";
+import { ResourceSidebarLayout } from "@/components/resource/ResourceSidebarLayout";
+import { useResourceSidebarSelection } from "@/components/resource/useResourceSidebarSelection";
+import { WorkspaceBrowser } from "@/components/WorkspaceBrowser";
 import { WorkspaceForm } from "@/components/WorkspaceForm";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   deleteWorkspace,
@@ -18,10 +24,6 @@ import {
 } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
 import type { Workspace, WorkspaceScope } from "@/lib/types";
-
-export type WorkspaceListProps = {
-  scope: WorkspaceScope;
-};
 
 type EditingWorkspace = Workspace | "new" | null;
 
@@ -35,14 +37,14 @@ function dedupeWorkspaces(...groups: Workspace[][]): Workspace[] {
   return [...result.values()];
 }
 
-export function WorkspaceList({ scope }: WorkspaceListProps) {
+export function WorkspaceList() {
   const { t } = useTranslation("workspaces");
+  const { user } = useCurrentUser();
   const titleId = useId();
   const editorTitleId = useId();
-  const [ownedWorkspaces, setOwnedWorkspaces] = useState<Workspace[]>([]);
-  const [sharedWorkspaces, setSharedWorkspaces] = useState<Workspace[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [editing, setEditing] = useState<EditingWorkspace>(null);
-  const [loadedScope, setLoadedScope] = useState<WorkspaceScope | null>(null);
+  const [createScope, setCreateScope] = useState<WorkspaceScope>("private");
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -63,37 +65,18 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
         setPageErrorKey(null);
       }
       try {
-        if (scope === "private") {
-          const [ownedResult, globalResult] = await Promise.all([
-            listWorkspaces("owned", { includeInactive: true }),
-            listWorkspaces("global"),
-          ]);
-          if (!mountedRef.current || loadGenerationRef.current !== generation) {
-            return false;
-          }
-          const workspaces = dedupeWorkspaces(
-            ownedResult.workspaces,
-            globalResult.workspaces,
-          );
-          setOwnedWorkspaces(
-            workspaces.filter((workspace) => workspace.scope === "private"),
-          );
-          setSharedWorkspaces(
-            workspaces.filter((workspace) => workspace.scope === "global"),
-          );
-        } else {
-          const result = await listWorkspaces("global", { includeInactive: true });
-          if (!mountedRef.current || loadGenerationRef.current !== generation) {
-            return false;
-          }
-          setOwnedWorkspaces(
-            dedupeWorkspaces(result.workspaces).filter(
-              (workspace) => workspace.scope === "global",
-            ),
-          );
-          setSharedWorkspaces([]);
+        // A public Workspace is a template every account instantiates under its
+        // own prefix, so both kinds belong in one list rather than behind tabs.
+        const [ownedResult, globalResult] = await Promise.all([
+          listWorkspaces("owned", { includeInactive: true }),
+          listWorkspaces("global"),
+        ]);
+        if (!mountedRef.current || loadGenerationRef.current !== generation) {
+          return false;
         }
-        setLoadedScope(scope);
+        setWorkspaces(
+          dedupeWorkspaces(ownedResult.workspaces, globalResult.workspaces),
+        );
         setLoadState("ready");
         return true;
       } catch {
@@ -107,7 +90,7 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
         return false;
       }
     },
-    [scope],
+    [],
   );
 
   useEffect(() => {
@@ -115,7 +98,7 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
     mountedRef.current = true;
     activeMutationRef.current = null;
     setEditing(null);
-    setLoadedScope(null);
+    setCreateScope("private");
     setFormBusy(false);
     setPendingWorkspaceId(null);
     setPageErrorKey(null);
@@ -153,8 +136,9 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
     }
   }
 
+  // Editing the definition is the only thing scope governs; file access never is.
   function canManageDefinition(workspace: Workspace) {
-    return workspace.can_manage && workspace.scope === scope;
+    return workspace.can_manage;
   }
 
   function openEditor(target: Exclude<EditingWorkspace, null>) {
@@ -199,7 +183,7 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
     setPendingWorkspaceId(workspace.id);
     setPageErrorKey(null);
     try {
-      await updateWorkspace(scope, workspace.id, {
+      await updateWorkspace(workspace.scope, workspace.id, {
         name: workspace.name,
         config: workspace.config,
         is_active: !workspace.is_active,
@@ -238,7 +222,7 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
     setPendingWorkspaceId(workspace.id);
     setPageErrorKey(null);
     try {
-      await deleteWorkspace(scope, workspace.id);
+      await deleteWorkspace(workspace.scope, workspace.id);
       if (isCurrentMutation(mutation, lifecycleGeneration)) {
         await load(false);
       }
@@ -255,10 +239,25 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
     }
   }
 
-  if (
-    loadState === "loading" ||
-    (loadState === "ready" && loadedScope !== scope)
-  ) {
+  const items = useMemo(
+    () =>
+      workspaces.map((workspace) => ({
+        id: workspace.id,
+        name: workspace.name,
+        scope: workspace.scope,
+        isActive: workspace.is_active,
+        manageable: workspace.can_manage,
+      })),
+    [workspaces],
+  );
+  const selection = useResourceSidebarSelection(items, {
+    resetKey: "workspaces",
+    tabs: false,
+  });
+  const selectedWorkspace =
+    workspaces.find((workspace) => workspace.id === selection.selectedItem?.id) ?? null;
+
+  if (loadState === "loading") {
     return (
       <section className="management-page">
         <p className="workspace-state" role="status">
@@ -281,176 +280,132 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
 
   const controlsDisabled =
     pendingWorkspaceId !== null || formBusy || editing !== null;
-  const pageTitle = scope === "global" ? t("global.title") : t("personal.title");
-  const pageSummary =
-    scope === "global" ? t("global.summary") : t("personal.summary");
+  const canPublish = user?.role === "admin";
   const editorTitle =
     editing === "new"
-      ? scope === "global"
-        ? t("managementEditor.createGlobalTitle")
-        : t("managementEditor.createTitle")
+      ? t("managementEditor.createTitle")
       : editing === null
         ? ""
         : t("managementEditor.editTitle", { name: editing.name });
 
-  function renderRows(workspaces: Workspace[], manageable: boolean) {
-    if (workspaces.length === 0) {
-      return <p className="empty-state">{t("states.empty")}</p>;
-    }
-    return (
-      <ul className="management-list">
-        {workspaces.map((workspace) => {
-          const canManage = manageable && canManageDefinition(workspace);
-          const rowPending = pendingWorkspaceId === workspace.id;
-          return (
-            <li key={workspace.id}>
-              <div className="management-list__summary">
-                <strong>{workspace.name}</strong>
-                <span>
-                  {workspace.is_active ? t("states.active") : t("states.inactive")}
-                </span>
-              </div>
-              <div className="management-list__actions">
-                {workspace.is_active ? (
-                  controlsDisabled ? (
-                    <button
-                      aria-label={t("actions.openFilesLabel", { name: workspace.name })}
-                      className="button"
-                      disabled
-                      type="button"
-                    >
-                      {t("actions.openFiles")}
-                    </button>
-                  ) : (
-                    <Link
-                      aria-label={t("actions.openFilesLabel", { name: workspace.name })}
-                      className="button"
-                      href={`/workspaces/${encodeURIComponent(workspace.id)}`}
-                    >
-                      {t("actions.openFiles")}
-                    </Link>
-                  )
-                ) : null}
-                {canManage ? (
-                  <>
-                    <button
-                      aria-label={t("actions.editLabel", { name: workspace.name })}
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => openEditor(workspace)}
-                      type="button"
-                    >
-                      {t("actions.edit")}
-                    </button>
-                    <button
-                      aria-label={
-                        workspace.is_active
-                          ? t("actions.disableLabel", { name: workspace.name })
-                          : t("actions.enableLabel", { name: workspace.name })
-                      }
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => void setActive(workspace)}
-                      type="button"
-                    >
-                      {rowPending
-                        ? t("actions.working")
-                        : workspace.is_active
-                          ? t("actions.disable")
-                          : t("actions.enable")}
-                    </button>
-                    <button
-                      aria-label={t("actions.deleteLabel", { name: workspace.name })}
-                      className="button button-danger"
-                      disabled={controlsDisabled}
-                      onClick={() => void remove(workspace)}
-                      type="button"
-                    >
-                      {t("actions.delete")}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  }
+  const selectedCanManage =
+    selectedWorkspace !== null && canManageDefinition(selectedWorkspace);
+  const selectedIsPublic = selectedWorkspace?.scope === "global";
+  const selectedPending =
+    selectedWorkspace !== null && pendingWorkspaceId === selectedWorkspace.id;
+  const editingScope: WorkspaceScope =
+    editing === "new" ? createScope : (editing?.scope ?? "private");
 
   return (
-    <section className="management-page" aria-labelledby={titleId} data-scope={scope}>
-      <div className="management-content">
-        <header className="management-header">
-          <div>
-            <h1 id={titleId}>{pageTitle}</h1>
-            <p>{pageSummary}</p>
+    <ResourceSidebarLayout
+      sidebar={
+        <ResourceSidebar
+          createDisabled={controlsDisabled}
+          labels={{
+            activeBadge: t("states.active"),
+            collapse: t("sidebar.collapse"),
+            create: t("actions.create"),
+            empty: t("states.empty"),
+            expand: t("sidebar.expand"),
+            globalTab: t("sidebar.globalTab"),
+            inactiveBadge: t("states.inactive"),
+            noResults: t("states.noResults"),
+            openItem: (name) => t("sidebar.openLabel", { name }),
+            personalTab: t("sidebar.personalTab"),
+            publicBadge: t("sidebar.globalTab"),
+            searchLabel: t("sidebar.searchLabel"),
+            searchPlaceholder: t("sidebar.searchPlaceholder"),
+          }}
+          onCreate={() => openEditor("new")}
+          selection={selection}
+          title={t("personal.title")}
+          titleId={titleId}
+        />
+      }
+      titleId={titleId}
+    >
+      {editing !== null ? (
+        <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
+          <div className="section-heading">
+            <h2 id={editorTitleId}>{editorTitle}</h2>
           </div>
-          <button
-            className="button button-primary"
-            disabled={controlsDisabled}
-            onClick={() => openEditor("new")}
-            type="button"
-          >
-            {scope === "global"
-              ? t("actions.createGlobal")
-              : t("actions.create")}
-          </button>
-        </header>
+          <WorkspaceForm
+            onCancel={closeEditor}
+            onSaved={handleSaved}
+            onSavingChange={setFormBusy}
+            onScopeChange={editing === "new" ? setCreateScope : undefined}
+            scope={editingScope}
+            scopeEditable={editing === "new" && canPublish}
+            workspace={editing === "new" ? null : editing}
+          />
+        </section>
+      ) : null}
 
-        {editing !== null ? (
-          <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
-            <div className="section-heading">
-              <h2 id={editorTitleId}>{editorTitle}</h2>
-            </div>
-            <WorkspaceForm
-              onCancel={closeEditor}
-              onSaved={handleSaved}
-              onSavingChange={setFormBusy}
-              scope={scope}
-              workspace={editing === "new" ? null : editing}
-            />
-          </section>
-        ) : null}
+      {pageErrorKey ? (
+        <p className="form-error" role="alert">
+          {t(pageErrorKey)}
+        </p>
+      ) : null}
 
-        {pageErrorKey ? (
-          <p className="form-error" role="alert">
-            {t(pageErrorKey)}
-          </p>
-        ) : null}
+      {selectedWorkspace ? (
+        <>
+          <ResourceDetailHeader
+            actions={
+              selectedCanManage ? (
+                <>
+                  <button
+                    aria-label={
+                      selectedWorkspace.is_active
+                        ? t("actions.disableLabel", { name: selectedWorkspace.name })
+                        : t("actions.enableLabel", { name: selectedWorkspace.name })
+                    }
+                    className="button"
+                    disabled={controlsDisabled}
+                    onClick={() => void setActive(selectedWorkspace)}
+                    type="button"
+                  >
+                    {selectedPending
+                      ? t("actions.working")
+                      : selectedWorkspace.is_active
+                        ? t("actions.disable")
+                        : t("actions.enable")}
+                  </button>
+                  <button
+                    aria-label={t("actions.deleteLabel", { name: selectedWorkspace.name })}
+                    className="button button-danger"
+                    disabled={controlsDisabled}
+                    onClick={() => void remove(selectedWorkspace)}
+                    type="button"
+                  >
+                    {t("actions.delete")}
+                  </button>
+                </>
+              ) : null
+            }
+            breadcrumb={
+              selectedIsPublic ? t("sidebar.globalTab") : t("sidebar.personalTab")
+            }
+            editDisabled={controlsDisabled}
+            editLabel={t("actions.editLabel", { name: selectedWorkspace.name })}
+            editText={t("actions.edit")}
+            name={selectedWorkspace.name}
+            onEdit={
+              selectedCanManage ? () => openEditor(selectedWorkspace) : undefined
+            }
+            statusBadge={
+              selectedWorkspace.is_active ? t("states.active") : t("states.inactive")
+            }
+          />
 
-        <div className="management-sections">
-          <section className="management-section" aria-labelledby={`${titleId}-owned`}>
-            <div className="section-heading">
-              <div>
-                <h2 id={`${titleId}-owned`}>
-                  {scope === "global"
-                    ? t("global.listTitle")
-                    : t("personal.ownedTitle")}
-                </h2>
-                <p className="page-summary">
-                  {scope === "global"
-                    ? t("global.listSummary")
-                    : t("personal.ownedSummary")}
-                </p>
-              </div>
-            </div>
-            {renderRows(ownedWorkspaces, true)}
-          </section>
-
-          {scope === "private" ? (
-            <section className="management-section" aria-labelledby={`${titleId}-shared`}>
-              <div className="section-heading">
-                <div>
-                  <h2 id={`${titleId}-shared`}>{t("personal.sharedTitle")}</h2>
-                  <p className="page-summary">{t("personal.sharedSummary")}</p>
-                </div>
-              </div>
-              {renderRows(sharedWorkspaces, false)}
-            </section>
+          {selectedIsPublic ? (
+            <p className="form-hint resource-scope-note">{t("detail.publicTemplateNote")}</p>
           ) : null}
-        </div>
-      </div>
-    </section>
+
+          <WorkspaceBrowser workspaceId={selectedWorkspace.id} />
+        </>
+      ) : (
+        <p className="empty-state">{t("sidebar.mainEmpty")}</p>
+      )}
+    </ResourceSidebarLayout>
   );
 }

@@ -14,10 +14,8 @@ import {
   BookOpenText,
   ChevronDown,
   ChevronUp,
-  FolderCog,
   FolderKanban,
   Languages,
-  LibraryBig,
   LogOut,
   MessageSquareText,
   MoreHorizontal,
@@ -26,7 +24,6 @@ import {
   PanelLeftOpen,
   PencilLine,
   Plus,
-  ShieldCheck,
   Sun,
   Trash2,
   UserCircle,
@@ -232,29 +229,15 @@ export function AppShell({ children }: AppShellProps) {
   const userLabel = currentUser?.username ?? t("app.user");
   const primaryNavItems = [
     { href: "/agents", icon: Bot, label: t("nav.agents") },
-    { href: "/workspaces", icon: FolderKanban, label: t("nav.workspaces") },
     { href: "/knowledge", icon: BookOpenText, label: t("nav.knowledge") },
+    { href: "/workspaces", icon: FolderKanban, label: t("nav.workspaces") },
   ];
+  // Administrators navigate the same surfaces as everyone else; public
+  // resources live behind the Public tab on each page rather than a separate
+  // set of admin entries. User management is the only admin-only destination.
   const adminNavItems =
     currentUser?.role === "admin"
-      ? [
-          {
-            href: "/admin/agents",
-            icon: ShieldCheck,
-            label: t("nav.global_agents"),
-          },
-          {
-            href: "/admin/workspaces",
-            icon: FolderCog,
-            label: t("nav.global_workspaces"),
-          },
-          {
-            href: "/admin/knowledge",
-            icon: LibraryBig,
-            label: t("nav.global_knowledge"),
-          },
-          { href: "/admin/users", icon: Users, label: t("nav.users") },
-        ]
+      ? [{ href: "/admin/users", icon: Users, label: t("nav.users") }]
       : [];
 
   function openRenameDialog(item: TaskHistoryItemResponse, title: string) {

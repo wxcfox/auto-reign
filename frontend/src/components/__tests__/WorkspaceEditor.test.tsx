@@ -37,7 +37,7 @@ describe("WorkspaceEditor", () => {
       new ApiError("Changed", { code: "workspace_conflict", status: 409 }),
     );
     render(
-      <WorkspaceEditor scope="private" workspaceId="ws-1" path="notes/profile.md" />,
+      <WorkspaceEditor workspaceId="ws-1" path="notes/profile.md" />,
     );
 
     const editor = await screen.findByRole("textbox", { name: /file content/i });
@@ -46,7 +46,7 @@ describe("WorkspaceEditor", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/changed since you opened it/i);
     expect(editor).toHaveValue("My local draft");
-    expect(writeWorkspaceFile).toHaveBeenCalledWith("private", "ws-1", {
+    expect(writeWorkspaceFile).toHaveBeenCalledWith("ws-1", {
       path: "notes/profile.md",
       content: "My local draft",
       expected_etag: "etag-1",
@@ -68,13 +68,13 @@ describe("WorkspaceEditor", () => {
         etag: "etag-1",
         content: "# Rules",
       });
-    render(<WorkspaceEditor scope="global" workspaceId="ws-global" path="AGENTS.md" />);
+    render(<WorkspaceEditor workspaceId="ws-global" path="AGENTS.md" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not load the file/i);
     expect(screen.queryByText(/driver details/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
 
     expect(await screen.findByRole("textbox", { name: /file content/i })).toHaveValue("# Rules");
-    expect(readWorkspaceFile).toHaveBeenLastCalledWith("global", "ws-global", "AGENTS.md");
+    expect(readWorkspaceFile).toHaveBeenLastCalledWith("ws-global", "AGENTS.md");
   });
 });

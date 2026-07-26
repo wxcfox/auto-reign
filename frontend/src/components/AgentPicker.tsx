@@ -88,16 +88,18 @@ export function AgentPicker({
             value={query}
           />
           <div aria-label={listboxLabel} id={listboxId} role="listbox">
-            <button
-              aria-selected={selectedAgentId === null}
-              data-active={selectedAgentId === null}
-              disabled={disabled}
-              onClick={clearAgent}
-              role="option"
-              type="button"
-            >
-              {t("agentPicker.none", { defaultValue: "No agent" })}
-            </button>
+            <div className="model-picker-group agent-picker-group">
+              <button
+                aria-selected={selectedAgentId === null}
+                data-active={selectedAgentId === null}
+                disabled={disabled}
+                onClick={clearAgent}
+                role="option"
+                type="button"
+              >
+                {t("agentPicker.none", { defaultValue: "No agent" })}
+              </button>
+            </div>
             <AgentGroup
               agents={globalAgents}
               disabled={disabled}

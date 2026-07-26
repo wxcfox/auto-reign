@@ -13,7 +13,10 @@ import { useRouter } from "next/navigation";
 
 import { AgentForm } from "@/components/AgentForm";
 import type { AgentSubmission } from "@/components/agent-form-state";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
+import { ApiError } from "@/lib/api-error";
+import { MAX_RESOURCE_NAME_LENGTH } from "@/lib/limits";
 import {
   createAgent,
   createGlobalAgent,
@@ -36,13 +39,9 @@ export type ManagementScope = "private" | "global";
 
 type AgentManagementPageProps = {
   initialCreate?: boolean;
-  scope: ManagementScope;
 };
 
-const scopes = {
-  private: { agents: "owned", resources: "visible" },
-  global: { agents: "global", resources: "global" },
-} as const;
+type AgentTab = "personal" | "global";
 
 const FOCUSABLE_SELECTOR =
   "button, input:not([type='hidden']), select, textarea, [tabindex]:not([tabindex='-1'])";
@@ -55,17 +54,18 @@ function focusableElements(container: HTMLElement | null) {
 
 export function AgentManagementPage({
   initialCreate = false,
-  scope,
 }: AgentManagementPageProps) {
   const router = useRouter();
   const { t } = useTranslation("agents");
+  const { user } = useCurrentUser();
   const dialogTitleId = useId();
+  const [tab, setTab] = useState<AgentTab>("personal");
   const [agents, setAgents] = useState<AgentResource[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceResource[]>([]);
   const [collections, setCollections] = useState<KnowledgeCollectionResource[]>([]);
   const [models, setModels] = useState<ModelListResponse | null>(null);
   const [editing, setEditing] = useState<AgentResource | "new" | null>(() =>
-    scope === "private" && initialCreate ? "new" : null,
+    initialCreate ? "new" : null,
   );
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [saving, setSaving] = useState(false);
@@ -79,8 +79,7 @@ export function AgentManagementPage({
   const activeMutationRef = useRef<number | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
-  const previousScopeRef = useRef(scope);
-  const initialCreateRouteRef = useRef(scope === "private" && initialCreate);
+  const initialCreateRouteRef = useRef(initialCreate);
 
   const load = useCallback(
     async (showLoading = true) => {
@@ -89,17 +88,29 @@ export function AgentManagementPage({
         setLoadState("loading");
       }
       try {
-        const [agentResult, workspaceResult, collectionResult, modelResult] =
+        // Public agents are genuinely shared definitions, so both kinds load
+        // together and the tab only decides which slice is on screen.
+        const [ownedResult, globalResult, workspaceResult, collectionResult, modelResult] =
           await Promise.all([
-            listAgents(scopes[scope].agents, { includeInactive: true }),
-            listWorkspaces(scopes[scope].resources),
-            listKnowledgeCollections(scopes[scope].resources),
+            listAgents("owned", { includeInactive: true }),
+            listAgents("global"),
+            listWorkspaces("visible"),
+            listKnowledgeCollections("visible"),
             getModels(),
           ]);
         if (!mountedRef.current || loadGenerationRef.current !== generation) {
           return false;
         }
-        setAgents(agentResult.agents);
+        const seen = new Set<string>();
+        setAgents(
+          [...ownedResult.agents, ...globalResult.agents].filter((agent) => {
+            if (seen.has(agent.id)) {
+              return false;
+            }
+            seen.add(agent.id);
+            return true;
+          }),
+        );
         setWorkspaces(workspaceResult.workspaces.filter((workspace) => workspace.is_active));
         setCollections(
           collectionResult.collections.filter((collection) => collection.is_active),
@@ -118,19 +129,13 @@ export function AgentManagementPage({
         return false;
       }
     },
-    [scope, t],
+    [t],
   );
 
   useEffect(() => {
     const lifecycleGeneration = ++lifecycleGenerationRef.current;
-    const scopeChanged = previousScopeRef.current !== scope;
-    previousScopeRef.current = scope;
     mountedRef.current = true;
     activeMutationRef.current = null;
-    if (scopeChanged) {
-      initialCreateRouteRef.current = false;
-      setEditing(null);
-    }
     setDialogError(null);
     setPageError(null);
     setSaving(false);
@@ -144,7 +149,7 @@ export function AgentManagementPage({
       }
       loadGenerationRef.current += 1;
     };
-  }, [load, scope]);
+  }, [load]);
 
   useEffect(() => {
     if (editing !== null) {
@@ -194,7 +199,7 @@ export function AgentManagementPage({
   }
 
   function clearInitialCreateRoute() {
-    if (scope === "private" && initialCreateRouteRef.current) {
+    if (initialCreateRouteRef.current) {
       initialCreateRouteRef.current = false;
       router.replace("/agents");
     }
@@ -227,7 +232,10 @@ export function AgentManagementPage({
     let createdHome: WorkspaceResource | null = null;
     try {
       if (submission.workspace !== null) {
-        createdHome = await createWorkspace(scope, submission.workspace);
+        createdHome = await createWorkspace(
+          tab === "global" ? "global" : "private",
+          submission.workspace,
+        );
         if (!isCurrentMutation(mutation, lifecycleGeneration)) {
           return;
         }
@@ -240,7 +248,7 @@ export function AgentManagementPage({
         };
       }
       if (target === "new") {
-        if (scope === "global") {
+        if (tab === "global") {
           await createGlobalAgent(agentPayload);
         } else {
           await createAgent(agentPayload);
@@ -281,6 +289,57 @@ export function AgentManagementPage({
       finishMutation(mutation);
       if (shouldUpdate) {
         setSaving(false);
+      }
+    }
+  }
+
+  /**
+   * Fork a visible agent into a private one the caller owns.
+   *
+   * References are carried over verbatim rather than duplicated: a public
+   * knowledge base is genuinely shared, and keeping `home_workspace_id` means
+   * the copy keeps reading the files the caller already accumulated under that
+   * Workspace. Minting a new Workspace here would strand them.
+   */
+  async function copyAgent(agent: AgentResource) {
+    const mutation = startMutation();
+    if (mutation === null) {
+      return;
+    }
+    const lifecycleGeneration = lifecycleGenerationRef.current;
+    if (mountedRef.current) {
+      setPendingAgentId(agent.id);
+      setPageError(null);
+    }
+    try {
+      const copy = await createAgent({
+        name: t("actions.copy_name", { name: agent.name }).slice(
+          0,
+          MAX_RESOURCE_NAME_LENGTH,
+        ),
+        config: agent.config,
+      });
+      if (isCurrentMutation(mutation, lifecycleGeneration)) {
+        setTab("personal");
+        await load(false);
+        if (mountedRef.current) {
+          setPageError(null);
+        }
+        return copy;
+      }
+    } catch (error) {
+      if (isCurrentMutation(mutation, lifecycleGeneration)) {
+        setPageError(
+          error instanceof ApiError && error.code === "resource_name_taken"
+            ? t("errors.copy_name_taken")
+            : t("errors.copy_failed"),
+        );
+      }
+    } finally {
+      const shouldUpdate = isCurrentMutation(mutation, lifecycleGeneration);
+      finishMutation(mutation);
+      if (shouldUpdate) {
+        setPendingAgentId(null);
       }
     }
   }
@@ -413,6 +472,12 @@ export function AgentManagementPage({
         ? ""
         : t("dialog.edit_title", { name: editing.name });
   const controlsDisabled = pendingAgentId !== null || saving;
+  const isAdmin = user?.role === "admin";
+  const visibleAgents = agents.filter((agent) =>
+    tab === "personal" ? agent.scope === "private" : agent.scope === "global",
+  );
+  // Publishing is an admin action; using and copying a public agent is not.
+  const canCreateHere = tab === "personal" || isAdmin;
 
   return (
     <section className="management-page" aria-labelledby="agent-management-title">
@@ -424,21 +489,44 @@ export function AgentManagementPage({
         <header className="management-header">
           <div>
             <h1 id="agent-management-title">
-              {scope === "global" ? t("global.title") : t("personal.title")}
+              {tab === "global" ? t("global.title") : t("personal.title")}
             </h1>
-            <p>
-              {scope === "global" ? t("global.summary") : t("personal.summary")}
-            </p>
+            <p>{tab === "global" ? t("global.summary") : t("personal.summary")}</p>
           </div>
+          {canCreateHere ? (
+            <button
+              className="button button-primary"
+              disabled={controlsDisabled}
+              onClick={(event) => openEditor("new", event.currentTarget)}
+              type="button"
+            >
+              {tab === "global" ? t("actions.create_global") : t("actions.create")}
+            </button>
+          ) : null}
+        </header>
+
+        <div className="resource-tabs" role="tablist">
           <button
-            className="button button-primary"
+            aria-selected={tab === "personal"}
+            data-active={tab === "personal"}
             disabled={controlsDisabled}
-            onClick={(event) => openEditor("new", event.currentTarget)}
+            onClick={() => setTab("personal")}
+            role="tab"
             type="button"
           >
-            {scope === "global" ? t("actions.create_global") : t("actions.create")}
+            {t("tabs.personal")}
           </button>
-        </header>
+          <button
+            aria-selected={tab === "global"}
+            data-active={tab === "global"}
+            disabled={controlsDisabled}
+            onClick={() => setTab("global")}
+            role="tab"
+            type="button"
+          >
+            {t("tabs.global")}
+          </button>
+        </div>
 
         {pageError ? (
           <p className="form-error" role="alert">
@@ -446,11 +534,11 @@ export function AgentManagementPage({
           </p>
         ) : null}
 
-        {agents.length === 0 ? (
+        {visibleAgents.length === 0 ? (
           <p className="empty-state">{t("states.empty")}</p>
         ) : (
           <ul className="management-list">
-            {agents.map((agent) => {
+            {visibleAgents.map((agent) => {
               const rowPending = pendingAgentId === agent.id;
               return (
                 <li key={agent.id}>
@@ -459,6 +547,15 @@ export function AgentManagementPage({
                     <span>{agent.is_active ? t("states.active") : t("states.inactive")}</span>
                   </div>
                   <div className="management-list__actions">
+                    <button
+                      aria-label={t("actions.copy_label", { name: agent.name })}
+                      className="button"
+                      disabled={controlsDisabled}
+                      onClick={() => void copyAgent(agent)}
+                      type="button"
+                    >
+                      {t("actions.copy")}
+                    </button>
                     <button
                       aria-label={t("actions.edit_label", { name: agent.name })}
                       className="button"

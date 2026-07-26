@@ -242,6 +242,122 @@ def test_prepare_frontend_uses_the_frozen_workspace_lock(
     ]
 
 
+def test_ensure_frontend_passes_next_args_without_pnpm_separator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = start_module.RuntimePaths(
+        root=tmp_path,
+        pid_dir=tmp_path / ".pids",
+        log_dir=tmp_path / "logs",
+    )
+    (tmp_path / "frontend").mkdir()
+    paths.pid_dir.mkdir()
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(start_module, "healthy_managed_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(start_module, "stop_managed_process_with_timeout", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(start_module, "require_no_checkout_service_listener", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(start_module, "require_configured_port", lambda port, _service: port)
+    monkeypatch.setattr(start_module, "wait_for_http", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(start_module, "listener_pid_for_port", lambda _port: None)
+    monkeypatch.setattr(
+        start_module,
+        "launch_managed_process",
+        lambda *, command, **_kwargs: commands.append(list(command)) or 1234,
+    )
+
+    state = start_module.ensure_frontend(
+        paths,
+        {"FRONTEND_PORT": "3100"},
+        start_module.ServiceState(pid=99, port=8300, marker="auto-reign-backend"),
+    )
+
+    assert state == start_module.ServiceState(
+        pid=1234,
+        port=3100,
+        marker="auto-reign-frontend-backend-8300",
+    )
+    assert commands == [
+        ["pnpm", "run", "dev", "--hostname", "127.0.0.1", "--port", "3100"],
+    ]
+
+
+def test_ensure_frontend_uses_default_port_when_env_var_is_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = start_module.RuntimePaths(
+        root=tmp_path,
+        pid_dir=tmp_path / ".pids",
+        log_dir=tmp_path / "logs",
+    )
+    (tmp_path / "frontend").mkdir()
+    paths.pid_dir.mkdir()
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(start_module, "healthy_managed_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(start_module, "stop_managed_process_with_timeout", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(start_module, "require_no_checkout_service_listener", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(start_module, "require_configured_port", lambda port, _service: port)
+    monkeypatch.setattr(start_module, "wait_for_http", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(start_module, "listener_pid_for_port", lambda _port: None)
+    monkeypatch.setattr(
+        start_module,
+        "launch_managed_process",
+        lambda *, command, **_kwargs: commands.append(list(command)) or 1234,
+    )
+
+    state = start_module.ensure_frontend(
+        paths,
+        {},
+        start_module.ServiceState(pid=99, port=8300, marker="auto-reign-backend"),
+    )
+
+    assert state.port == 3100
+    assert commands == [
+        ["pnpm", "run", "dev", "--hostname", "127.0.0.1", "--port", "3100"],
+    ]
+
+
+def test_ensure_frontend_cleans_up_and_raises_when_the_frontend_never_becomes_healthy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = start_module.RuntimePaths(
+        root=tmp_path,
+        pid_dir=tmp_path / ".pids",
+        log_dir=tmp_path / "logs",
+    )
+    (tmp_path / "frontend").mkdir()
+    paths.pid_dir.mkdir()
+    stop_calls: list[Path] = []
+
+    monkeypatch.setattr(start_module, "healthy_managed_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        start_module,
+        "stop_managed_process_with_timeout",
+        lambda state_path, *_args, **_kwargs: stop_calls.append(state_path) or False,
+    )
+    monkeypatch.setattr(start_module, "require_no_checkout_service_listener", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(start_module, "require_configured_port", lambda port, _service: port)
+    monkeypatch.setattr(start_module, "wait_for_http", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        start_module,
+        "launch_managed_process",
+        lambda *, command, **_kwargs: 1234,
+    )
+
+    with pytest.raises(RuntimeError, match="Frontend failed to start"):
+        start_module.ensure_frontend(
+            paths,
+            {"FRONTEND_PORT": "3100"},
+            start_module.ServiceState(pid=99, port=8300, marker="auto-reign-backend"),
+        )
+
+    assert stop_calls.count(start_module.frontend_state_path(paths)) == 2
+
+
 def test_require_pnpm_version_accepts_workspace_contract(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(
         '{"packageManager": "pnpm@11.7.0"}',

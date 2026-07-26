@@ -1,10 +1,6 @@
-import { KnowledgeCollectionList } from "@/components/KnowledgeCollectionList";
-import { RoleGuard } from "@/components/RoleGuard";
+import { redirect } from "next/navigation";
 
+/** Public knowledge is reachable from the Public tab on the main page. */
 export default function GlobalKnowledgePage() {
-  return (
-    <RoleGuard role="admin">
-      <KnowledgeCollectionList scope="global" />
-    </RoleGuard>
-  );
+  return redirect("/knowledge");
 }

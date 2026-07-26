@@ -11,6 +11,8 @@ Pull Request -> main -> Publish Release -> Git Tag + GitHub Release + ACR 镜像
 
 `./start.sh` 只用于本地开发。生产服务器不从源码构建应用。
 
+本地开发时，`scripts/start.py` 以 `pnpm run dev --hostname 127.0.0.1 --port <FRONTEND_PORT>`（默认端口 3100，可用 `FRONTEND_PORT` 覆盖）启动 Next.js 开发服务器，命令中不插入 pnpm 的 `--` 参数分隔符——保留该分隔符会导致 `--hostname`/`--port` 未被正确传给 Next.js，监听地址与端口不生效。启动后脚本轮询前端健康端点确认就绪；超时后会清理已启动的子进程并显式失败（`RuntimeError("Frontend failed to start...")`），不会把未就绪的前端标记为可用。
+
 ## 部署拓扑
 
 ```text

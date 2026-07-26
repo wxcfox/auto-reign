@@ -58,7 +58,7 @@
     "summary": "Create and manage Agents available only to your account."
   },
   "global": {
-    "title": "Global Agents",
+    "title": "Public Agents",
     "summary": "Create and manage Agents available to every user."
   },
   "states": {
@@ -80,7 +80,7 @@
     "save": "Save agent",
     "saving": "Saving…",
     "create": "Create Agent",
-    "create_global": "Create global Agent",
+    "create_global": "Create public Agent",
     "edit": "Edit",
     "edit_label": "Edit {{name}}",
     "enable": "Enable",
@@ -90,7 +90,10 @@
     "delete": "Delete",
     "delete_label": "Delete {{name}}",
     "delete_confirm": "Delete {{name}}?",
-    "working": "Working…"
+    "working": "Working…",
+    "copy": "Copy",
+    "copy_label": "Copy {{name}}",
+    "copy_name": "{{name}} copy"
   },
   "errors": {
     "name_required": "Enter an Agent name.",
@@ -105,6 +108,12 @@
     "save_failed": "The Agent could not be saved.",
     "workspace_created_agent_failed": "Workspace {{name}} was created, but the Agent was not saved.",
     "delete_failed": "The Agent could not be deleted.",
-    "status_failed": "The Agent status could not be changed."
+    "status_failed": "The Agent status could not be changed.",
+    "copy_failed": "Could not copy the Agent.",
+    "copy_name_taken": "An Agent with that name already exists. Rename the existing copy first."
+  },
+  "tabs": {
+    "personal": "Personal",
+    "global": "Public"
   }
 }

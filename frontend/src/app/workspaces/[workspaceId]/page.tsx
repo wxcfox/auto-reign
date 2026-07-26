@@ -49,7 +49,7 @@ export default function WorkspacePage({ params }: WorkspacePageProps) {
           {t("page.back")}
         </Link>
       </header>
-      <WorkspaceBrowser scope="private" workspaceId={workspaceId} />
+      <WorkspaceBrowser workspaceId={workspaceId} />
     </main>
   );
 }

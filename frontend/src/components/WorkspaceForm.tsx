@@ -18,7 +18,10 @@ export type WorkspaceFormProps = {
   onCancel?: () => void;
   onSaved?: (workspace: Workspace) => void;
   onSavingChange?: (saving: boolean) => void;
+  onScopeChange?: (scope: WorkspaceScope) => void;
   scope: WorkspaceScope;
+  /** Only administrators creating a new Workspace may publish it. */
+  scopeEditable?: boolean;
   workspace?: Workspace | null;
 };
 
@@ -26,11 +29,14 @@ export function WorkspaceForm({
   onCancel,
   onSaved,
   onSavingChange,
+  onScopeChange,
   scope,
+  scopeEditable = false,
   workspace = null,
 }: WorkspaceFormProps) {
   const { t } = useTranslation("workspaces");
   const hintId = useId();
+  const scopeFieldId = useId();
   const [name, setName] = useState(workspace?.name ?? "");
   const [initialAgentsMd, setInitialAgentsMd] = useState(
     workspace?.config.initial_agents_md ?? "",
@@ -123,6 +129,21 @@ export function WorkspaceForm({
 
   return (
     <form className="workspace-form" onSubmit={(event) => void handleSubmit(event)}>
+      {scopeEditable ? (
+        <label htmlFor={scopeFieldId}>
+          {t("form.scope")}
+          <select
+            id={scopeFieldId}
+            onChange={(event) =>
+              onScopeChange?.(event.target.value as WorkspaceScope)
+            }
+            value={scope}
+          >
+            <option value="private">{t("form.scopePrivate")}</option>
+            <option value="global">{t("form.scopeGlobal")}</option>
+          </select>
+        </label>
+      ) : null}
       <label>
         {t("form.name")}
         <input

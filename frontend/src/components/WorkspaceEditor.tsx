@@ -5,23 +5,21 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { readWorkspaceFile, writeWorkspaceFile } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
-import type { WorkspaceFileContent, WorkspaceScope } from "@/lib/types";
+import type { WorkspaceFileContent } from "@/lib/types";
 
 export type WorkspaceEditorProps = {
   onFileUpdated?: (file: WorkspaceFileContent) => void;
   path: string;
-  scope: WorkspaceScope;
   workspaceId: string;
 };
 
 export function WorkspaceEditor({
   onFileUpdated,
   path,
-  scope,
   workspaceId,
 }: WorkspaceEditorProps) {
   const { t } = useTranslation("workspaces");
-  const identity = `${scope}\u0000${workspaceId}\u0000${path}`;
+  const identity = `${workspaceId}\u001f${path}`;
   const loadedIdentity = useRef<string | null>(null);
   const [file, setFile] = useState<WorkspaceFileContent | null>(null);
   const [draft, setDraft] = useState("");
@@ -42,7 +40,7 @@ export function WorkspaceEditor({
     setLoading(true);
     setLoadError(false);
     setSaveError(false);
-    readWorkspaceFile(scope, workspaceId, path)
+    readWorkspaceFile(workspaceId, path)
       .then((opened) => {
         if (active) {
           loadedIdentity.current = identity;
@@ -64,7 +62,7 @@ export function WorkspaceEditor({
     return () => {
       active = false;
     };
-  }, [identity, path, reloadVersion, scope, workspaceId]);
+  }, [identity, path, reloadVersion, workspaceId]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,7 +73,7 @@ export function WorkspaceEditor({
     setSaveError(false);
     setConflict(false);
     try {
-      const saved = await writeWorkspaceFile(scope, workspaceId, {
+      const saved = await writeWorkspaceFile(workspaceId, {
         path,
         content: draft,
         expected_etag: file.etag,

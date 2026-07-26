@@ -237,26 +237,28 @@ describe("core API contracts", () => {
       await createWorkspace(scope, createPayload);
       await updateWorkspace(scope, "ws-1", { ...createPayload, is_active: false });
       await deleteWorkspace(scope, "ws-1");
-      await listWorkspaceFiles(scope, "ws-1", "");
-      await readWorkspaceFile(scope, "ws-1", "AGENTS.md");
-      await createWorkspaceFile(scope, "ws-1", { path: "notes/a.md", content: "A" });
-      await writeWorkspaceFile(scope, "ws-1", {
+      await listWorkspaceFiles("ws-1", "");
+      await readWorkspaceFile("ws-1", "AGENTS.md");
+      await createWorkspaceFile("ws-1", { path: "notes/a.md", content: "A" });
+      await writeWorkspaceFile("ws-1", {
         path: "AGENTS.md",
         content: "# New",
         expected_etag: "etag-1",
       });
-      await deleteWorkspaceFile(scope, "ws-1", "notes/a.md");
+      await deleteWorkspaceFile("ws-1", "notes/a.md");
 
+      // Definition mutations follow the scope; file access never does, because
+      // Agent Home objects always live under the calling user.
       const base = scope === "global" ? "/api/admin/workspaces" : "/api/workspaces";
       expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
         base,
         `${base}/ws-1`,
         `${base}/ws-1`,
-        `${base}/ws-1/files?directory=`,
-        `${base}/ws-1/files/content?path=AGENTS.md`,
-        `${base}/ws-1/files/content`,
-        `${base}/ws-1/files/content`,
-        `${base}/ws-1/files?path=notes%2Fa.md`,
+        "/api/workspaces/ws-1/files?directory=",
+        "/api/workspaces/ws-1/files/content?path=AGENTS.md",
+        "/api/workspaces/ws-1/files/content",
+        "/api/workspaces/ws-1/files/content",
+        "/api/workspaces/ws-1/files?path=notes%2Fa.md",
       ]);
       for (const callIndex of [0, 1]) {
         const body = JSON.parse(fetchMock.mock.calls[callIndex][1].body as string);

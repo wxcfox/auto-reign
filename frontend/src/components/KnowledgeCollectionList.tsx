@@ -1,15 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
 import { KnowledgeCollectionForm } from "@/components/KnowledgeCollectionForm";
+import { KnowledgeDocumentTable } from "@/components/KnowledgeDocumentTable";
+import { KnowledgeUploader } from "@/components/KnowledgeUploader";
+import { ResourceDetailHeader } from "@/components/resource/ResourceDetailHeader";
+import { ResourceSidebar } from "@/components/resource/ResourceSidebar";
+import { ResourceSidebarLayout } from "@/components/resource/ResourceSidebarLayout";
+import { useResourceSidebarSelection } from "@/components/resource/useResourceSidebarSelection";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   deleteKnowledgeCollection,
@@ -19,11 +26,8 @@ import {
 import { ApiError } from "@/lib/api-error";
 import type { KnowledgeCollection, ResourceScope } from "@/lib/types";
 
-export type KnowledgeCollectionListProps = {
-  scope: ResourceScope;
-};
-
 type EditingCollection = KnowledgeCollection | "new" | null;
+type CollectionRow = { collection: KnowledgeCollection; manageable: boolean };
 
 function dedupeCollections(...groups: KnowledgeCollection[][]): KnowledgeCollection[] {
   const result = new Map<string, KnowledgeCollection>();
@@ -35,20 +39,21 @@ function dedupeCollections(...groups: KnowledgeCollection[][]): KnowledgeCollect
   return [...result.values()];
 }
 
-export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps) {
+export function KnowledgeCollectionList() {
   const { t } = useTranslation("knowledge");
+  const { user } = useCurrentUser();
   const titleId = useId();
   const editorTitleId = useId();
   const [ownedCollections, setOwnedCollections] = useState<KnowledgeCollection[]>([]);
   const [sharedCollections, setSharedCollections] = useState<KnowledgeCollection[]>([]);
   const [editing, setEditing] = useState<EditingCollection>(null);
-  const [loadedScope, setLoadedScope] = useState<ResourceScope | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   const [formBusy, setFormBusy] = useState(false);
   const [pendingCollectionId, setPendingCollectionId] = useState<string | null>(null);
   const [pageErrorKey, setPageErrorKey] = useState<string | null>(null);
+  const [documentVersion, setDocumentVersion] = useState(0);
   const mountedRef = useRef(false);
   const lifecycleGenerationRef = useRef(0);
   const loadGenerationRef = useRef(0);
@@ -63,39 +68,23 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
         setPageErrorKey(null);
       }
       try {
-        if (scope === "private") {
-          const [ownedResult, globalResult] = await Promise.all([
-            listKnowledgeCollections("owned", { includeInactive: true }),
-            listKnowledgeCollections("global"),
-          ]);
-          if (!mountedRef.current || loadGenerationRef.current !== generation) {
-            return false;
-          }
-          const collections = dedupeCollections(
-            ownedResult.collections,
-            globalResult.collections,
-          );
-          setOwnedCollections(
-            collections.filter((collection) => collection.scope === "private"),
-          );
-          setSharedCollections(
-            collections.filter((collection) => collection.scope === "global"),
-          );
-        } else {
-          const result = await listKnowledgeCollections("global", {
-            includeInactive: true,
-          });
-          if (!mountedRef.current || loadGenerationRef.current !== generation) {
-            return false;
-          }
-          setOwnedCollections(
-            dedupeCollections(result.collections).filter(
-              (collection) => collection.scope === "global",
-            ),
-          );
-          setSharedCollections([]);
+        const [ownedResult, globalResult] = await Promise.all([
+          listKnowledgeCollections("owned", { includeInactive: true }),
+          listKnowledgeCollections("global"),
+        ]);
+        if (!mountedRef.current || loadGenerationRef.current !== generation) {
+          return false;
         }
-        setLoadedScope(scope);
+        const collections = dedupeCollections(
+          ownedResult.collections,
+          globalResult.collections,
+        );
+        setOwnedCollections(
+          collections.filter((collection) => collection.scope === "private"),
+        );
+        setSharedCollections(
+          collections.filter((collection) => collection.scope === "global"),
+        );
         setLoadState("ready");
         return true;
       } catch {
@@ -109,7 +98,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
         return false;
       }
     },
-    [scope],
+    [],
   );
 
   useEffect(() => {
@@ -117,10 +106,10 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     mountedRef.current = true;
     activeMutationRef.current = null;
     setEditing(null);
-    setLoadedScope(null);
     setFormBusy(false);
     setPendingCollectionId(null);
     setPageErrorKey(null);
+    setDocumentVersion(0);
     void load();
     return () => {
       if (lifecycleGenerationRef.current === lifecycleGeneration) {
@@ -155,8 +144,10 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     }
   }
 
+  // A public collection is genuinely shared, so only can_manage decides who
+  // may edit it. The active tab decides only where a new one is created.
   function canManageDefinition(collection: KnowledgeCollection) {
-    return collection.can_manage && collection.scope === scope;
+    return collection.can_manage;
   }
 
   function openEditor(target: Exclude<EditingCollection, null>) {
@@ -201,7 +192,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     setPendingCollectionId(collection.id);
     setPageErrorKey(null);
     try {
-      await updateKnowledgeCollection(scope, collection.id, {
+      await updateKnowledgeCollection(collection.scope, collection.id, {
         name: collection.name,
         config: collection.config,
         is_active: !collection.is_active,
@@ -240,7 +231,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     setPendingCollectionId(collection.id);
     setPageErrorKey(null);
     try {
-      await deleteKnowledgeCollection(scope, collection.id);
+      await deleteKnowledgeCollection(collection.scope, collection.id);
       if (isCurrentMutation(mutation, lifecycleGeneration)) {
         await load(false);
       }
@@ -257,10 +248,38 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     }
   }
 
-  if (
-    loadState === "loading" ||
-    (loadState === "ready" && loadedScope !== scope)
-  ) {
+  const rows: CollectionRow[] = useMemo(
+    () => [
+      ...ownedCollections.map((collection) => ({
+        collection,
+        manageable: collection.can_manage,
+      })),
+      ...sharedCollections.map((collection) => ({
+        collection,
+        manageable: collection.can_manage,
+      })),
+    ],
+    [ownedCollections, sharedCollections],
+  );
+  const items = useMemo(
+    () =>
+      rows.map((row) => ({
+        id: row.collection.id,
+        name: row.collection.name,
+        scope: row.collection.scope,
+        isActive: row.collection.is_active,
+        manageable: row.manageable,
+      })),
+    [rows],
+  );
+  const selection = useResourceSidebarSelection(items, {
+    resetKey: "knowledge",
+    tabs: true,
+  });
+  const selectedRow =
+    rows.find((row) => row.collection.id === selection.selectedItem?.id) ?? null;
+
+  if (loadState === "loading") {
     return (
       <section className="management-page">
         <p className="knowledge-state" role="status">
@@ -283,180 +302,149 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
 
   const controlsDisabled =
     pendingCollectionId !== null || formBusy || editing !== null;
-  const pageTitle = scope === "global" ? t("global.title") : t("personal.title");
-  const pageSummary =
-    scope === "global" ? t("global.summary") : t("personal.summary");
+  // Creating follows the tab you are standing on; publishing is admin-only.
+  const activeScope: ResourceScope =
+    selection.tab === "global" ? "global" : "private";
+  const canCreateHere = selection.tab === "personal" || user?.role === "admin";
+  const editorScope: ResourceScope =
+    editing === "new" ? activeScope : (editing?.scope ?? activeScope);
+  const pageTitle =
+    selection.tab === "global" ? t("global.title") : t("personal.title");
   const editorTitle =
     editing === "new"
-      ? scope === "global"
+      ? activeScope === "global"
         ? t("editor.createGlobalTitle")
         : t("editor.createTitle")
       : editing === null
         ? ""
         : t("editor.editTitle", { name: editing.name });
 
-  function renderRows(collections: KnowledgeCollection[], manageable: boolean) {
-    if (collections.length === 0) {
-      return <p className="empty-state">{t("states.empty")}</p>;
-    }
-    return (
-      <ul className="management-list">
-        {collections.map((collection) => {
-          const canManage = manageable && canManageDefinition(collection);
-          const rowPending = pendingCollectionId === collection.id;
-          return (
-            <li key={collection.id}>
-              <div className="management-list__summary">
-                <strong>{collection.name}</strong>
-                <span>
-                  {collection.is_active ? t("states.active") : t("states.inactive")}
-                </span>
-              </div>
-              <div className="management-list__actions">
-                {collection.is_active ? (
-                  controlsDisabled ? (
-                    <button
-                      aria-label={t("actions.openDocumentsLabel", {
-                        name: collection.name,
-                      })}
-                      className="button"
-                      disabled
-                      type="button"
-                    >
-                      {t("actions.openDocuments")}
-                    </button>
-                  ) : (
-                    <Link
-                      aria-label={t("actions.openDocumentsLabel", {
-                        name: collection.name,
-                      })}
-                      className="button"
-                      href={`/knowledge/${encodeURIComponent(collection.id)}`}
-                    >
-                      {t("actions.openDocuments")}
-                    </Link>
-                  )
-                ) : null}
-                {canManage ? (
-                  <>
-                    <button
-                      aria-label={t("actions.editLabel", { name: collection.name })}
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => openEditor(collection)}
-                      type="button"
-                    >
-                      {t("actions.edit")}
-                    </button>
-                    <button
-                      aria-label={
-                        collection.is_active
-                          ? t("actions.disableLabel", { name: collection.name })
-                          : t("actions.enableLabel", { name: collection.name })
-                      }
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => void setActive(collection)}
-                      type="button"
-                    >
-                      {rowPending
-                        ? t("actions.working")
-                        : collection.is_active
-                          ? t("actions.disable")
-                          : t("actions.enable")}
-                    </button>
-                    <button
-                      aria-label={t("actions.deleteLabel", { name: collection.name })}
-                      className="button button-danger"
-                      disabled={controlsDisabled}
-                      onClick={() => void remove(collection)}
-                      type="button"
-                    >
-                      {t("actions.deleteDefinition")}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  }
+  const selectedCanManage = selectedRow
+    ? canManageDefinition(selectedRow.collection)
+    : false;
+  const selectedRowPending =
+    selectedRow !== null && pendingCollectionId === selectedRow.collection.id;
+  const tabLabel =
+    selection.tab === "personal" ? t("sidebar.personalTab") : t("sidebar.globalTab");
 
   return (
-    <section className="management-page" aria-labelledby={titleId} data-scope={scope}>
-      <div className="management-content">
-        <header className="management-header">
-          <div>
-            <h1 id={titleId}>{pageTitle}</h1>
-            <p>{pageSummary}</p>
+    <ResourceSidebarLayout
+      sidebar={
+        <ResourceSidebar
+          canCreate={canCreateHere}
+          createDisabled={controlsDisabled}
+          labels={{
+            activeBadge: t("states.active"),
+            collapse: t("sidebar.collapse"),
+            create:
+              activeScope === "global"
+                ? t("actions.createGlobal")
+                : t("actions.create"),
+            empty: t("states.empty"),
+            expand: t("sidebar.expand"),
+            globalTab: t("sidebar.globalTab"),
+            inactiveBadge: t("states.inactive"),
+            noResults: t("states.noResults"),
+            openItem: (name) => t("sidebar.openLabel", { name }),
+            personalTab: t("sidebar.personalTab"),
+            publicBadge: t("sidebar.globalTab"),
+            searchLabel: t("sidebar.searchLabel"),
+            searchPlaceholder: t("sidebar.searchPlaceholder"),
+          }}
+          onCreate={() => openEditor("new")}
+          selection={selection}
+          title={pageTitle}
+          titleId={titleId}
+        />
+      }
+      titleId={titleId}
+    >
+      {editing !== null ? (
+        <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
+          <div className="section-heading">
+            <h2 id={editorTitleId}>{editorTitle}</h2>
           </div>
-          <button
-            className="button button-primary"
-            disabled={controlsDisabled}
-            onClick={() => openEditor("new")}
-            type="button"
-          >
-            {scope === "global"
-              ? t("actions.createGlobal")
-              : t("actions.create")}
-          </button>
-        </header>
+          <KnowledgeCollectionForm
+            collection={editing === "new" ? null : editing}
+            onCancel={closeEditor}
+            onSaved={handleSaved}
+            onSavingChange={setFormBusy}
+            scope={editorScope}
+          />
+        </section>
+      ) : null}
 
-        {editing !== null ? (
-          <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
-            <div className="section-heading">
-              <h2 id={editorTitleId}>{editorTitle}</h2>
-            </div>
-            <KnowledgeCollectionForm
-              collection={editing === "new" ? null : editing}
-              onCancel={closeEditor}
-              onSaved={handleSaved}
-              onSavingChange={setFormBusy}
-              scope={scope}
+      {pageErrorKey ? (
+        <p className="form-error" role="alert">
+          {t(pageErrorKey)}
+        </p>
+      ) : null}
+
+      {selectedRow ? (
+        <>
+          <ResourceDetailHeader
+            actions={
+              selectedCanManage ? (
+                <>
+                  <button
+                    aria-label={
+                      selectedRow.collection.is_active
+                        ? t("actions.disableLabel", { name: selectedRow.collection.name })
+                        : t("actions.enableLabel", { name: selectedRow.collection.name })
+                    }
+                    className="button"
+                    disabled={controlsDisabled}
+                    onClick={() => void setActive(selectedRow.collection)}
+                    type="button"
+                  >
+                    {selectedRowPending
+                      ? t("actions.working")
+                      : selectedRow.collection.is_active
+                        ? t("actions.disable")
+                        : t("actions.enable")}
+                  </button>
+                  <button
+                    aria-label={t("actions.deleteLabel", { name: selectedRow.collection.name })}
+                    className="button button-danger"
+                    disabled={controlsDisabled}
+                    onClick={() => void remove(selectedRow.collection)}
+                    type="button"
+                  >
+                    {t("actions.deleteDefinition")}
+                  </button>
+                </>
+              ) : null
+            }
+            breadcrumb={tabLabel}
+            editDisabled={controlsDisabled}
+            editLabel={t("actions.editLabel", { name: selectedRow.collection.name })}
+            editText={t("actions.edit")}
+            name={selectedRow.collection.name}
+            onEdit={
+              selectedCanManage ? () => openEditor(selectedRow.collection) : undefined
+            }
+            statusBadge={
+              selectedRow.collection.is_active ? t("states.active") : t("states.inactive")
+            }
+          />
+
+          {selectedCanManage ? (
+            <KnowledgeUploader
+              collectionId={selectedRow.collection.id}
+              disabled={controlsDisabled}
+              onUploaded={() => setDocumentVersion((current) => current + 1)}
             />
-          </section>
-        ) : null}
-
-        {pageErrorKey ? (
-          <p className="form-error" role="alert">
-            {t(pageErrorKey)}
-          </p>
-        ) : null}
-
-        <div className="management-sections">
-          <section className="management-section" aria-labelledby={`${titleId}-owned`}>
-            <div className="section-heading">
-              <div>
-                <h2 id={`${titleId}-owned`}>
-                  {scope === "global"
-                    ? t("global.listTitle")
-                    : t("personal.ownedTitle")}
-                </h2>
-                <p className="page-summary">
-                  {scope === "global"
-                    ? t("global.listSummary")
-                    : t("personal.ownedSummary")}
-                </p>
-              </div>
-            </div>
-            {renderRows(ownedCollections, true)}
-          </section>
-
-          {scope === "private" ? (
-            <section className="management-section" aria-labelledby={`${titleId}-shared`}>
-              <div className="section-heading">
-                <div>
-                  <h2 id={`${titleId}-shared`}>{t("personal.sharedTitle")}</h2>
-                  <p className="page-summary">{t("personal.sharedSummary")}</p>
-                </div>
-              </div>
-              {renderRows(sharedCollections, false)}
-            </section>
           ) : null}
-        </div>
-      </div>
-    </section>
+
+          <KnowledgeDocumentTable
+            canManage={selectedCanManage}
+            collectionId={selectedRow.collection.id}
+            key={`${selectedRow.collection.id}:${documentVersion}`}
+          />
+        </>
+      ) : (
+        <p className="empty-state">{t("sidebar.mainEmpty")}</p>
+      )}
+    </ResourceSidebarLayout>
   );
 }

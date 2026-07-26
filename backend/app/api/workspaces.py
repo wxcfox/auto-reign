@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, cast
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
@@ -103,14 +103,12 @@ def _require_workspace(
     workspace_id: str,
     session: SessionDep,
     actor: models.User,
-    authority_scope: Literal["private", "global"],
     workspace_service: WorkspaceResourceService,
 ) -> WorkspaceResponse:
     return workspace_service.require_file_access(
         session,
         actor=actor,
         workspace_id=workspace_id,
-        authority_scope=authority_scope,
     )
 
 
@@ -135,7 +133,6 @@ def _list_workspace_files(
     workspace_id: str,
     session: SessionDep,
     actor: models.User,
-    authority_scope: Literal["private", "global"],
     directory: str,
     agent_home: AgentHomeService,
     workspace_service: WorkspaceResourceService,
@@ -144,7 +141,6 @@ def _list_workspace_files(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope=authority_scope,
         workspace_service=workspace_service,
     )
     _initialize_workspace(workspace=workspace, actor=actor, agent_home=agent_home)
@@ -176,7 +172,6 @@ def _read_workspace_file(
     workspace_id: str,
     session: SessionDep,
     actor: models.User,
-    authority_scope: Literal["private", "global"],
     path: str,
     agent_home: AgentHomeService,
     workspace_service: WorkspaceResourceService,
@@ -185,7 +180,6 @@ def _read_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope=authority_scope,
         workspace_service=workspace_service,
     )
     _initialize_workspace(workspace=workspace, actor=actor, agent_home=agent_home)
@@ -205,7 +199,6 @@ def _create_workspace_file(
     workspace_id: str,
     session: SessionDep,
     actor: models.User,
-    authority_scope: Literal["private", "global"],
     payload: CreateWorkspaceFileRequest,
     agent_home: AgentHomeService,
     workspace_service: WorkspaceResourceService,
@@ -214,7 +207,6 @@ def _create_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope=authority_scope,
         workspace_service=workspace_service,
     )
     try:
@@ -240,7 +232,6 @@ def _write_workspace_file(
     workspace_id: str,
     session: SessionDep,
     actor: models.User,
-    authority_scope: Literal["private", "global"],
     payload: WriteWorkspaceFileRequest,
     agent_home: AgentHomeService,
     workspace_service: WorkspaceResourceService,
@@ -249,7 +240,6 @@ def _write_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope=authority_scope,
         workspace_service=workspace_service,
     )
     try:
@@ -276,7 +266,6 @@ def _delete_workspace_file(
     workspace_id: str,
     session: SessionDep,
     actor: models.User,
-    authority_scope: Literal["private", "global"],
     path: str,
     agent_home: AgentHomeService,
     workspace_service: WorkspaceResourceService,
@@ -285,7 +274,6 @@ def _delete_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope=authority_scope,
         workspace_service=workspace_service,
     )
     try:
@@ -437,27 +425,6 @@ def list_workspace_files(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope="private",
-        directory=directory,
-        agent_home=agent_home,
-        workspace_service=workspace_service,
-    )
-
-
-@admin_router.get("/{workspace_id}/files", response_model=WorkspaceFileListResponse)
-def list_global_workspace_files(
-    workspace_id: ResourceId,
-    session: SessionDep,
-    agent_home: AgentHomeDep,
-    workspace_service: WorkspaceResourceServiceDep,
-    actor: models.User = Depends(get_current_admin),
-    directory: str = "",
-) -> WorkspaceFileListResponse:
-    return _list_workspace_files(
-        workspace_id=workspace_id,
-        session=session,
-        actor=actor,
-        authority_scope="global",
         directory=directory,
         agent_home=agent_home,
         workspace_service=workspace_service,
@@ -477,30 +444,6 @@ def read_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope="private",
-        path=path,
-        agent_home=agent_home,
-        workspace_service=workspace_service,
-    )
-
-
-@admin_router.get(
-    "/{workspace_id}/files/content",
-    response_model=WorkspaceFileContent,
-)
-def read_global_workspace_file(
-    workspace_id: ResourceId,
-    path: str,
-    session: SessionDep,
-    agent_home: AgentHomeDep,
-    workspace_service: WorkspaceResourceServiceDep,
-    actor: models.User = Depends(get_current_admin),
-) -> WorkspaceFileContent:
-    return _read_workspace_file(
-        workspace_id=workspace_id,
-        session=session,
-        actor=actor,
-        authority_scope="global",
         path=path,
         agent_home=agent_home,
         workspace_service=workspace_service,
@@ -524,31 +467,6 @@ def create_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope="private",
-        payload=payload,
-        agent_home=agent_home,
-        workspace_service=workspace_service,
-    )
-
-
-@admin_router.post(
-    "/{workspace_id}/files/content",
-    response_model=WorkspaceFileContent,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_global_workspace_file(
-    workspace_id: ResourceId,
-    payload: CreateWorkspaceFileRequest,
-    session: SessionDep,
-    agent_home: AgentHomeDep,
-    workspace_service: WorkspaceResourceServiceDep,
-    actor: models.User = Depends(get_current_admin),
-) -> WorkspaceFileContent:
-    return _create_workspace_file(
-        workspace_id=workspace_id,
-        session=session,
-        actor=actor,
-        authority_scope="global",
         payload=payload,
         agent_home=agent_home,
         workspace_service=workspace_service,
@@ -568,30 +486,6 @@ def write_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope="private",
-        payload=payload,
-        agent_home=agent_home,
-        workspace_service=workspace_service,
-    )
-
-
-@admin_router.put(
-    "/{workspace_id}/files/content",
-    response_model=WorkspaceFileContent,
-)
-def write_global_workspace_file(
-    workspace_id: ResourceId,
-    payload: WriteWorkspaceFileRequest,
-    session: SessionDep,
-    agent_home: AgentHomeDep,
-    workspace_service: WorkspaceResourceServiceDep,
-    actor: models.User = Depends(get_current_admin),
-) -> WorkspaceFileContent:
-    return _write_workspace_file(
-        workspace_id=workspace_id,
-        session=session,
-        actor=actor,
-        authority_scope="global",
         payload=payload,
         agent_home=agent_home,
         workspace_service=workspace_service,
@@ -611,31 +505,8 @@ def delete_workspace_file(
         workspace_id=workspace_id,
         session=session,
         actor=actor,
-        authority_scope="private",
         path=path,
         agent_home=agent_home,
         workspace_service=workspace_service,
     )
 
-
-@admin_router.delete(
-    "/{workspace_id}/files",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def delete_global_workspace_file(
-    workspace_id: ResourceId,
-    path: str,
-    session: SessionDep,
-    agent_home: AgentHomeDep,
-    workspace_service: WorkspaceResourceServiceDep,
-    actor: models.User = Depends(get_current_admin),
-) -> Response:
-    return _delete_workspace_file(
-        workspace_id=workspace_id,
-        session=session,
-        actor=actor,
-        authority_scope="global",
-        path=path,
-        agent_home=agent_home,
-        workspace_service=workspace_service,
-    )

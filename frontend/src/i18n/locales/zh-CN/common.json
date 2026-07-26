@@ -30,11 +30,8 @@
   "nav": {
     "primary": "主导航",
     "agents": "智能体",
-    "knowledge": "资料库",
-    "workspaces": "智能体工作区",
-    "global_agents": "全局智能体",
-    "global_workspaces": "全局工作区",
-    "global_knowledge": "全局资料库",
+    "knowledge": "知识库",
+    "workspaces": "工作区",
     "users": "用户管理",
     "history": "历史对话",
     "empty_history": "暂无历史任务",
@@ -59,7 +56,7 @@
     "save": "保存",
     "rename_task": "重命名",
     "rename_task_description": "保持简短且易于识别。",
-    "new_chat": "新聊天"
+    "new_chat": "新对话"
   },
   "errors": {
     "generic_load": "加载数据失败。",

@@ -1107,3 +1107,61 @@ def test_admin_agent_detail_routes_do_not_exist(
         json=_agent_payload("无路由", is_active=True) if method == "PUT" else None,
     )
     assert response.status_code == 404
+
+
+def test_copied_agent_keeps_public_references_and_degrades_cleanly(
+    client,
+    admin_headers,
+    create_user,
+) -> None:
+    """Forking a public Agent copies references, not the resources behind them.
+
+    The copy keeps pointing at the same public Workspace, so the caller keeps
+    reading the Agent Home files it already accumulated there. When an
+    administrator later retires that public Workspace, the copy must fail with a
+    typed reference error rather than a server fault.
+    """
+    alice, alice_headers = create_user("fork-alice")
+    public_workspace = client.post(
+        "/api/admin/workspaces",
+        headers=admin_headers,
+        json=_workspace_payload("公共成长空间"),
+    ).json()
+    public_agent = client.post(
+        "/api/admin/agents",
+        headers=admin_headers,
+        json=_agent_payload("公共助手", workspace_id=public_workspace["id"]),
+    ).json()
+
+    copy = client.post(
+        "/api/agents",
+        headers=alice_headers,
+        json={"name": "公共助手 副本", "config": public_agent["config"]},
+    )
+
+    assert copy.status_code == 201
+    assert copy.json()["scope"] == "private"
+    assert copy.json()["can_manage"] is True
+    # The reference is carried over verbatim; no new Workspace is minted.
+    assert copy.json()["config"]["home_workspace_id"] == public_workspace["id"]
+
+    # Both accounts read their own instance of that one public Workspace.
+    for headers in (alice_headers, admin_headers):
+        listing = client.get(
+            f"/api/workspaces/{public_workspace['id']}/files",
+            headers=headers,
+        )
+        assert listing.status_code == 200
+
+    _set_resource_state(client, public_workspace["id"], is_active=False)
+
+    with client.app.state.session_factory() as session:
+        with pytest.raises(HTTPException) as failure:
+            AgentService(settings=client.app.state.settings).resolve_for_turn(
+                session,
+                user_id=alice["id"],
+                agent_id=copy.json()["id"],
+            )
+
+    assert failure.value.status_code == 400
+    assert failure.value.detail["code"] == "resource_reference_invalid"

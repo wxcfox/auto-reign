@@ -65,7 +65,7 @@ describe("WorkspaceBrowser", () => {
   });
 
   it("opens and saves a file with its ETag but never offers root AGENTS.md deletion", async () => {
-    render(<WorkspaceBrowser scope="private" workspaceId="ws-1" />);
+    render(<WorkspaceBrowser workspaceId="ws-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "AGENTS.md" }));
     fireEvent.change(await screen.findByRole("textbox", { name: /file content/i }), {
@@ -74,7 +74,7 @@ describe("WorkspaceBrowser", () => {
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
-      expect(writeWorkspaceFile).toHaveBeenCalledWith("private", "ws-1", {
+      expect(writeWorkspaceFile).toHaveBeenCalledWith("ws-1", {
         path: "AGENTS.md",
         content: "# Evolved",
         expected_etag: "etag-1",
@@ -86,7 +86,7 @@ describe("WorkspaceBrowser", () => {
   });
 
   it("navigates direct child directories and back to the root", async () => {
-    vi.mocked(listWorkspaceFiles).mockImplementation(async (_scope, _workspaceId, directory) => ({
+    vi.mocked(listWorkspaceFiles).mockImplementation(async (_workspaceId, directory) => ({
       directory: directory ?? "",
       items:
         directory === "notes"
@@ -109,28 +109,28 @@ describe("WorkspaceBrowser", () => {
               },
             ],
     }));
-    render(<WorkspaceBrowser scope="private" workspaceId="ws-1" />);
+    render(<WorkspaceBrowser workspaceId="ws-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "notes" }));
     await waitFor(() =>
-      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("private", "ws-1", "notes"),
+      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("ws-1", "notes"),
     );
     expect(await screen.findByRole("button", { name: "python.md" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /workspace root/i }));
     await waitFor(() =>
-      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("private", "ws-1", ""),
+      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("ws-1", ""),
     );
   });
 
   it("explicitly deletes ordinary files and reloads the directory", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<WorkspaceBrowser scope="global" workspaceId="ws-global" />);
+    render(<WorkspaceBrowser workspaceId="ws-global" />);
 
     fireEvent.click(await screen.findByRole("button", { name: /delete profile\.md/i }));
 
     await waitFor(() =>
-      expect(deleteWorkspaceFile).toHaveBeenCalledWith("global", "ws-global", "profile.md"),
+      expect(deleteWorkspaceFile).toHaveBeenCalledWith("ws-global", "profile.md"),
     );
     await waitFor(() => expect(listWorkspaceFiles).toHaveBeenCalledTimes(2));
     confirm.mockRestore();
@@ -140,7 +140,7 @@ describe("WorkspaceBrowser", () => {
     vi.mocked(listWorkspaceFiles)
       .mockRejectedValueOnce(new Error("bucket secret"))
       .mockResolvedValueOnce({ directory: "", items: [] });
-    render(<WorkspaceBrowser scope="private" workspaceId="ws-1" />);
+    render(<WorkspaceBrowser workspaceId="ws-1" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not load files/i);
     expect(screen.queryByText(/bucket secret/i)).not.toBeInTheDocument();
@@ -151,7 +151,7 @@ describe("WorkspaceBrowser", () => {
 
   it("resets navigation when the physical workspace identity changes", async () => {
     vi.mocked(listWorkspaceFiles).mockImplementation(
-      async (_scope, workspaceId, directory) => ({
+      async (workspaceId, directory) => ({
         directory: directory ?? "",
         items:
           workspaceId === "ws-1" && directory === ""
@@ -167,16 +167,16 @@ describe("WorkspaceBrowser", () => {
             : [],
       }),
     );
-    const view = render(<WorkspaceBrowser scope="private" workspaceId="ws-1" />);
+    const view = render(<WorkspaceBrowser workspaceId="ws-1" />);
     fireEvent.click(await screen.findByRole("button", { name: "notes" }));
     await waitFor(() =>
-      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("private", "ws-1", "notes"),
+      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("ws-1", "notes"),
     );
 
-    view.rerender(<WorkspaceBrowser scope="private" workspaceId="ws-2" />);
+    view.rerender(<WorkspaceBrowser workspaceId="ws-2" />);
 
     await waitFor(() =>
-      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("private", "ws-2", ""),
+      expect(listWorkspaceFiles).toHaveBeenLastCalledWith("ws-2", ""),
     );
     expect(screen.queryByRole("button", { name: "notes" })).not.toBeInTheDocument();
   });

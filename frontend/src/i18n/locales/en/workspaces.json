@@ -5,35 +5,36 @@
     "createTitle": "Create a workspace",
     "createDescription": "The initial AGENTS.md template is used only when this workspace is first opened for your account.",
     "listTitle": "Available workspaces",
-    "listDescription": "Shared and private definitions both open your own isolated Agent Home files.",
+    "listDescription": "Public and private definitions both open your own isolated Agent Home files.",
     "homeTitle": "Agent Home",
     "homeDescription": "Browse and edit this workspace's authoritative long-term files.",
     "back": "Back to workspaces",
     "loading": "Loading workspace…"
   },
   "personal": {
-    "title": "Agent workspaces",
+    "title": "Workspaces",
     "summary": "Manage your Agent Home definitions and open the files isolated to your account.",
     "ownedTitle": "My workspaces",
     "ownedSummary": "Your active and inactive definitions. Files remain isolated to your account.",
-    "sharedTitle": "Shared workspaces",
-    "sharedSummary": "Shared definitions open a separate Agent Home instance for your account."
+    "sharedTitle": "Public workspaces",
+    "sharedSummary": "Public definitions open a separate Agent Home instance for your account."
   },
   "global": {
-    "title": "Global workspaces",
+    "title": "Public workspaces",
     "summary": "Manage definitions available to every user. Each user still receives an isolated file instance.",
-    "listTitle": "Global definitions",
+    "listTitle": "Public definitions",
     "listSummary": "Changing the initial template never overwrites AGENTS.md files that users already initialized."
   },
   "states": {
     "loading": "Loading workspaces…",
     "empty": "No workspaces yet.",
+    "noResults": "No matching workspaces found.",
     "active": "Active",
     "inactive": "Inactive"
   },
   "managementEditor": {
     "createTitle": "Create workspace",
-    "createGlobalTitle": "Create global workspace",
+    "createGlobalTitle": "Create public workspace",
     "editTitle": "Edit {{name}}"
   },
   "list": {
@@ -43,8 +44,18 @@
     "open": "Open {{name}}"
   },
   "scope": {
-    "global": "Shared",
+    "global": "Public",
     "private": "Private"
+  },
+  "sidebar": {
+    "searchLabel": "Search workspaces",
+    "searchPlaceholder": "Search workspaces...",
+    "personalTab": "Personal",
+    "globalTab": "Public",
+    "openLabel": "Open {{name}}",
+    "mainEmpty": "Select or create a workspace to view its files.",
+    "collapse": "Collapse",
+    "expand": "Expand"
   },
   "form": {
     "name": "Name",
@@ -53,7 +64,10 @@
     "initialAgentsMdHintGlobal": "Changes affect only users who initialize this workspace for the first time in the future. Existing AGENTS.md files are never overwritten.",
     "editTitle": "Edit workspace",
     "nameTaken": "A workspace with this name already exists.",
-    "saveError": "Could not save workspace."
+    "saveError": "Could not save workspace.",
+    "scope": "Availability",
+    "scopePrivate": "Personal (only you)",
+    "scopeGlobal": "Public (every user)"
   },
   "browser": {
     "breadcrumb": "Workspace folders",
@@ -66,7 +80,13 @@
     "delete": "Delete {{name}}",
     "deleteConfirm": "Delete {{name}}? This cannot be undone.",
     "deleteError": "Could not delete the file.",
-    "agentsMdProtected": "The root AGENTS.md manages this Agent Home and cannot be deleted."
+    "agentsMdProtected": "The root AGENTS.md manages this Agent Home and cannot be deleted.",
+    "name": "Name",
+    "type": "Type",
+    "actions": "Actions",
+    "typeFolder": "Folder",
+    "typeFile": "File",
+    "closeFile": "Close file"
   },
   "editor": {
     "loading": "Loading file…",
@@ -82,7 +102,7 @@
     "openFiles": "Open my files",
     "openFilesLabel": "Open files for {{name}}",
     "create": "Create workspace",
-    "createGlobal": "Create global workspace",
+    "createGlobal": "Create public workspace",
     "edit": "Edit",
     "editLabel": "Edit {{name}}",
     "save": "Save",
@@ -106,5 +126,8 @@
     "accessDenied": "You do not have access to this workspace.",
     "workspaceUnavailable": "This Agent Home is temporarily unavailable.",
     "workspaceConflict": "The file changed. Reload it before saving again."
+  },
+  "detail": {
+    "publicTemplateNote": "A public workspace is a template: these files are yours alone and you can edit them directly. The template content is written once, the first time you use it."
   }
 }

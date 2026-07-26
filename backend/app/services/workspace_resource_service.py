@@ -73,8 +73,13 @@ class WorkspaceResourceService:
         *,
         actor: models.User,
         workspace_id: str,
-        authority_scope: Literal["private", "global"],
     ) -> WorkspaceResponse:
+        """Authorize Agent Home file access for the caller's own instance.
+
+        A public Workspace is a template: its files live under the caller's own
+        user prefix, so visibility is the only check that applies. Ownership of
+        the definition governs editing the template, never file access.
+        """
         resource = self.resources.get_visible(
             session,
             user_id=actor.id,
@@ -83,14 +88,6 @@ class WorkspaceResourceService:
         )
         if resource is None or resource.config_json.get("workspace_type") != "agent_home":
             raise self._not_found()
-        if authority_scope == "global":
-            if actor.role != "admin":
-                raise forbidden(
-                    "admin_required",
-                    "Administrator access is required.",
-                )
-            if resource.user_id != 0:
-                raise self._not_found()
         return self._response(resource, actor)
 
     def create_private(

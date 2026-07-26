@@ -1,10 +1,6 @@
-import { AgentManagementPage } from "@/components/AgentManagementPage";
-import { RoleGuard } from "@/components/RoleGuard";
+import { redirect } from "next/navigation";
 
+/** Public agents are reachable from the Public tab on the main page. */
 export default function GlobalAgentsPage() {
-  return (
-    <RoleGuard role="admin">
-      <AgentManagementPage scope="global" />
-    </RoleGuard>
-  );
+  return redirect("/agents");
 }

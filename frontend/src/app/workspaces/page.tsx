@@ -1,5 +1,5 @@
 import { WorkspaceList } from "@/components/WorkspaceList";
 
 export default function WorkspacesPage() {
-  return <WorkspaceList scope="private" />;
+  return <WorkspaceList />;
 }

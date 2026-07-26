@@ -713,7 +713,6 @@ def ensure_frontend(
             "pnpm",
             "run",
             "dev",
-            "--",
             "--hostname",
             "127.0.0.1",
             "--port",

@@ -228,7 +228,24 @@ describe("ChatWorkspace", () => {
       })],
     });
     render(<ChatWorkspace taskId={7} />);
+    expect(await screen.findByRole("button", { name: "Stop generation" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Send message" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stop generation" }));
+    await waitFor(() => expect(cancelTask).toHaveBeenCalledTimes(1));
+  });
+
+  it("keeps a disabled Send visible instead of a dead Stop button while a new chat's first message is in flight", async () => {
+    hookState = makeHookState({ sending: true });
+    render(<ChatWorkspace />);
     expect(await screen.findByRole("button", { name: "Send message" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /stop generation|stopping/i }))
+      .not.toBeInTheDocument();
+  });
+
+  it("offers Stop as soon as a new chat's first message is acknowledged, before the URL adopts the task", async () => {
+    hookState = makeHookState({ sending: false, createdTaskId: 9, taskStatus: "PENDING" });
+    render(<ChatWorkspace />);
+    expect(await screen.findByRole("button", { name: "Stop generation" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Stop generation" }));
     await waitFor(() => expect(cancelTask).toHaveBeenCalledTimes(1));
   });
@@ -241,8 +258,8 @@ describe("ChatWorkspace", () => {
       render(<ChatWorkspace taskId={7} />);
       const textbox = await screen.findByRole("textbox", { name: "Message Auto Reign" });
       expect(textbox).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
-      expect(screen.getByText("This Task is running.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Send message" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Stop generation" })).toBeInTheDocument();
     },
   );
 
@@ -253,7 +270,6 @@ describe("ChatWorkspace", () => {
     const textbox = await screen.findByRole("textbox", { name: "Message Auto Reign" });
     fireEvent.change(textbox, { target: { value: "next turn" } });
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
-    expect(screen.queryByText("This Task is running.")).not.toBeInTheDocument();
   });
 
   it("retries a FAILED Assistant in place using the same Subtask ID", async () => {

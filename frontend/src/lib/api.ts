@@ -199,8 +199,10 @@ function workspaceMutationPath(scope: WorkspaceScope, workspaceId: string): stri
   return `${workspaceMutationBase(scope)}/${encodeURIComponent(workspaceId)}`;
 }
 
-function workspaceFilePath(scope: WorkspaceScope, workspaceId: string): string {
-  return `${workspaceMutationPath(scope, workspaceId)}/files`;
+// Agent Home files are always stored under the calling user, so file access
+// never routes through the admin surface even for a public workspace template.
+function workspaceFilePath(workspaceId: string): string {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/files`;
 }
 
 function projectWorkspaceWrite(
@@ -265,27 +267,24 @@ export function deleteWorkspace(
 }
 
 export function listWorkspaceFiles(
-  scope: WorkspaceScope,
   workspaceId: string,
   directory = "",
 ): Promise<WorkspaceFileList> {
   return apiRequest<WorkspaceFileList>(
-    `${workspaceFilePath(scope, workspaceId)}?directory=${encodeURIComponent(directory)}`,
+    `${workspaceFilePath(workspaceId)}?directory=${encodeURIComponent(directory)}`,
   );
 }
 
 export function readWorkspaceFile(
-  scope: WorkspaceScope,
   workspaceId: string,
   path: string,
 ): Promise<WorkspaceFileContent> {
   return apiRequest<WorkspaceFileContent>(
-    `${workspaceFilePath(scope, workspaceId)}/content?path=${encodeURIComponent(path)}`,
+    `${workspaceFilePath(workspaceId)}/content?path=${encodeURIComponent(path)}`,
   );
 }
 
 export function createWorkspaceFile(
-  scope: WorkspaceScope,
   workspaceId: string,
   payload: WorkspaceFileCreateRequest,
 ): Promise<WorkspaceFileContent> {
@@ -293,14 +292,13 @@ export function createWorkspaceFile(
     path: payload.path,
     content: payload.content,
   };
-  return apiRequest<WorkspaceFileContent>(`${workspaceFilePath(scope, workspaceId)}/content`, {
+  return apiRequest<WorkspaceFileContent>(`${workspaceFilePath(workspaceId)}/content`, {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
 export function writeWorkspaceFile(
-  scope: WorkspaceScope,
   workspaceId: string,
   payload: WorkspaceFileWriteRequest,
 ): Promise<WorkspaceFileContent> {
@@ -309,19 +307,18 @@ export function writeWorkspaceFile(
     content: payload.content,
     expected_etag: payload.expected_etag,
   };
-  return apiRequest<WorkspaceFileContent>(`${workspaceFilePath(scope, workspaceId)}/content`, {
+  return apiRequest<WorkspaceFileContent>(`${workspaceFilePath(workspaceId)}/content`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
 }
 
 export async function deleteWorkspaceFile(
-  scope: WorkspaceScope,
   workspaceId: string,
   path: string,
 ): Promise<void> {
   await apiRequestNullable<never>(
-    `${workspaceFilePath(scope, workspaceId)}?path=${encodeURIComponent(path)}`,
+    `${workspaceFilePath(workspaceId)}?path=${encodeURIComponent(path)}`,
     { method: "DELETE", acceptedStatuses: [204] },
   );
 }
@@ -488,6 +485,17 @@ export async function downloadKnowledgeDocument(
     `${knowledgeDocumentPath(collectionId, documentId)}/download`,
   );
   return response.blob();
+}
+
+export function renameKnowledgeDocument(
+  collectionId: string,
+  documentId: string,
+  name: string,
+): Promise<KnowledgeDocument> {
+  return apiRequest<KnowledgeDocument>(knowledgeDocumentPath(collectionId, documentId), {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
 }
 
 export function reindexKnowledgeDocument(

@@ -2,7 +2,7 @@ import { ChevronDown } from "lucide-react";
 
 import type { ModelProvider, ModelRef } from "@/lib/types";
 
-type ModelPickerProps = {
+export type ModelPickerProps = {
   agentDefault: ModelRef | null;
   disabled?: boolean;
   labels: {

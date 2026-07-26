@@ -5,8 +5,8 @@ import AgentsPage from "./page";
 import { AgentManagementPage } from "@/components/AgentManagementPage";
 
 vi.mock("@/components/AgentManagementPage", () => ({
-  AgentManagementPage: vi.fn(({ initialCreate, scope }: { initialCreate: boolean; scope: string }) => (
-    <div data-scope={scope}>
+  AgentManagementPage: vi.fn(({ initialCreate }: { initialCreate: boolean }) => (
+    <div>
       Agent management
       {initialCreate ? <div aria-label="Create Agent" role="dialog" /> : null}
     </div>
@@ -22,9 +22,9 @@ describe("personal agents route", () => {
     const page = await AgentsPage({ searchParams: Promise.resolve({}) });
     render(page);
 
-    expect(screen.getByText("Agent management")).toHaveAttribute("data-scope", "private");
+    expect(screen.getByText("Agent management")).toBeInTheDocument();
     expect(AgentManagementPage).toHaveBeenCalledWith(
-      expect.objectContaining({ initialCreate: false, scope: "private" }),
+      expect.objectContaining({ initialCreate: false }),
       undefined,
     );
   });
@@ -37,7 +37,7 @@ describe("personal agents route", () => {
 
     expect(screen.getByRole("dialog", { name: "Create Agent" })).toBeInTheDocument();
     expect(AgentManagementPage).toHaveBeenCalledWith(
-      expect.objectContaining({ initialCreate: true, scope: "private" }),
+      expect.objectContaining({ initialCreate: true }),
       undefined,
     );
   });
