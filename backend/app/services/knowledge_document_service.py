@@ -9,8 +9,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.limits import DEFAULT_KNOWLEDGE_MAX_PARSED_CHARS
-from app.core.errors import conflict, not_found, service_unavailable
+from app.core.limits import DEFAULT_KNOWLEDGE_MAX_PARSED_CHARS, MAX_RESOURCE_NAME_LENGTH
+from app.core.errors import bad_request, conflict, not_found, service_unavailable
 from app.db import models
 from app.db.session import session_scope
 from app.repositories.knowledge_document_repository import (
@@ -313,6 +313,29 @@ class KnowledgeDocumentService:
         document.parsed_object_key = None
         document.indexed_at = None
         self.repository.queue(session, document)
+        return document
+
+    def rename(
+        self,
+        session: Session,
+        *,
+        actor: models.User,
+        document_id: str,
+        name: str,
+    ) -> models.KnowledgeDocument:
+        normalized = name.strip()
+        if not normalized or len(normalized) > MAX_RESOURCE_NAME_LENGTH:
+            raise bad_request(
+                "knowledge_document_name_invalid", "Document name is invalid."
+            )
+        document = self._require_manageable(
+            session,
+            actor=actor,
+            document_id=document_id,
+            for_update=True,
+            require_active=True,
+        )
+        self.repository.rename(session, document, name=normalized)
         return document
 
     def isolate_for_delete(

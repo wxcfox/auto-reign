@@ -6,7 +6,7 @@
     "createTitle": "创建资料库",
     "createDescription": "私有资料库及其中的文档仅当前账号可见。",
     "listTitle": "可用资料库",
-    "listDescription": "全局和私有资料库都只作为 Agent 检索的只读信息来源。",
+    "listDescription": "公共和私有资料库都只作为 Agent 检索的只读信息来源。",
     "detailTitle": "资料库",
     "detailDescription": "管理原始文档、索引状态、解析预览和显式清理。",
     "back": "返回资料库列表",
@@ -15,32 +15,43 @@
   },
   "personal": {
     "title": "资料库",
-    "summary": "管理自己的参考资料集合，并浏览已启用的全局资料库。",
+    "summary": "管理自己的参考资料集合，并浏览已启用的公共资料库。",
     "ownedTitle": "我的资料库",
     "ownedSummary": "管理自己的启用和停用 Collection 及其私有原始文档。",
-    "sharedTitle": "全局资料库",
-    "sharedSummary": "已启用的全局 Collection 是普通用户只读的共享参考来源。"
+    "sharedTitle": "公共资料库",
+    "sharedSummary": "已启用的公共 Collection 是普通用户只读的共享参考来源。"
   },
   "global": {
-    "title": "全局资料库管理",
+    "title": "公共资料库管理",
     "summary": "管理对所有用户共享的 Collection 和原始文档。",
-    "listTitle": "全局 Collection",
-    "listSummary": "上传到已启用全局 Collection 的文档是共享内容，不会按用户复制。"
+    "listTitle": "公共 Collection",
+    "listSummary": "上传到已启用公共 Collection 的文档是共享内容，不会按用户复制。"
   },
   "states": {
     "loading": "正在加载资料库…",
     "empty": "暂无资料库。",
+    "noResults": "未找到匹配的资料库。",
     "active": "已启用",
     "inactive": "已停用"
   },
   "editor": {
     "createTitle": "创建资料库",
-    "createGlobalTitle": "创建全局资料库",
+    "createGlobalTitle": "创建公共资料库",
     "editTitle": "编辑 {{name}}"
   },
   "scope": {
-    "global": "全局共享",
+    "global": "公共可见",
     "private": "仅自己可见"
+  },
+  "sidebar": {
+    "searchLabel": "搜索资料库",
+    "searchPlaceholder": "搜索资料库…",
+    "personalTab": "个人知识库",
+    "globalTab": "公共知识库",
+    "openLabel": "打开 {{name}}",
+    "mainEmpty": "请选择或创建一个知识库查看文档。",
+    "collapse": "收起",
+    "expand": "展开"
   },
   "list": {
     "loading": "正在加载资料库…",
@@ -113,6 +124,11 @@
     "downloadError": "原始文档下载失败。",
     "reindexError": "文档重新索引排队失败。",
     "deleteError": "文档删除失败。",
+    "renameError": "文档重命名失败。",
+    "renameTitle": "重命名文档",
+    "renameDescription": "输入新的文件名。",
+    "nameLabel": "文件名",
+    "openLabel": "打开 {{name}}",
     "embeddingAuthFailed": "Embedding 服务认证失败，请检查 API Key。",
     "embeddingRateLimited": "Embedding 服务请求过于频繁，请稍后重试。",
     "embeddingInvalidRequest": "Embedding 服务拒绝了请求，请检查模型配置。",
@@ -130,7 +146,7 @@
   },
   "actions": {
     "create": "创建资料库",
-    "createGlobal": "创建全局资料库",
+    "createGlobal": "创建公共资料库",
     "creating": "正在创建…",
     "saving": "正在保存…",
     "save": "保存",
@@ -152,6 +168,8 @@
     "preview": "预览 {{name}}",
     "download": "下载 {{name}}",
     "reindex": "重新索引 {{name}}",
+    "rename": "重命名",
+    "renameLabel": "重命名 {{name}}",
     "delete": "删除 {{name}}",
     "retryCleanup": "重试清理 {{name}}",
     "closePreview": "关闭预览"

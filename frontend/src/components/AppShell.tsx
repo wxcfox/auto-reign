@@ -232,8 +232,8 @@ export function AppShell({ children }: AppShellProps) {
   const userLabel = currentUser?.username ?? t("app.user");
   const primaryNavItems = [
     { href: "/agents", icon: Bot, label: t("nav.agents") },
-    { href: "/workspaces", icon: FolderKanban, label: t("nav.workspaces") },
     { href: "/knowledge", icon: BookOpenText, label: t("nav.knowledge") },
+    { href: "/workspaces", icon: FolderKanban, label: t("nav.workspaces") },
   ];
   const adminNavItems =
     currentUser?.role === "admin"

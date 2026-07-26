@@ -344,6 +344,17 @@ class KnowledgeDocumentRepository:
             )
         )
 
+    def rename(
+        self,
+        session: Session,
+        document: models.KnowledgeDocument,
+        *,
+        name: str,
+    ) -> None:
+        document.name = name
+        document.updated_at = models._now()
+        session.flush()
+
     def queue(
         self,
         session: Session,

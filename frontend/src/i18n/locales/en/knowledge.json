@@ -6,7 +6,7 @@
     "createTitle": "Create a knowledge base",
     "createDescription": "Private knowledge bases and their documents are visible only to your account.",
     "listTitle": "Available knowledge bases",
-    "listDescription": "Shared and private knowledge bases remain read-only sources for Agent retrieval.",
+    "listDescription": "Public and private knowledge bases remain read-only sources for Agent retrieval.",
     "detailTitle": "Knowledge base",
     "detailDescription": "Manage source documents, indexing status, preview, and cleanup.",
     "back": "Back to knowledge bases",
@@ -15,32 +15,43 @@
   },
   "personal": {
     "title": "Knowledge bases",
-    "summary": "Manage your private reference collections and browse active shared collections.",
+    "summary": "Manage your private reference collections and browse active public collections.",
     "ownedTitle": "My knowledge bases",
     "ownedSummary": "Your active and inactive collections and their private source documents.",
-    "sharedTitle": "Shared knowledge bases",
-    "sharedSummary": "Active global collections are shared, read-only reference sources for ordinary users."
+    "sharedTitle": "Public knowledge bases",
+    "sharedSummary": "Active public collections are read-only reference sources for ordinary users."
   },
   "global": {
-    "title": "Global knowledge bases",
+    "title": "Public knowledge bases",
     "summary": "Manage collections and source documents shared with every user.",
-    "listTitle": "Global collections",
-    "listSummary": "Documents uploaded to an active global collection are shared content, not per-user copies."
+    "listTitle": "Public collections",
+    "listSummary": "Documents uploaded to an active public collection are shared content, not per-user copies."
   },
   "states": {
     "loading": "Loading knowledge bases…",
     "empty": "No knowledge bases yet.",
+    "noResults": "No matching knowledge bases found.",
     "active": "Active",
     "inactive": "Inactive"
   },
   "editor": {
     "createTitle": "Create knowledge base",
-    "createGlobalTitle": "Create global knowledge base",
+    "createGlobalTitle": "Create public knowledge base",
     "editTitle": "Edit {{name}}"
   },
   "scope": {
-    "global": "Shared",
+    "global": "Public",
     "private": "Private"
+  },
+  "sidebar": {
+    "searchLabel": "Search knowledge bases",
+    "searchPlaceholder": "Search knowledge bases...",
+    "personalTab": "Personal knowledge",
+    "globalTab": "Public knowledge",
+    "openLabel": "Open {{name}}",
+    "mainEmpty": "Select or create a knowledge base to view its documents.",
+    "collapse": "Collapse",
+    "expand": "Expand"
   },
   "list": {
     "loading": "Loading knowledge bases…",
@@ -113,6 +124,11 @@
     "downloadError": "The original document could not be downloaded.",
     "reindexError": "The document could not be queued for reindexing.",
     "deleteError": "The document could not be deleted.",
+    "renameError": "The document could not be renamed.",
+    "renameTitle": "Rename document",
+    "renameDescription": "Enter a new file name.",
+    "nameLabel": "File name",
+    "openLabel": "Open {{name}}",
     "embeddingAuthFailed": "Embedding service authentication failed. Check the API key.",
     "embeddingRateLimited": "Embedding service rate limit exceeded. Try again later.",
     "embeddingInvalidRequest": "Embedding service rejected the request. Check the model configuration.",
@@ -130,7 +146,7 @@
   },
   "actions": {
     "create": "Create knowledge base",
-    "createGlobal": "Create global knowledge base",
+    "createGlobal": "Create public knowledge base",
     "creating": "Creating…",
     "saving": "Saving…",
     "save": "Save",
@@ -152,6 +168,8 @@
     "preview": "Preview {{name}}",
     "download": "Download {{name}}",
     "reindex": "Reindex {{name}}",
+    "rename": "Rename",
+    "renameLabel": "Rename {{name}}",
     "delete": "Delete {{name}}",
     "retryCleanup": "Retry cleanup for {{name}}",
     "closePreview": "Close preview"

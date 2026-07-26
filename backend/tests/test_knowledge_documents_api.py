@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import select
 
+from app.core.limits import MAX_RESOURCE_NAME_LENGTH
 from app.db import models
 from app.storage import ObjectMetadata, ObjectStoreUnavailable, StoredObject
 
@@ -136,6 +137,71 @@ def test_upload_lists_gets_downloads_and_reindexes_document(
         assert document is not None
         assert document.parsed_object_key is None
     assert parsed_key in client.app.state.object_store.keys()
+
+
+def test_rename_document_updates_name_and_rejects_invalid_or_foreign_document(
+    client,
+    ordinary_user_headers,
+) -> None:
+    collection = _collection(client, ordinary_user_headers)
+    document = _upload(client, ordinary_user_headers, collection["id"]).json()
+
+    renamed = client.patch(
+        f"/api/knowledge-collections/{collection['id']}/documents/"
+        f"{document['id']}",
+        headers=ordinary_user_headers,
+        json={"name": "重命名后的笔记.md"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "重命名后的笔记.md"
+
+    detail = client.get(
+        f"/api/knowledge-collections/{collection['id']}/documents/{document['id']}",
+        headers=ordinary_user_headers,
+    )
+    assert detail.json()["name"] == "重命名后的笔记.md"
+
+    blank_name = client.patch(
+        f"/api/knowledge-collections/{collection['id']}/documents/"
+        f"{document['id']}",
+        headers=ordinary_user_headers,
+        json={"name": "   "},
+    )
+    assert blank_name.status_code == 422
+
+    other = _collection(client, ordinary_user_headers, name="另一个资料库")
+    foreign = client.patch(
+        f"/api/knowledge-collections/{other['id']}/documents/{document['id']}",
+        headers=ordinary_user_headers,
+        json={"name": "不应生效"},
+    )
+    assert foreign.status_code == 404
+    assert foreign.json()["detail"]["code"] == "knowledge_document_not_found"
+
+
+def test_rename_document_rejects_name_past_the_max_length_boundary(
+    client,
+    ordinary_user_headers,
+) -> None:
+    collection = _collection(client, ordinary_user_headers)
+    document = _upload(client, ordinary_user_headers, collection["id"]).json()
+
+    at_limit = client.patch(
+        f"/api/knowledge-collections/{collection['id']}/documents/"
+        f"{document['id']}",
+        headers=ordinary_user_headers,
+        json={"name": "a" * MAX_RESOURCE_NAME_LENGTH},
+    )
+    assert at_limit.status_code == 200
+    assert at_limit.json()["name"] == "a" * MAX_RESOURCE_NAME_LENGTH
+
+    over_limit = client.patch(
+        f"/api/knowledge-collections/{collection['id']}/documents/"
+        f"{document['id']}",
+        headers=ordinary_user_headers,
+        json={"name": "a" * (MAX_RESOURCE_NAME_LENGTH + 1)},
+    )
+    assert over_limit.status_code == 422
 
 
 def test_reindex_does_not_duplicate_active_generation_but_recovers_stale_processing(

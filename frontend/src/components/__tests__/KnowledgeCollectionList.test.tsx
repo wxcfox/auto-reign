@@ -20,6 +20,20 @@ vi.mock("@/lib/api", () => ({
   updateKnowledgeCollection: vi.fn(),
 }));
 
+vi.mock("@/components/KnowledgeDocumentTable", () => ({
+  KnowledgeDocumentTable: (props: { collectionId: string; canManage?: boolean }) => (
+    <div data-can-manage={String(props.canManage === true)} data-testid="document-table">
+      documents:{props.collectionId}
+    </div>
+  ),
+}));
+
+vi.mock("@/components/KnowledgeUploader", () => ({
+  KnowledgeUploader: (props: { collectionId: string }) => (
+    <div data-testid="uploader">uploader:{props.collectionId}</div>
+  ),
+}));
+
 const privateCollection: KnowledgeCollection = {
   id: "private-collection",
   name: "My manuals",
@@ -65,12 +79,14 @@ describe("KnowledgeCollectionList management page", () => {
       });
       expect(listKnowledgeCollections).toHaveBeenCalledWith("global");
     });
-    expect(screen.getAllByText(globalCollection.name)).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: /open documents in my manuals/i }))
-      .not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open documents in global handbook/i }))
-      .toHaveAttribute("href", "/knowledge/global-collection");
+    await screen.findByRole("heading", { name: privateCollection.name });
+    expect(screen.queryByText(globalCollection.name)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit my manuals/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: /public knowledge/i }));
+    expect(await screen.findByRole("heading", { name: globalCollection.name }))
+      .toBeInTheDocument();
+    expect(screen.queryByText(privateCollection.name)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /edit global handbook/i }))
       .not.toBeInTheDocument();
   });
@@ -84,17 +100,13 @@ describe("KnowledgeCollectionList management page", () => {
       is_active: true,
     });
     render(<KnowledgeCollectionList scope="private" />);
-    await screen.findByText(privateCollection.name);
+    await screen.findByRole("heading", { name: privateCollection.name });
 
     fireEvent.click(screen.getByRole("button", { name: /^create knowledge base$/i }));
     const editor = screen.getByRole("region", { name: /^create knowledge base$/i });
     expect(screen.getByRole("button", { name: /edit my manuals/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /enable my manuals/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /delete my manuals/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /open documents in global handbook/i }))
-      .toBeDisabled();
-    expect(screen.queryByRole("link", { name: /open documents in global handbook/i }))
-      .not.toBeInTheDocument();
     fireEvent.change(within(editor).getByLabelText(/^name$/i), {
       target: { value: "Private references" },
     });
@@ -123,7 +135,7 @@ describe("KnowledgeCollectionList management page", () => {
       .not.toBeInTheDocument();
   });
 
-  it("uses global list and mutation authority while keeping the document entry on the unified route", async () => {
+  it("uses global list and mutation authority for the selected collection", async () => {
     vi.mocked(listKnowledgeCollections).mockResolvedValue({
       collections: [globalCollection],
     });
@@ -138,8 +150,7 @@ describe("KnowledgeCollectionList management page", () => {
         includeInactive: true,
       }),
     );
-    expect(screen.getByRole("link", { name: /open documents in global handbook/i }))
-      .toHaveAttribute("href", "/knowledge/global-collection");
+    await screen.findByRole("heading", { name: globalCollection.name });
     fireEvent.click(screen.getByRole("button", { name: /edit global handbook/i }));
     const editor = screen.getByRole("region", { name: /edit global handbook/i });
     fireEvent.change(within(editor).getByLabelText(/top k/i), {
@@ -171,7 +182,7 @@ describe("KnowledgeCollectionList management page", () => {
       }),
     );
     render(<KnowledgeCollectionList scope="private" />);
-    await screen.findByText(privateCollection.name);
+    await screen.findByRole("heading", { name: privateCollection.name });
 
     const enable = screen.getByRole("button", { name: /enable my manuals/i });
     fireEvent.click(enable);
@@ -195,7 +206,7 @@ describe("KnowledgeCollectionList management page", () => {
   it("honors can_manage even for an owned-looking response", async () => {
     mockPrivateLists([{ ...privateCollection, can_manage: false }], []);
     render(<KnowledgeCollectionList scope="private" />);
-    await screen.findByText(privateCollection.name);
+    await screen.findByRole("heading", { name: privateCollection.name });
 
     expect(screen.queryByRole("button", { name: /edit my manuals/i }))
       .not.toBeInTheDocument();
@@ -215,14 +226,14 @@ describe("KnowledgeCollectionList management page", () => {
       }),
     );
     render(<KnowledgeCollectionList scope="private" />);
-    await screen.findByText(privateCollection.name);
+    await screen.findByRole("heading", { name: privateCollection.name });
 
     fireEvent.click(screen.getByRole("button", { name: /delete my manuals/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /active Agent reference.*active document.*unfinished document cleanup/i,
     );
-    expect(screen.getByText(privateCollection.name)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: privateCollection.name })).toBeInTheDocument();
     expect(screen.queryByText(/document ids must stay private/i)).not.toBeInTheDocument();
     confirmSpy.mockRestore();
   });
@@ -246,7 +257,8 @@ describe("KnowledgeCollectionList management page", () => {
     const view = render(<KnowledgeCollectionList scope="private" />);
 
     view.rerender(<KnowledgeCollectionList scope="global" />);
-    expect(await screen.findByText(globalCollection.name)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: globalCollection.name }))
+      .toBeInTheDocument();
     await act(async () => {
       resolveOwned({ collections: [privateCollection] });
       resolveShared({ collections: [] });
@@ -269,8 +281,7 @@ describe("KnowledgeCollectionList management page", () => {
       });
     });
     const view = render(<KnowledgeCollectionList scope="private" />);
-    await screen.findByText(privateCollection.name);
-    expect(screen.getByText(globalCollection.name)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: privateCollection.name });
 
     view.rerender(<KnowledgeCollectionList scope="global" />);
 
@@ -282,7 +293,8 @@ describe("KnowledgeCollectionList management page", () => {
       resolveGlobal({ collections: [globalCollection] });
       await Promise.resolve();
     });
-    expect(await screen.findByText(globalCollection.name)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: globalCollection.name }))
+      .toBeInTheDocument();
   });
 
   it("renders a recoverable stable error in Chinese", async () => {
@@ -296,5 +308,38 @@ describe("KnowledgeCollectionList management page", () => {
     expect(screen.queryByText(/database secret/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("暂无资料库。")).toBeInTheDocument();
+  });
+
+  it("selects a collection from the sidebar and shows its documents on the right", async () => {
+    mockPrivateLists([privateCollection], [globalCollection]);
+    render(<KnowledgeCollectionList scope="private" />);
+    await screen.findByRole("heading", { name: privateCollection.name });
+
+    expect(screen.getByTestId("document-table")).toHaveTextContent(privateCollection.id);
+
+    fireEvent.click(screen.getByRole("tab", { name: /public knowledge/i }));
+    await screen.findByRole("heading", { name: globalCollection.name });
+    expect(screen.getByTestId("document-table")).toHaveTextContent(globalCollection.id);
+    expect(screen.getByTestId("document-table")).toHaveAttribute("data-can-manage", "false");
+    expect(screen.queryByTestId("uploader")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /personal knowledge/i }));
+    await screen.findByRole("heading", { name: privateCollection.name });
+    expect(screen.getByTestId("document-table")).toHaveTextContent(privateCollection.id);
+    expect(screen.getByTestId("document-table")).toHaveAttribute("data-can-manage", "true");
+    expect(screen.getByTestId("uploader")).toBeInTheDocument();
+  });
+
+  it("shows a distinct message when a search query filters out every collection", async () => {
+    mockPrivateLists([privateCollection], [globalCollection]);
+    render(<KnowledgeCollectionList scope="private" />);
+    await screen.findByRole("heading", { name: privateCollection.name });
+
+    fireEvent.change(screen.getByLabelText(/search knowledge bases/i), {
+      target: { value: "no such collection" },
+    });
+
+    expect(await screen.findByText("No matching knowledge bases found.")).toBeInTheDocument();
+    expect(screen.queryByText("No knowledge bases yet.")).not.toBeInTheDocument();
   });
 });

@@ -1,8 +1,9 @@
 "use client";
 
-import { Download, Eye, RefreshCw, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Download, Eye, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
+import { KnowledgeDocumentRenameDialog } from "@/components/knowledge/KnowledgeDocumentRenameDialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   deleteKnowledgeDocument,
@@ -77,6 +78,18 @@ function KnowledgeDocumentTableInstance({
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [renamingDocument, setRenamingDocument] = useState<KnowledgeDocument | null>(null);
+  const renameTriggerRef = useRef<HTMLElement | null>(null);
+
+  // Restore focus to the row's rename trigger once the dialog closes and the
+  // button becomes enabled again.
+  useEffect(() => {
+    if (renamingDocument) {
+      return;
+    }
+    renameTriggerRef.current?.focus();
+    renameTriggerRef.current = null;
+  }, [renamingDocument]);
 
   useEffect(() => {
     if (documents !== undefined) {
@@ -216,6 +229,22 @@ function KnowledgeDocumentTableInstance({
     }
   }
 
+  function openRename(document: KnowledgeDocument, trigger: HTMLElement) {
+    if (activeAction !== null || renamingDocument !== null) {
+      return;
+    }
+    renameTriggerRef.current = trigger;
+    setRenamingDocument(document);
+  }
+
+  function handleRenamed(updated: KnowledgeDocument) {
+    setItems((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)),
+    );
+    onChanged?.();
+    setRenamingDocument(null);
+  }
+
   if (loading) {
     return (
       <p className="knowledge-state" role="status">
@@ -240,8 +269,8 @@ function KnowledgeDocumentTableInstance({
       {items.length === 0 ? (
         <p className="knowledge-state">{t("documents.empty")}</p>
       ) : (
-        <div className="knowledge-document-table-wrap">
-          <table className="knowledge-document-table">
+        <div className="resource-table-wrap">
+          <table className="resource-table">
             <thead>
               <tr>
                 <th scope="col">{t("documents.name")}</th>
@@ -268,7 +297,20 @@ function KnowledgeDocumentTableInstance({
                 return (
                   <tr key={document.id}>
                     <td>
-                      <strong>{document.name}</strong>
+                      {document.status === "ready" && effectivelyActive ? (
+                        <button
+                          aria-label={t("documents.openLabel", { name: document.name })}
+                          className="resource-table-name"
+                          disabled={activeAction !== null}
+                          onClick={() => void handlePreview(document)}
+                          title={document.name}
+                          type="button"
+                        >
+                          {document.name}
+                        </button>
+                      ) : (
+                        <strong title={document.name}>{document.name}</strong>
+                      )}
                       <span>{document.mime_type}</span>
                       {!effectivelyActive ? (
                         <span className="knowledge-document__inactive">
@@ -307,7 +349,7 @@ function KnowledgeDocumentTableInstance({
                     <td>{formatBytes(document.size_bytes)}</td>
                     <td>{document.index_generation}</td>
                     <td>
-                      <div className="knowledge-document-actions">
+                      <div className="resource-table-actions">
                         {document.status === "ready" && effectivelyActive ? (
                           <button
                             aria-label={t("actions.preview", { name: document.name })}
@@ -330,6 +372,16 @@ function KnowledgeDocumentTableInstance({
                         ) : null}
                         {canManage && effectivelyActive ? (
                           <button
+                            aria-label={t("actions.renameLabel", { name: document.name })}
+                            disabled={activeAction !== null || renamingDocument !== null}
+                            onClick={(event) => openRename(document, event.currentTarget)}
+                            type="button"
+                          >
+                            <Pencil aria-hidden="true" size={15} />
+                          </button>
+                        ) : null}
+                        {canManage && effectivelyActive ? (
+                          <button
                             aria-label={t("actions.reindex", { name: document.name })}
                             disabled={activeAction !== null}
                             onClick={() => void handleReindex(document)}
@@ -345,7 +397,7 @@ function KnowledgeDocumentTableInstance({
                                 ? t("actions.retryCleanup", { name: document.name })
                                 : t("actions.delete", { name: document.name })
                             }
-                            className="knowledge-document-action--danger"
+                            className="resource-table-action--danger"
                             disabled={activeAction !== null}
                             onClick={() => void handleDelete(document)}
                             type="button"
@@ -390,6 +442,15 @@ function KnowledgeDocumentTableInstance({
             <pre>{previewContent}</pre>
           )}
         </section>
+      ) : null}
+
+      {renamingDocument ? (
+        <KnowledgeDocumentRenameDialog
+          collectionId={collectionId}
+          document={renamingDocument}
+          onClose={() => setRenamingDocument(null)}
+          onRenamed={handleRenamed}
+        />
       ) : null}
     </div>
   );

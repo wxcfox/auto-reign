@@ -7,6 +7,8 @@ import { I18nProvider } from "@/components/I18nProvider";
 import { SocketProvider } from "@/contexts/SocketContext";
 
 import "./globals.css";
+import "./styles/chat.css";
+import "./styles/resource.css";
 
 export const metadata: Metadata = {
   title: "Auto Reign",

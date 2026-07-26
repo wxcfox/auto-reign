@@ -1,15 +1,21 @@
 "use client";
 
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
 import { KnowledgeCollectionForm } from "@/components/KnowledgeCollectionForm";
+import { KnowledgeDocumentTable } from "@/components/KnowledgeDocumentTable";
+import { KnowledgeUploader } from "@/components/KnowledgeUploader";
+import { ResourceDetailHeader } from "@/components/resource/ResourceDetailHeader";
+import { ResourceSidebar } from "@/components/resource/ResourceSidebar";
+import { ResourceSidebarLayout } from "@/components/resource/ResourceSidebarLayout";
+import { useResourceSidebarSelection } from "@/components/resource/useResourceSidebarSelection";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   deleteKnowledgeCollection,
@@ -24,6 +30,7 @@ export type KnowledgeCollectionListProps = {
 };
 
 type EditingCollection = KnowledgeCollection | "new" | null;
+type CollectionRow = { collection: KnowledgeCollection; manageable: boolean };
 
 function dedupeCollections(...groups: KnowledgeCollection[][]): KnowledgeCollection[] {
   const result = new Map<string, KnowledgeCollection>();
@@ -49,6 +56,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
   const [formBusy, setFormBusy] = useState(false);
   const [pendingCollectionId, setPendingCollectionId] = useState<string | null>(null);
   const [pageErrorKey, setPageErrorKey] = useState<string | null>(null);
+  const [documentVersion, setDocumentVersion] = useState(0);
   const mountedRef = useRef(false);
   const lifecycleGenerationRef = useRef(0);
   const loadGenerationRef = useRef(0);
@@ -121,6 +129,7 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     setFormBusy(false);
     setPendingCollectionId(null);
     setPageErrorKey(null);
+    setDocumentVersion(0);
     void load();
     return () => {
       if (lifecycleGenerationRef.current === lifecycleGeneration) {
@@ -257,6 +266,28 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
     }
   }
 
+  const rows: CollectionRow[] = useMemo(
+    () => [
+      ...ownedCollections.map((collection) => ({ collection, manageable: true })),
+      ...sharedCollections.map((collection) => ({ collection, manageable: false })),
+    ],
+    [ownedCollections, sharedCollections],
+  );
+  const items = useMemo(
+    () =>
+      rows.map((row) => ({
+        id: row.collection.id,
+        name: row.collection.name,
+        scope: row.collection.scope,
+        isActive: row.collection.is_active,
+        manageable: row.manageable,
+      })),
+    [rows],
+  );
+  const selection = useResourceSidebarSelection(items, scope);
+  const selectedRow =
+    rows.find((row) => row.collection.id === selection.selectedItem?.id) ?? null;
+
   if (
     loadState === "loading" ||
     (loadState === "ready" && loadedScope !== scope)
@@ -284,8 +315,6 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
   const controlsDisabled =
     pendingCollectionId !== null || formBusy || editing !== null;
   const pageTitle = scope === "global" ? t("global.title") : t("personal.title");
-  const pageSummary =
-    scope === "global" ? t("global.summary") : t("personal.summary");
   const editorTitle =
     editing === "new"
       ? scope === "global"
@@ -295,168 +324,128 @@ export function KnowledgeCollectionList({ scope }: KnowledgeCollectionListProps)
         ? ""
         : t("editor.editTitle", { name: editing.name });
 
-  function renderRows(collections: KnowledgeCollection[], manageable: boolean) {
-    if (collections.length === 0) {
-      return <p className="empty-state">{t("states.empty")}</p>;
-    }
-    return (
-      <ul className="management-list">
-        {collections.map((collection) => {
-          const canManage = manageable && canManageDefinition(collection);
-          const rowPending = pendingCollectionId === collection.id;
-          return (
-            <li key={collection.id}>
-              <div className="management-list__summary">
-                <strong>{collection.name}</strong>
-                <span>
-                  {collection.is_active ? t("states.active") : t("states.inactive")}
-                </span>
-              </div>
-              <div className="management-list__actions">
-                {collection.is_active ? (
-                  controlsDisabled ? (
-                    <button
-                      aria-label={t("actions.openDocumentsLabel", {
-                        name: collection.name,
-                      })}
-                      className="button"
-                      disabled
-                      type="button"
-                    >
-                      {t("actions.openDocuments")}
-                    </button>
-                  ) : (
-                    <Link
-                      aria-label={t("actions.openDocumentsLabel", {
-                        name: collection.name,
-                      })}
-                      className="button"
-                      href={`/knowledge/${encodeURIComponent(collection.id)}`}
-                    >
-                      {t("actions.openDocuments")}
-                    </Link>
-                  )
-                ) : null}
-                {canManage ? (
-                  <>
-                    <button
-                      aria-label={t("actions.editLabel", { name: collection.name })}
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => openEditor(collection)}
-                      type="button"
-                    >
-                      {t("actions.edit")}
-                    </button>
-                    <button
-                      aria-label={
-                        collection.is_active
-                          ? t("actions.disableLabel", { name: collection.name })
-                          : t("actions.enableLabel", { name: collection.name })
-                      }
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => void setActive(collection)}
-                      type="button"
-                    >
-                      {rowPending
-                        ? t("actions.working")
-                        : collection.is_active
-                          ? t("actions.disable")
-                          : t("actions.enable")}
-                    </button>
-                    <button
-                      aria-label={t("actions.deleteLabel", { name: collection.name })}
-                      className="button button-danger"
-                      disabled={controlsDisabled}
-                      onClick={() => void remove(collection)}
-                      type="button"
-                    >
-                      {t("actions.deleteDefinition")}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  }
+  const selectedCanManage = selectedRow
+    ? selectedRow.manageable && canManageDefinition(selectedRow.collection)
+    : false;
+  const selectedRowPending =
+    selectedRow !== null && pendingCollectionId === selectedRow.collection.id;
+  const tabLabel =
+    selection.tab === "personal" ? t("sidebar.personalTab") : t("sidebar.globalTab");
 
   return (
-    <section className="management-page" aria-labelledby={titleId} data-scope={scope}>
-      <div className="management-content">
-        <header className="management-header">
-          <div>
-            <h1 id={titleId}>{pageTitle}</h1>
-            <p>{pageSummary}</p>
+    <ResourceSidebarLayout
+      scope={scope}
+      sidebar={
+        <ResourceSidebar
+          createDisabled={controlsDisabled}
+          labels={{
+            activeBadge: t("states.active"),
+            collapse: t("sidebar.collapse"),
+            create: scope === "global" ? t("actions.createGlobal") : t("actions.create"),
+            empty: t("states.empty"),
+            expand: t("sidebar.expand"),
+            globalTab: t("sidebar.globalTab"),
+            inactiveBadge: t("states.inactive"),
+            noResults: t("states.noResults"),
+            openItem: (name) => t("sidebar.openLabel", { name }),
+            personalTab: t("sidebar.personalTab"),
+            searchLabel: t("sidebar.searchLabel"),
+            searchPlaceholder: t("sidebar.searchPlaceholder"),
+          }}
+          onCreate={() => openEditor("new")}
+          selection={selection}
+          title={pageTitle}
+          titleId={titleId}
+        />
+      }
+      titleId={titleId}
+    >
+      {editing !== null ? (
+        <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
+          <div className="section-heading">
+            <h2 id={editorTitleId}>{editorTitle}</h2>
           </div>
-          <button
-            className="button button-primary"
-            disabled={controlsDisabled}
-            onClick={() => openEditor("new")}
-            type="button"
-          >
-            {scope === "global"
-              ? t("actions.createGlobal")
-              : t("actions.create")}
-          </button>
-        </header>
+          <KnowledgeCollectionForm
+            collection={editing === "new" ? null : editing}
+            onCancel={closeEditor}
+            onSaved={handleSaved}
+            onSavingChange={setFormBusy}
+            scope={scope}
+          />
+        </section>
+      ) : null}
 
-        {editing !== null ? (
-          <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
-            <div className="section-heading">
-              <h2 id={editorTitleId}>{editorTitle}</h2>
-            </div>
-            <KnowledgeCollectionForm
-              collection={editing === "new" ? null : editing}
-              onCancel={closeEditor}
-              onSaved={handleSaved}
-              onSavingChange={setFormBusy}
-              scope={scope}
+      {pageErrorKey ? (
+        <p className="form-error" role="alert">
+          {t(pageErrorKey)}
+        </p>
+      ) : null}
+
+      {selectedRow ? (
+        <>
+          <ResourceDetailHeader
+            actions={
+              selectedCanManage ? (
+                <>
+                  <button
+                    aria-label={
+                      selectedRow.collection.is_active
+                        ? t("actions.disableLabel", { name: selectedRow.collection.name })
+                        : t("actions.enableLabel", { name: selectedRow.collection.name })
+                    }
+                    className="button"
+                    disabled={controlsDisabled}
+                    onClick={() => void setActive(selectedRow.collection)}
+                    type="button"
+                  >
+                    {selectedRowPending
+                      ? t("actions.working")
+                      : selectedRow.collection.is_active
+                        ? t("actions.disable")
+                        : t("actions.enable")}
+                  </button>
+                  <button
+                    aria-label={t("actions.deleteLabel", { name: selectedRow.collection.name })}
+                    className="button button-danger"
+                    disabled={controlsDisabled}
+                    onClick={() => void remove(selectedRow.collection)}
+                    type="button"
+                  >
+                    {t("actions.deleteDefinition")}
+                  </button>
+                </>
+              ) : null
+            }
+            breadcrumb={tabLabel}
+            editDisabled={controlsDisabled}
+            editLabel={t("actions.editLabel", { name: selectedRow.collection.name })}
+            editText={t("actions.edit")}
+            name={selectedRow.collection.name}
+            onEdit={
+              selectedCanManage ? () => openEditor(selectedRow.collection) : undefined
+            }
+            statusBadge={
+              selectedRow.collection.is_active ? t("states.active") : t("states.inactive")
+            }
+          />
+
+          {selectedCanManage ? (
+            <KnowledgeUploader
+              collectionId={selectedRow.collection.id}
+              disabled={controlsDisabled}
+              onUploaded={() => setDocumentVersion((current) => current + 1)}
             />
-          </section>
-        ) : null}
-
-        {pageErrorKey ? (
-          <p className="form-error" role="alert">
-            {t(pageErrorKey)}
-          </p>
-        ) : null}
-
-        <div className="management-sections">
-          <section className="management-section" aria-labelledby={`${titleId}-owned`}>
-            <div className="section-heading">
-              <div>
-                <h2 id={`${titleId}-owned`}>
-                  {scope === "global"
-                    ? t("global.listTitle")
-                    : t("personal.ownedTitle")}
-                </h2>
-                <p className="page-summary">
-                  {scope === "global"
-                    ? t("global.listSummary")
-                    : t("personal.ownedSummary")}
-                </p>
-              </div>
-            </div>
-            {renderRows(ownedCollections, true)}
-          </section>
-
-          {scope === "private" ? (
-            <section className="management-section" aria-labelledby={`${titleId}-shared`}>
-              <div className="section-heading">
-                <div>
-                  <h2 id={`${titleId}-shared`}>{t("personal.sharedTitle")}</h2>
-                  <p className="page-summary">{t("personal.sharedSummary")}</p>
-                </div>
-              </div>
-              {renderRows(sharedCollections, false)}
-            </section>
           ) : null}
-        </div>
-      </div>
-    </section>
+
+          <KnowledgeDocumentTable
+            canManage={selectedCanManage}
+            collectionId={selectedRow.collection.id}
+            key={`${selectedRow.collection.id}:${documentVersion}`}
+          />
+        </>
+      ) : (
+        <p className="empty-state">{t("sidebar.mainEmpty")}</p>
+      )}
+    </ResourceSidebarLayout>
   );
 }

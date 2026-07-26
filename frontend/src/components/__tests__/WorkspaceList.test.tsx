@@ -19,6 +19,14 @@ vi.mock("@/lib/api", () => ({
   updateWorkspace: vi.fn(),
 }));
 
+vi.mock("@/components/WorkspaceBrowser", () => ({
+  WorkspaceBrowser: (props: { scope: string; workspaceId: string }) => (
+    <div data-testid="workspace-browser-stub">
+      browser:{props.scope}:{props.workspaceId}
+    </div>
+  ),
+}));
+
 const privateWorkspace: Workspace = {
   id: "private-ws",
   name: "My memory",
@@ -64,14 +72,14 @@ describe("WorkspaceList management page", () => {
       expect(listWorkspaces).toHaveBeenCalledWith("owned", { includeInactive: true });
       expect(listWorkspaces).toHaveBeenCalledWith("global");
     });
-    expect(screen.getAllByText(globalWorkspace.name)).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: /open files for my memory/i }))
-      .not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open files for shared growth/i }))
-      .toHaveAttribute("href", "/workspaces/global-ws");
-    expect(screen.queryByRole("link", { name: /admin\/workspaces/i }))
-      .not.toBeInTheDocument();
+    await screen.findByRole("heading", { name: privateWorkspace.name });
+    expect(screen.queryByText(globalWorkspace.name)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit my memory/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: /public workspace/i }));
+    expect(await screen.findByRole("heading", { name: globalWorkspace.name }))
+      .toBeInTheDocument();
+    expect(screen.queryByText(privateWorkspace.name)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /edit shared growth/i }))
       .not.toBeInTheDocument();
   });
@@ -85,7 +93,7 @@ describe("WorkspaceList management page", () => {
       is_active: true,
     });
     render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     fireEvent.click(screen.getByRole("button", { name: /^create workspace$/i }));
     const editor = screen.getByRole("region", { name: /^create workspace$/i });
@@ -97,10 +105,6 @@ describe("WorkspaceList management page", () => {
     expect(screen.getByRole("button", { name: /edit my memory/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /enable my memory/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /delete my memory/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /open files for shared growth/i }))
-      .toBeDisabled();
-    expect(screen.queryByRole("link", { name: /open files for shared growth/i }))
-      .not.toBeInTheDocument();
 
     fireEvent.change(within(editor).getByLabelText(/^name$/i), {
       target: { value: "Private home" },
@@ -132,7 +136,7 @@ describe("WorkspaceList management page", () => {
       .not.toBeInTheDocument();
   });
 
-  it("uses global list and mutation authority and never emits an admin file route", async () => {
+  it("uses global list and mutation authority and shows the selected workspace's browser", async () => {
     vi.mocked(listWorkspaces).mockResolvedValue({ workspaces: [globalWorkspace] });
     vi.mocked(updateWorkspace).mockResolvedValue({
       ...globalWorkspace,
@@ -143,8 +147,10 @@ describe("WorkspaceList management page", () => {
     await waitFor(() =>
       expect(listWorkspaces).toHaveBeenCalledWith("global", { includeInactive: true }),
     );
-    expect(screen.getByRole("link", { name: /open files for shared growth/i }))
-      .toHaveAttribute("href", "/workspaces/global-ws");
+    await screen.findByRole("heading", { name: globalWorkspace.name });
+    expect(screen.getByTestId("workspace-browser-stub")).toHaveTextContent(
+      `browser:global:${globalWorkspace.id}`,
+    );
     fireEvent.click(screen.getByRole("button", { name: /edit shared growth/i }));
     const editor = screen.getByRole("region", { name: /edit shared growth/i });
     expect(within(editor).getByText(/initialize this workspace.*future/i))
@@ -164,8 +170,6 @@ describe("WorkspaceList management page", () => {
         is_active: true,
       }),
     );
-    expect(screen.queryByRole("link", { name: /admin\/workspaces/i }))
-      .not.toBeInTheDocument();
   });
 
   it("reactivates an inactive definition once and keeps its full config", async () => {
@@ -177,7 +181,7 @@ describe("WorkspaceList management page", () => {
       }),
     );
     render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     const enable = screen.getByRole("button", { name: /enable my memory/i });
     fireEvent.click(enable);
@@ -198,7 +202,7 @@ describe("WorkspaceList management page", () => {
   it("never renders definition mutations when can_manage is false", async () => {
     mockPrivateLists([{ ...privateWorkspace, can_manage: false }], []);
     render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     expect(screen.queryByRole("button", { name: /edit my memory/i }))
       .not.toBeInTheDocument();
@@ -220,7 +224,7 @@ describe("WorkspaceList management page", () => {
     });
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     fireEvent.click(screen.getByRole("button", { name: /delete my memory/i }));
 
@@ -236,12 +240,12 @@ describe("WorkspaceList management page", () => {
     mockPrivateLists();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     fireEvent.click(screen.getByRole("button", { name: /delete my memory/i }));
 
     expect(deleteWorkspace).not.toHaveBeenCalled();
-    expect(screen.getByText(privateWorkspace.name)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: privateWorkspace.name })).toBeInTheDocument();
     confirmSpy.mockRestore();
   });
 
@@ -255,12 +259,12 @@ describe("WorkspaceList management page", () => {
       }),
     );
     render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     fireEvent.click(screen.getByRole("button", { name: /delete my memory/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/active Agent/i);
-    expect(screen.getByText(privateWorkspace.name)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: privateWorkspace.name })).toBeInTheDocument();
     expect(screen.queryByText(/internal dependency detail/i)).not.toBeInTheDocument();
     confirmSpy.mockRestore();
   });
@@ -284,7 +288,8 @@ describe("WorkspaceList management page", () => {
     const view = render(<WorkspaceList scope="private" />);
 
     view.rerender(<WorkspaceList scope="global" />);
-    expect(await screen.findByText(globalWorkspace.name)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: globalWorkspace.name }))
+      .toBeInTheDocument();
     await act(async () => {
       resolveOwned({ workspaces: [privateWorkspace] });
       resolveShared({ workspaces: [] });
@@ -307,8 +312,7 @@ describe("WorkspaceList management page", () => {
       });
     });
     const view = render(<WorkspaceList scope="private" />);
-    await screen.findByText(privateWorkspace.name);
-    expect(screen.getByText(globalWorkspace.name)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: privateWorkspace.name });
 
     view.rerender(<WorkspaceList scope="global" />);
 
@@ -320,7 +324,8 @@ describe("WorkspaceList management page", () => {
       resolveGlobal({ workspaces: [globalWorkspace] });
       await Promise.resolve();
     });
-    expect(await screen.findByText(globalWorkspace.name)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: globalWorkspace.name }))
+      .toBeInTheDocument();
   });
 
   it("renders a recoverable stable load error", async () => {
@@ -340,10 +345,26 @@ describe("WorkspaceList management page", () => {
     vi.mocked(listWorkspaces).mockResolvedValue({ workspaces: [globalWorkspace] });
     render(<WorkspaceList scope="global" />);
 
-    expect(await screen.findByRole("heading", { name: "全局工作区管理" }))
+    expect(await screen.findByRole("heading", { name: "公共工作区管理" }))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /编辑 Shared growth/i }));
     expect(screen.getByText(/之后首次初始化.*不会覆盖.*AGENTS\.md/i))
       .toBeInTheDocument();
+  });
+
+  it("mounts the browser with the selected workspace's own scope, not the page scope", async () => {
+    mockPrivateLists([privateWorkspace], [globalWorkspace]);
+    render(<WorkspaceList scope="private" />);
+    await screen.findByRole("heading", { name: privateWorkspace.name });
+
+    expect(screen.getByTestId("workspace-browser-stub")).toHaveTextContent(
+      `browser:private:${privateWorkspace.id}`,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /public workspace/i }));
+    await screen.findByRole("heading", { name: globalWorkspace.name });
+    expect(screen.getByTestId("workspace-browser-stub")).toHaveTextContent(
+      `browser:global:${globalWorkspace.id}`,
+    );
   });
 });

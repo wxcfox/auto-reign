@@ -1,15 +1,12 @@
 "use client";
 
-import { Loader2, RotateCcw, Send, Square } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { AgentPicker } from "@/components/AgentPicker";
-import { AttachmentPicker } from "@/components/AttachmentPicker";
-import { AutoResizeTextarea } from "@/components/AutoResizeTextarea";
-import { ChatMessage } from "@/components/ChatMessage";
-import { ModelPicker } from "@/components/ModelPicker";
-import { SubtaskContexts } from "@/components/SubtaskContexts";
+import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatTopbar } from "@/components/chat/ChatTopbar";
+import { ChatTranscript } from "@/components/chat/ChatTranscript";
 import { useTaskChat } from "@/components/chat/useTaskChat";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -285,150 +282,112 @@ export function ChatWorkspace({ taskId }: ChatWorkspaceProps = {}) {
   const socketError = chat.errorCode
     ? t(`errors.${chat.errorCode}`, { defaultValue: t("errors.send") })
     : null;
+  const isEmpty = chat.messages.length === 0;
+
+  const composerInner = (
+    <ChatComposer
+      disconnectedNotice={
+        disconnected ? t(chat.reconnecting ? "reconnecting" : "disconnected") : null
+      }
+      inputDisabled={interactionDisabled}
+      inputLabel={t("composer.input_label")}
+      label={t("composer.label")}
+      onChange={setComposerValue}
+      onSubmit={handleSubmit}
+      placeholder={t("composer.placeholder")}
+      toolbar={{
+        agentControl:
+          requestedTaskId !== null ? (
+            <span
+              aria-label={t("agentPicker.current", {
+                name: lockedAgent?.name ?? t("agentPicker.none"),
+              })}
+              className="agent-summary"
+            >
+              {lockedAgent?.name ?? t("agentPicker.none")}
+            </span>
+          ) : (
+            <AgentPicker
+              agents={agents}
+              disabled={interactionDisabled}
+              onClear={() => setSelectedAgentId(null)}
+              onSelect={(agent) => setSelectedAgentId(agent.id)}
+              selectedAgentId={selectedAgentId}
+            />
+          ),
+        attachmentsDisabled: interactionDisabled || contextRecoveryError !== null,
+        canSend,
+        cancelDisabled: chat.cancelling || disconnected,
+        cancelLabel: chat.cancelling ? t("cancelling") : t("cancel_generation"),
+        cancelling: chat.cancelling,
+        contextLoading,
+        draftContexts,
+        label: t("composer.actions"),
+        modelPicker: {
+          agentDefault,
+          disabled: interactionDisabled,
+          labels: {
+            agentDefault: t("modelPicker.agentDefault"),
+            followAgentDefault: t("modelPicker.followAgentDefault"),
+            listbox: t("modelPicker.listbox"),
+            modelUnavailable: t("modelPicker.modelUnavailable"),
+            noProviders: t("modelPicker.noProviders"),
+            selectModel: t("modelPicker.selectModel"),
+          },
+          onOpenChange: setModelMenuOpen,
+          onSelect: (value) => void selectModel(value),
+          open: modelMenuOpen,
+          providers,
+          selected: selectedModelOverride,
+        },
+        onCancel: () => void handleCancel(),
+        onDraftContextsChange: setDraftContexts,
+        onPendingChange: setContextMutationPending,
+        onRetryContexts: () => void recoverDrafts(viewRef.current),
+        recoveryError: contextRecoveryError,
+        sendLabel: t("composer.send"),
+        sending: chat.sending,
+        showCancel:
+          taskRunning && (requestedTaskId !== null || chat.createdTaskId !== null),
+      }}
+      unavailableNotice={agentUnavailable ? t("agent_unavailable") : null}
+      value={composerValue}
+    />
+  );
 
   return (
     <div className="chat-workspace general-chat-workspace">
-      <header className="chat-topbar">
-        <span className="chat-topbar-title">{taskDetail?.name ?? t("title")}</span>
-        <span className="chat-topbar-model">
-          {resolvedModel
+      <ChatTopbar
+        model={
+          resolvedModel
             ? `${resolvedModel.provider} / ${resolvedModel.model}`
-            : t("modelPicker.modelUnavailable")}
-        </span>
-      </header>
+            : t("modelPicker.modelUnavailable")
+        }
+        title={taskDetail?.name ?? t("title")}
+      />
 
-      <div className="chat-transcript" ref={transcriptRef}>
-        {chat.messages.length === 0 ? (
-          <section aria-label={t("empty_label")} className="chat-empty">
-            <h2>{loading ? t("loading") : t("empty_title")}</h2>
-          </section>
-        ) : (
-          <div className="chat-thread">
-            {chat.messages.map((message) => {
-              const failed = message.role === "ASSISTANT" && message.status === "FAILED";
-              return (
-                <ChatMessage
-                  blocks={message.role === "ASSISTANT" && message.blocks.length > 0
-                    ? message.blocks
-                    : undefined}
-                  failed={failed}
-                  failedLabel={failed ? t("failed_response") : undefined}
-                  footer={failed && message.subtaskId !== null ? (
-                    <button
-                      disabled={taskRunning || chat.retryingSubtaskId !== null || disconnected}
-                      onClick={() => void handleRetry(message.subtaskId!)}
-                      type="button"
-                    >
-                      <RotateCcw aria-hidden="true" size={14} />
-                      {chat.retryingSubtaskId === message.subtaskId ? t("retrying") : t("retry")}
-                    </button>
-                  ) : null}
-                  key={message.key}
-                  messageId={message.subtaskId === null ? message.key : String(message.subtaskId)}
-                  meta={message.role === "USER" ? t("you") : t("assistant")}
-                  tone={message.role === "USER" ? "user" : "assistant"}
-                >
-                  {message.role === "USER" ? <p>{message.prompt}</p> : null}
-                  {message.role === "ASSISTANT" && message.blocks.length === 0 &&
-                  (message.status === "PENDING" || message.status === "RUNNING") ? (
-                    <p className="typing-line"><Loader2 aria-hidden="true" size={16} />{t("streaming")}</p>
-                  ) : null}
-                  {message.role === "USER" ? <SubtaskContexts contexts={message.contexts} /> : null}
-                </ChatMessage>
-              );
-            })}
-          </div>
-        )}
-        {localError || socketError ? (
-          <ChatMessage meta={t("error_title")} tone="system">
-            <p className="form-error" role="alert">{localError ?? socketError}</p>
-          </ChatMessage>
-        ) : null}
-      </div>
+      <ChatTranscript
+        composer={composerInner}
+        emptyTitle={loading ? t("loading") : t("empty_title")}
+        error={localError ?? socketError}
+        labels={{
+          assistant: t("assistant"),
+          emptyLabel: t("empty_label"),
+          errorTitle: t("error_title"),
+          failedResponse: t("failed_response"),
+          retry: t("retry"),
+          retrying: t("retrying"),
+          streaming: t("streaming"),
+          you: t("you"),
+        }}
+        messages={chat.messages}
+        onRetry={(subtaskId) => void handleRetry(subtaskId)}
+        retryDisabled={taskRunning || chat.retryingSubtaskId !== null || disconnected}
+        retryingSubtaskId={chat.retryingSubtaskId}
+        transcriptRef={transcriptRef}
+      />
 
-      <div className="chat-composer-wrap">
-        {disconnected ? <p role="status">{t(chat.reconnecting ? "reconnecting" : "disconnected")}</p> : null}
-        {agentUnavailable ? <p role="status">{t("agent_unavailable")}</p> : null}
-        {taskRunning ? (
-          <div className="generation-in-progress" role="status">
-            <span>{t("task_running")}</span>
-            {requestedTaskId !== null ? (
-              <button disabled={chat.cancelling || disconnected} onClick={() => void handleCancel()} type="button">
-                <Square aria-hidden="true" size={14} />
-                {chat.cancelling ? t("cancelling") : t("cancel_generation")}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        <form aria-label={t("composer.label")} className="chat-composer" onSubmit={handleSubmit}>
-          <div className="composer-box">
-            <label className="sr-only" htmlFor="chat-composer">{t("composer.input_label")}</label>
-            <AutoResizeTextarea
-              aria-label={t("composer.input_label")}
-              disabled={interactionDisabled}
-              id="chat-composer"
-              onChange={(event) => setComposerValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void handleSubmit();
-                }
-              }}
-              placeholder={t("composer.placeholder")}
-              value={composerValue}
-            />
-            <div aria-label={t("composer.actions")} className="composer-toolbar composer-toolbar--wrap-safe" role="toolbar">
-              <div className="composer-toolbar__left" data-composer-group="left">
-                <AttachmentPicker
-                  disabled={interactionDisabled || contextRecoveryError !== null}
-                  loading={contextLoading}
-                  onChange={setDraftContexts}
-                  onPendingChange={setContextMutationPending}
-                  onRetry={() => void recoverDrafts(viewRef.current)}
-                  recoveryError={contextRecoveryError}
-                  value={draftContexts}
-                >
-                  {requestedTaskId !== null ? (
-                    <span aria-label={t("agentPicker.current", { name: lockedAgent?.name ?? t("agentPicker.none") })} className="agent-summary">
-                      {lockedAgent?.name ?? t("agentPicker.none")}
-                    </span>
-                  ) : (
-                    <AgentPicker
-                      agents={agents}
-                      disabled={interactionDisabled}
-                      onClear={() => setSelectedAgentId(null)}
-                      onSelect={(agent) => setSelectedAgentId(agent.id)}
-                      selectedAgentId={selectedAgentId}
-                    />
-                  )}
-                </AttachmentPicker>
-              </div>
-              <div className="composer-toolbar__right" data-composer-group="right">
-                <ModelPicker
-                  agentDefault={agentDefault}
-                  disabled={interactionDisabled}
-                  labels={{
-                    agentDefault: t("modelPicker.agentDefault"),
-                    followAgentDefault: t("modelPicker.followAgentDefault"),
-                    listbox: t("modelPicker.listbox"),
-                    modelUnavailable: t("modelPicker.modelUnavailable"),
-                    noProviders: t("modelPicker.noProviders"),
-                    selectModel: t("modelPicker.selectModel"),
-                  }}
-                  onOpenChange={setModelMenuOpen}
-                  onSelect={(value) => void selectModel(value)}
-                  open={modelMenuOpen}
-                  providers={providers}
-                  selected={selectedModelOverride}
-                />
-                <button aria-label={t("composer.send")} className="send-button" disabled={!canSend} type="submit">
-                  {chat.sending ? <Loader2 aria-hidden="true" size={18} /> : <Send aria-hidden="true" size={18} />}
-                </button>
-              </div>
-            </div>
-          </div>
-        </form>
-      </div>
+      {!isEmpty ? <div className="chat-composer-wrap">{composerInner}</div> : null}
     </div>
   );
 }

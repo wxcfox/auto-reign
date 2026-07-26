@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +10,7 @@ import {
   listKnowledgeDocuments,
   readKnowledgeDocumentContent,
   reindexKnowledgeDocument,
+  renameKnowledgeDocument,
 } from "@/lib/api";
 import type { KnowledgeDocument } from "@/lib/types";
 
@@ -19,6 +20,7 @@ vi.mock("@/lib/api", () => ({
   listKnowledgeDocuments: vi.fn(),
   readKnowledgeDocumentContent: vi.fn(),
   reindexKnowledgeDocument: vi.fn(),
+  renameKnowledgeDocument: vi.fn(),
 }));
 
 const documentFixture: KnowledgeDocument = {
@@ -71,6 +73,10 @@ describe("KnowledgeDocumentTable", () => {
       indexed_at: null,
     });
     vi.mocked(deleteKnowledgeDocument).mockResolvedValue(null);
+    vi.mocked(renameKnowledgeDocument).mockResolvedValue({
+      ...documentFixture,
+      name: "renamed-guide.md",
+    });
   });
 
   it("shows failed indexing and offers explicit reindex", async () => {
@@ -202,6 +208,66 @@ describe("KnowledgeDocumentTable", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /close preview/i }));
     expect(screen.queryByText("# Parsed guide")).not.toBeInTheDocument();
+  });
+
+  it("renames a document through the rename dialog and shows the updated name", async () => {
+    render(<KnowledgeDocumentTable collectionId="collection-1" canManage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /rename guide.md/i }));
+    const dialog = screen.getByRole("dialog", { name: /rename document/i });
+    const nameInput = within(dialog).getByLabelText(/file name/i);
+    expect(nameInput).toHaveValue("guide.md");
+    fireEvent.change(nameInput, { target: { value: "renamed-guide.md" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(renameKnowledgeDocument).toHaveBeenCalledWith(
+        "collection-1",
+        "doc-1",
+        "renamed-guide.md",
+      ),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByText("renamed-guide.md")).toBeInTheDocument();
+  });
+
+  it("reports a rename error and keeps the dialog open for retry", async () => {
+    vi.mocked(renameKnowledgeDocument).mockRejectedValue(new Error("network down"));
+    render(<KnowledgeDocumentTable collectionId="collection-1" canManage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /rename guide.md/i }));
+    const dialog = screen.getByRole("dialog", { name: /rename document/i });
+    fireEvent.change(within(dialog).getByLabelText(/file name/i), {
+      target: { value: "renamed-guide.md" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be renamed/i);
+    expect(screen.getByRole("dialog", { name: /rename document/i })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /cancel/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("traps Tab focus inside the rename dialog and restores focus to the trigger on close", async () => {
+    render(<KnowledgeDocumentTable collectionId="collection-1" canManage />);
+
+    const trigger = await screen.findByRole("button", { name: /rename guide.md/i });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: /rename document/i });
+    const nameInput = within(dialog).getByLabelText(/file name/i);
+    const saveButton = within(dialog).getByRole("button", { name: /^save$/i });
+
+    saveButton.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(nameInput);
+
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(saveButton);
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("downloads the original source with the document filename", async () => {

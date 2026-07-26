@@ -5,7 +5,7 @@
     "createTitle": "创建工作区",
     "createDescription": "初始 AGENTS.md 模板只在当前账号首次打开该工作区时使用。",
     "listTitle": "可用工作区",
-    "listDescription": "全局和私有定义打开的都是当前账号自己隔离的 Agent Home 文件。",
+    "listDescription": "公共和私有定义打开的都是当前账号自己隔离的 Agent Home 文件。",
     "homeTitle": "智能体文件中台",
     "homeDescription": "浏览和编辑该工作区中作为长期权威来源的文件。",
     "back": "返回工作区列表",
@@ -16,24 +16,25 @@
     "summary": "管理自己的 Agent Home 定义，并打开按当前账号严格隔离的文件。",
     "ownedTitle": "我的工作区",
     "ownedSummary": "管理自己的启用和停用定义，文件始终与其他账号隔离。",
-    "sharedTitle": "全局工作区",
-    "sharedSummary": "全局定义为当前账号打开一份独立的 Agent Home 文件实例。"
+    "sharedTitle": "公共工作区",
+    "sharedSummary": "公共定义为当前账号打开一份独立的 Agent Home 文件实例。"
   },
   "global": {
-    "title": "全局工作区管理",
+    "title": "公共工作区管理",
     "summary": "管理所有用户可见的定义；每个用户仍拥有彼此隔离的文件实例。",
-    "listTitle": "全局定义",
+    "listTitle": "公共定义",
     "listSummary": "修改初始模板不会覆盖任何用户已经初始化的 AGENTS.md。"
   },
   "states": {
     "loading": "正在加载工作区…",
     "empty": "暂无工作区。",
+    "noResults": "未找到匹配的工作区。",
     "active": "已启用",
     "inactive": "已停用"
   },
   "managementEditor": {
     "createTitle": "创建工作区",
-    "createGlobalTitle": "创建全局工作区",
+    "createGlobalTitle": "创建公共工作区",
     "editTitle": "编辑 {{name}}"
   },
   "list": {
@@ -43,8 +44,18 @@
     "open": "打开 {{name}}"
   },
   "scope": {
-    "global": "全局共享",
+    "global": "公共可见",
     "private": "仅自己可见"
+  },
+  "sidebar": {
+    "searchLabel": "搜索工作区",
+    "searchPlaceholder": "搜索工作区…",
+    "personalTab": "个人工作区",
+    "globalTab": "公共工作区",
+    "openLabel": "打开 {{name}}",
+    "mainEmpty": "请选择或创建一个工作区查看文件。",
+    "collapse": "收起",
+    "expand": "展开"
   },
   "form": {
     "name": "名称",
@@ -66,7 +77,13 @@
     "delete": "删除 {{name}}",
     "deleteConfirm": "确定删除 {{name}} 吗？此操作无法撤销。",
     "deleteError": "文件删除失败。",
-    "agentsMdProtected": "根 AGENTS.md 负责管理 Agent Home，不能删除。"
+    "agentsMdProtected": "根 AGENTS.md 负责管理 Agent Home，不能删除。",
+    "name": "名称",
+    "type": "类型",
+    "actions": "操作",
+    "typeFolder": "文件夹",
+    "typeFile": "文件",
+    "closeFile": "关闭文件"
   },
   "editor": {
     "loading": "正在加载文件…",
@@ -82,7 +99,7 @@
     "openFiles": "打开我的文件",
     "openFilesLabel": "打开 {{name}} 的文件",
     "create": "创建工作区",
-    "createGlobal": "创建全局工作区",
+    "createGlobal": "创建公共工作区",
     "edit": "编辑",
     "editLabel": "编辑 {{name}}",
     "save": "保存",

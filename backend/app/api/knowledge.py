@@ -25,6 +25,7 @@ from app.db.session import session_scope
 from app.schemas.knowledge import (
     KnowledgeDocumentContentResponse,
     KnowledgeDocumentListResponse,
+    KnowledgeDocumentRenameRequest,
     KnowledgeDocumentResponse,
 )
 from app.schemas.resources import ResourceId
@@ -226,6 +227,25 @@ def get_document(
         document_id=document_id,
     )
     return KnowledgeDocumentResponse.model_validate(document)
+
+
+@router.patch("/{document_id}", response_model=KnowledgeDocumentResponse)
+def rename_document(
+    collection_id: ResourceId,
+    document_id: ResourceId,
+    payload: KnowledgeDocumentRenameRequest,
+    session: SessionDep,
+    current_user: models.User = Depends(get_current_user),
+    service: KnowledgeDocumentService = Depends(_service),
+) -> KnowledgeDocumentResponse:
+    document = service.require_in_collection(document_id, collection_id, session)
+    updated = service.rename(
+        session,
+        actor=current_user,
+        document_id=document.id,
+        name=payload.name,
+    )
+    return KnowledgeDocumentResponse.model_validate(updated)
 
 
 @router.get(

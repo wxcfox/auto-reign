@@ -1,14 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
+import { ResourceDetailHeader } from "@/components/resource/ResourceDetailHeader";
+import { ResourceSidebar } from "@/components/resource/ResourceSidebar";
+import { ResourceSidebarLayout } from "@/components/resource/ResourceSidebarLayout";
+import { useResourceSidebarSelection } from "@/components/resource/useResourceSidebarSelection";
+import { WorkspaceBrowser } from "@/components/WorkspaceBrowser";
 import { WorkspaceForm } from "@/components/WorkspaceForm";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -24,6 +29,7 @@ export type WorkspaceListProps = {
 };
 
 type EditingWorkspace = Workspace | "new" | null;
+type WorkspaceRow = { workspace: Workspace; manageable: boolean };
 
 function dedupeWorkspaces(...groups: Workspace[][]): Workspace[] {
   const result = new Map<string, Workspace>();
@@ -255,6 +261,28 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
     }
   }
 
+  const rows: WorkspaceRow[] = useMemo(
+    () => [
+      ...ownedWorkspaces.map((workspace) => ({ workspace, manageable: true })),
+      ...sharedWorkspaces.map((workspace) => ({ workspace, manageable: false })),
+    ],
+    [ownedWorkspaces, sharedWorkspaces],
+  );
+  const items = useMemo(
+    () =>
+      rows.map((row) => ({
+        id: row.workspace.id,
+        name: row.workspace.name,
+        scope: row.workspace.scope,
+        isActive: row.workspace.is_active,
+        manageable: row.manageable,
+      })),
+    [rows],
+  );
+  const selection = useResourceSidebarSelection(items, scope);
+  const selectedRow =
+    rows.find((row) => row.workspace.id === selection.selectedItem?.id) ?? null;
+
   if (
     loadState === "loading" ||
     (loadState === "ready" && loadedScope !== scope)
@@ -282,8 +310,6 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
   const controlsDisabled =
     pendingWorkspaceId !== null || formBusy || editing !== null;
   const pageTitle = scope === "global" ? t("global.title") : t("personal.title");
-  const pageSummary =
-    scope === "global" ? t("global.summary") : t("personal.summary");
   const editorTitle =
     editing === "new"
       ? scope === "global"
@@ -293,164 +319,119 @@ export function WorkspaceList({ scope }: WorkspaceListProps) {
         ? ""
         : t("managementEditor.editTitle", { name: editing.name });
 
-  function renderRows(workspaces: Workspace[], manageable: boolean) {
-    if (workspaces.length === 0) {
-      return <p className="empty-state">{t("states.empty")}</p>;
-    }
-    return (
-      <ul className="management-list">
-        {workspaces.map((workspace) => {
-          const canManage = manageable && canManageDefinition(workspace);
-          const rowPending = pendingWorkspaceId === workspace.id;
-          return (
-            <li key={workspace.id}>
-              <div className="management-list__summary">
-                <strong>{workspace.name}</strong>
-                <span>
-                  {workspace.is_active ? t("states.active") : t("states.inactive")}
-                </span>
-              </div>
-              <div className="management-list__actions">
-                {workspace.is_active ? (
-                  controlsDisabled ? (
-                    <button
-                      aria-label={t("actions.openFilesLabel", { name: workspace.name })}
-                      className="button"
-                      disabled
-                      type="button"
-                    >
-                      {t("actions.openFiles")}
-                    </button>
-                  ) : (
-                    <Link
-                      aria-label={t("actions.openFilesLabel", { name: workspace.name })}
-                      className="button"
-                      href={`/workspaces/${encodeURIComponent(workspace.id)}`}
-                    >
-                      {t("actions.openFiles")}
-                    </Link>
-                  )
-                ) : null}
-                {canManage ? (
-                  <>
-                    <button
-                      aria-label={t("actions.editLabel", { name: workspace.name })}
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => openEditor(workspace)}
-                      type="button"
-                    >
-                      {t("actions.edit")}
-                    </button>
-                    <button
-                      aria-label={
-                        workspace.is_active
-                          ? t("actions.disableLabel", { name: workspace.name })
-                          : t("actions.enableLabel", { name: workspace.name })
-                      }
-                      className="button"
-                      disabled={controlsDisabled}
-                      onClick={() => void setActive(workspace)}
-                      type="button"
-                    >
-                      {rowPending
-                        ? t("actions.working")
-                        : workspace.is_active
-                          ? t("actions.disable")
-                          : t("actions.enable")}
-                    </button>
-                    <button
-                      aria-label={t("actions.deleteLabel", { name: workspace.name })}
-                      className="button button-danger"
-                      disabled={controlsDisabled}
-                      onClick={() => void remove(workspace)}
-                      type="button"
-                    >
-                      {t("actions.delete")}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  }
+  const selectedCanManage = selectedRow
+    ? selectedRow.manageable && canManageDefinition(selectedRow.workspace)
+    : false;
+  const selectedRowPending =
+    selectedRow !== null && pendingWorkspaceId === selectedRow.workspace.id;
+  const tabLabel =
+    selection.tab === "personal" ? t("sidebar.personalTab") : t("sidebar.globalTab");
 
   return (
-    <section className="management-page" aria-labelledby={titleId} data-scope={scope}>
-      <div className="management-content">
-        <header className="management-header">
-          <div>
-            <h1 id={titleId}>{pageTitle}</h1>
-            <p>{pageSummary}</p>
+    <ResourceSidebarLayout
+      scope={scope}
+      sidebar={
+        <ResourceSidebar
+          createDisabled={controlsDisabled}
+          labels={{
+            activeBadge: t("states.active"),
+            collapse: t("sidebar.collapse"),
+            create: scope === "global" ? t("actions.createGlobal") : t("actions.create"),
+            empty: t("states.empty"),
+            expand: t("sidebar.expand"),
+            globalTab: t("sidebar.globalTab"),
+            inactiveBadge: t("states.inactive"),
+            noResults: t("states.noResults"),
+            openItem: (name) => t("sidebar.openLabel", { name }),
+            personalTab: t("sidebar.personalTab"),
+            searchLabel: t("sidebar.searchLabel"),
+            searchPlaceholder: t("sidebar.searchPlaceholder"),
+          }}
+          onCreate={() => openEditor("new")}
+          selection={selection}
+          title={pageTitle}
+          titleId={titleId}
+        />
+      }
+      titleId={titleId}
+    >
+      {editing !== null ? (
+        <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
+          <div className="section-heading">
+            <h2 id={editorTitleId}>{editorTitle}</h2>
           </div>
-          <button
-            className="button button-primary"
-            disabled={controlsDisabled}
-            onClick={() => openEditor("new")}
-            type="button"
-          >
-            {scope === "global"
-              ? t("actions.createGlobal")
-              : t("actions.create")}
-          </button>
-        </header>
+          <WorkspaceForm
+            onCancel={closeEditor}
+            onSaved={handleSaved}
+            onSavingChange={setFormBusy}
+            scope={scope}
+            workspace={editing === "new" ? null : editing}
+          />
+        </section>
+      ) : null}
 
-        {editing !== null ? (
-          <section className="management-editor tool-panel" aria-labelledby={editorTitleId}>
-            <div className="section-heading">
-              <h2 id={editorTitleId}>{editorTitle}</h2>
-            </div>
-            <WorkspaceForm
-              onCancel={closeEditor}
-              onSaved={handleSaved}
-              onSavingChange={setFormBusy}
-              scope={scope}
-              workspace={editing === "new" ? null : editing}
-            />
-          </section>
-        ) : null}
+      {pageErrorKey ? (
+        <p className="form-error" role="alert">
+          {t(pageErrorKey)}
+        </p>
+      ) : null}
 
-        {pageErrorKey ? (
-          <p className="form-error" role="alert">
-            {t(pageErrorKey)}
-          </p>
-        ) : null}
+      {selectedRow ? (
+        <>
+          <ResourceDetailHeader
+            actions={
+              selectedCanManage ? (
+                <>
+                  <button
+                    aria-label={
+                      selectedRow.workspace.is_active
+                        ? t("actions.disableLabel", { name: selectedRow.workspace.name })
+                        : t("actions.enableLabel", { name: selectedRow.workspace.name })
+                    }
+                    className="button"
+                    disabled={controlsDisabled}
+                    onClick={() => void setActive(selectedRow.workspace)}
+                    type="button"
+                  >
+                    {selectedRowPending
+                      ? t("actions.working")
+                      : selectedRow.workspace.is_active
+                        ? t("actions.disable")
+                        : t("actions.enable")}
+                  </button>
+                  <button
+                    aria-label={t("actions.deleteLabel", { name: selectedRow.workspace.name })}
+                    className="button button-danger"
+                    disabled={controlsDisabled}
+                    onClick={() => void remove(selectedRow.workspace)}
+                    type="button"
+                  >
+                    {t("actions.delete")}
+                  </button>
+                </>
+              ) : null
+            }
+            breadcrumb={tabLabel}
+            editDisabled={controlsDisabled}
+            editLabel={t("actions.editLabel", { name: selectedRow.workspace.name })}
+            editText={t("actions.edit")}
+            name={selectedRow.workspace.name}
+            onEdit={
+              selectedCanManage ? () => openEditor(selectedRow.workspace) : undefined
+            }
+            statusBadge={
+              selectedRow.workspace.is_active ? t("states.active") : t("states.inactive")
+            }
+          />
 
-        <div className="management-sections">
-          <section className="management-section" aria-labelledby={`${titleId}-owned`}>
-            <div className="section-heading">
-              <div>
-                <h2 id={`${titleId}-owned`}>
-                  {scope === "global"
-                    ? t("global.listTitle")
-                    : t("personal.ownedTitle")}
-                </h2>
-                <p className="page-summary">
-                  {scope === "global"
-                    ? t("global.listSummary")
-                    : t("personal.ownedSummary")}
-                </p>
-              </div>
-            </div>
-            {renderRows(ownedWorkspaces, true)}
-          </section>
-
-          {scope === "private" ? (
-            <section className="management-section" aria-labelledby={`${titleId}-shared`}>
-              <div className="section-heading">
-                <div>
-                  <h2 id={`${titleId}-shared`}>{t("personal.sharedTitle")}</h2>
-                  <p className="page-summary">{t("personal.sharedSummary")}</p>
-                </div>
-              </div>
-              {renderRows(sharedWorkspaces, false)}
-            </section>
-          ) : null}
-        </div>
-      </div>
-    </section>
+          <WorkspaceBrowser
+            scope={selectedRow.workspace.scope}
+            workspaceId={selectedRow.workspace.id}
+          />
+        </>
+      ) : (
+        <p className="empty-state">{t("sidebar.mainEmpty")}</p>
+      )}
+    </ResourceSidebarLayout>
   );
 }

@@ -1,7 +1,15 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.core.limits import MAX_RESOURCE_NAME_LENGTH
+
+
+class KnowledgeDocumentRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=MAX_RESOURCE_NAME_LENGTH)
 
 
 class KnowledgeDocumentResponse(BaseModel):

@@ -128,6 +128,8 @@ system 层级为：
 
 Agent Home 物理身份是 `(workspace_id, effective_user_id)`，对象前缀为 `users/{effective_user_id}/workspaces/{workspace_id}/`。普通聊天不会自动写 Home；只有用户明确要求持久保存时模型才使用文件工具。已有文件写入必须携带最近读取的 ETag，根 `AGENTS.md` 可编辑但不可删除。
 
+`/workspaces` 管理页面按个人/公共定义分组浏览，选中一个 Workspace 后以表格形式展示其目录内容；文件内容只在显式打开某一项后才通过 `readWorkspaceFile` 单独请求，不随目录列表预加载，与 Agent Home 精确 list/read 工具的按需访问语义一致。
+
 三类来源严格分离：
 
 | 来源 | 持久化 | Runtime 访问 |

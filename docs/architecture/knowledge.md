@@ -13,7 +13,7 @@
 - `/knowledge` 与 `/admin/knowledge` 管理页面；
 - Agent `knowledge_scopes` 的整库或 Document 子集绑定；
 - `knowledge_documents` 状态、对象引用、内容 hash 和 `index_generation`；
-- 显式 Document 上传、预览、下载、重新索引和删除；
+- 显式 Document 上传、预览、下载、重命名、重新索引和删除；
 - 只从持久状态领取工作的进程内索引 Worker；
 - generation 专属解析对象和 Retriever chunk；
 - 绑定 Knowledge 后才向主聊天 LLM 暴露的 `search_knowledge(query)`。
@@ -84,6 +84,8 @@ Embedding 请求由 provider-compatible wrapper 逐个发送 chunk，每个 HTTP
 显式重新索引遵循 generation 去重：文档处于 `queued` 或未超时的 `processing` 时，重复请求返回当前任务，不创建新的 generation；processing 超过 `KNOWLEDGE_WORKER_PROCESSING_TIMEOUT_SECONDS` 后才允许新的 generation 接管。修改 chunk size 或 overlap 会为 active Document 创建新 generation 并排队重建；检索模式、Top K、阈值和 hybrid 权重只影响查询，不触发向量重建。Retriever 创建后不可修改。新的 generation 发布前，旧任务不能写入或发布其解析对象和 Retriever 投影。
 
 `index_generation` 同时隔离 MySQL 状态、parsed object 和 Retriever 记录，不只是一个展示字段。
+
+重命名只更新 MySQL 中 Document 的显示 `name`，属于 owner 校验后的纯元数据写入：不改变 `index_generation`、不触碰 ObjectStore 原文/解析对象，也不重建 Retriever 投影。
 
 当前 splitter 按 Collection 配置的字符 `chunk_size` 与精确 `chunk_overlap` 产生有序、覆盖原文的 source range。未到文末时依次优先在段落、换行、中文句号、英文句号或空格处寻找不早于半个 chunk 的边界；找不到安全边界才在最大长度硬切。每个 chunk 保存 `chunk_index`、`source_start` 和 `source_end`，正文保持原文，不做 LLM 摘要或改写。
 

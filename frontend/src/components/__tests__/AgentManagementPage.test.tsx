@@ -236,7 +236,7 @@ describe("AgentManagementPage", () => {
     });
     render(<AgentManagementPage scope="global" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create global Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create public Agent" }));
     fillMinimalAgent("Shared helper");
     fireEvent.click(screen.getByRole("button", { name: "Save agent" }));
 
@@ -601,7 +601,7 @@ describe("AgentManagementPage", () => {
     view.rerender(<AgentManagementPage scope="global" />);
     expect(await screen.findByText(globalAgent.name)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Create global Agent" }),
+      screen.getByRole("button", { name: "Create public Agent" }),
     ).toBeEnabled();
 
     await act(async () => {

@@ -490,6 +490,17 @@ export async function downloadKnowledgeDocument(
   return response.blob();
 }
 
+export function renameKnowledgeDocument(
+  collectionId: string,
+  documentId: string,
+  name: string,
+): Promise<KnowledgeDocument> {
+  return apiRequest<KnowledgeDocument>(knowledgeDocumentPath(collectionId, documentId), {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function reindexKnowledgeDocument(
   collectionId: string,
   documentId: string,
