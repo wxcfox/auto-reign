@@ -82,10 +82,13 @@ sudo install -d -m 0750 -o deploy -g deploy \
 sudo chown 10001:deploy /srv/auto-reign/data
 sudo chmod 0770 /srv/auto-reign/data
 sudo chown -R 1000:1000 /srv/auto-reign/qdrant
-sudo chown -R 1000:1000 /srv/auto-reign/elasticsearch
+sudo chown -R 1000:0 /srv/auto-reign/elasticsearch
+sudo chmod 0770 /srv/auto-reign/elasticsearch
 ```
 
 `/srv/auto-reign/data` 只是容器本地 runtime 目录。聊天附件二进制、图片 Base64 和解析文本保存在 MySQL；Agent Home 与 Knowledge 文件保存在远端 S3-compatible ObjectStore。`/srv/auto-reign/redis` 即使持久挂载也只承载可丢失的实时状态。
+
+以上使用默认数据目录；如修改 `AUTO_REIGN_ELASTICSEARCH_DIR`，同步替换路径。默认 Elasticsearch 镜像使用 UID `1000`、GID `0`；自定义镜像需先确认实际 UID/GID。
 
 服务器只需要仓库中的版本对应 `deploy/`、迁移和运维文件：
 
@@ -144,7 +147,7 @@ S3_NAMESPACE_APP_EXCLUSIVE=true
 S3_ADDRESSING_STYLE=virtual
 ```
 
-同时填写 MySQL、Elasticsearch 和实际使用的模型或 Embedding Provider 配置。Elasticsearch 与 Qdrant 的地址、认证和索引配置只由部署者维护，不通过 Collection API 暴露。Secret 只保存在权限为 `0600` 的生产 env 或外部 Secret 管理系统中，不能提交仓库、写入前端或输出日志。
+同时填写 MySQL、Elasticsearch、Qdrant 和实际使用的模型或 Embedding Provider 配置。`QDRANT_API_KEY` 必须替换为长随机值；Compose 会将同一个值配置给 Qdrant 和 backend。Elasticsearch 与 Qdrant 的地址、认证和索引配置只由部署者维护，不通过 Collection API 暴露。Secret 只保存在权限为 `0600` 的生产 env 或外部 Secret 管理系统中，不能提交仓库、写入前端或输出日志。
 
 应用运行时的对象大小、上下文预算、Knowledge 检索、Worker、模型超时和工具轮次上限也应显式填写；这些配置由 `Settings` 统一读取，完整示例见 `deploy/auto-reign.env.example`。Compose 固定把 backend 的 `REDIS_URL` 指向内部 `redis:6379/0`，并注入容器路径、数据库 URL、Retriever URL 和发布版本等拓扑值。
 

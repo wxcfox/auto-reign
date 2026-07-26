@@ -46,6 +46,25 @@ docker pull <ACR_VPC_ENDPOINT>/<ACR_NAMESPACE>/auto-reign-backend:0.1.1
 
 再检查 `/etc/auto-reign/auto-reign.env` 中的 `ACR_REGISTRY`、`ACR_NAMESPACE` 和 `AUTO_REIGN_VERSION` 是否与目标 Release 一致。GitHub 推送账号和 ECS 拉取账号不应复用。
 
+## Elasticsearch 启动失败
+
+如果日志包含 `failed to obtain node locks` 或 `AccessDeniedException`，修复数据目录权限并重建容器：
+
+以下使用 `AUTO_REIGN_ELASTICSEARCH_DIR` 的默认值；如已修改配置，替换为实际目录。
+
+```sh
+docker compose --env-file "$AUTO_REIGN_ENV_FILE" \
+  --file deploy/compose.prod.yml stop elasticsearch
+sudo chown -R 1000:0 /srv/auto-reign/elasticsearch
+sudo chmod 0770 /srv/auto-reign/elasticsearch
+docker compose --env-file "$AUTO_REIGN_ENV_FILE" \
+  --file deploy/compose.prod.yml up -d --force-recreate elasticsearch
+docker compose --env-file "$AUTO_REIGN_ENV_FILE" \
+  --file deploy/compose.prod.yml ps
+```
+
+确认 Elasticsearch 为 `healthy` 后，再重新执行 `deploy.sh`。不要删除 Elasticsearch 数据目录。
+
 ## 部署后健康检查失败
 
 ```sh
