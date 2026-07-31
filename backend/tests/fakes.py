@@ -363,3 +363,64 @@ class FakeKnowledgeVectorStore:
             content_hash=metadata["content_hash"],  # type: ignore[arg-type]
         )
         return cls._key(scope)
+
+
+class RecordingSession:
+    """A SQLAlchemy-shaped session that records its lifecycle calls."""
+
+    def __init__(self) -> None:
+        self.committed = False
+        self.rolled_back = False
+        self.closed = False
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class RecordingSessionFactory:
+    def __init__(self) -> None:
+        self.sessions: list[RecordingSession] = []
+
+    def __call__(self) -> RecordingSession:
+        session = RecordingSession()
+        self.sessions.append(session)
+        return session
+
+
+class RecordingScopeService:
+    """A knowledge scope service that records resolution and can fail."""
+
+    def __init__(self, resolved: list | None = None) -> None:
+        self.resolved = [] if resolved is None else resolved
+        self.calls: list[tuple] = []
+        self.error: Exception | None = None
+
+    def resolve(self, session, *, user_id: int, knowledge_scopes: tuple):
+        self.calls.append((session, user_id, knowledge_scopes))
+        if self.error is not None:
+            raise self.error
+        return self.resolved
+
+
+class RecordingRetrieval:
+    """A knowledge retrieval service that asserts its DB session already closed."""
+
+    def __init__(self, result) -> None:
+        self.result = result
+        self.calls: list[dict[str, object]] = []
+        self.scope_service: RecordingScopeService | None = None
+        self.error: Exception | None = None
+
+    def search(self, **kwargs):
+        assert self.scope_service is not None and self.scope_service.calls
+        assert self.scope_service.calls[-1][0].closed is True
+        self.calls.append(dict(kwargs))
+        if self.error is not None:
+            raise self.error
+        return self.result

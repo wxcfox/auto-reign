@@ -4,6 +4,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from app.services.agent_home_service import AgentHomeService, WorkspaceUnavailable
+from app.services.capability_source_prompt import render_capability_sources
 from app.services.context_assembler import ContextAssembler, ContextSelection
 from app.services.model_service import ModelService
 from app.services.platform_prompt_service import PlatformPromptService
@@ -21,7 +22,13 @@ from app.services.token_counter import RuntimeTokenCounter
 from app.services.tool_registry import ToolRegistry, ToolRegistrySnapshot
 
 
-_RESERVED_PROMPT_MODULES = frozenset(PlatformPromptService.BASE_MODULES)
+# The harness owns the tool orchestration contract. Capability providers may
+# only contribute source-specific modules on top of it.
+TOOL_USE_PROMPT_MODULE = "tool_use"
+
+_RESERVED_PROMPT_MODULES = frozenset(
+    (*PlatformPromptService.BASE_MODULES, TOOL_USE_PROMPT_MODULE)
+)
 
 
 @dataclass(frozen=True)
@@ -149,9 +156,25 @@ class AgentRuntime:
         definitions: tuple[ToolDefinition, ...],
         agents_md: str | None,
     ) -> ContextSelection:
-        base_platform_prompt = self.prompt_service.build_platform_prompt(
-            extra_modules=provider_modules,
+        # The tool orchestration contract precedes every capability module so a
+        # source-specific prompt only refines rules the harness already stated.
+        modules = (
+            (TOOL_USE_PROMPT_MODULE, *provider_modules)
+            if definitions
+            else provider_modules
         )
+        base_platform_prompt = self.prompt_service.build_platform_prompt(
+            extra_modules=modules,
+        )
+        # The concrete bound sources follow the capability rules that describe
+        # how to use them, and stay inside the platform layer so no Agent prompt
+        # has to restate them. Counted in the same budget as every other rule.
+        # Gated on the same condition as the orchestration contract: a source
+        # the model has no tool to reach must not be advertised at all.
+        if definitions:
+            sources = render_capability_sources(context.agent_config)
+            if sources:
+                base_platform_prompt = f"{base_platform_prompt}\n\n{sources}"
         return self.context_assembler.select_turns(
             history=turns,
             base_system_prompt=base_platform_prompt,

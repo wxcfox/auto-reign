@@ -139,8 +139,10 @@ def _resolved_agent_config(
         knowledge_scopes = (
             ResolvedKnowledgeScope(
                 collection_id="collection-1",
+                name="成长助手资料库",
                 owner_user_id=7,
                 document_ids=None,
+                document_names=None,
                 config_json=collection_config,
                 updated_at=datetime.now(UTC),
             ),
@@ -640,11 +642,11 @@ def test_runtime_final_budget_guard_rejects_oversized_knowledge_result() -> None
     runtime = make_runtime(
         model=model,
         providers=(OversizedKnowledgeProvider(),),
-        token_budget=6_000,
+        token_budget=8_000,
     )
     prepared = runtime.prepare_turn(
         runtime_turn(
-            token_budget=6_000,
+            token_budget=8_000,
             with_knowledge=True,
             turns=(_turn("current", "search policy"),),
         )

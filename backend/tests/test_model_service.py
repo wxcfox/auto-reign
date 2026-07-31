@@ -9,7 +9,10 @@ from fastapi import HTTPException
 from openai import APIStatusError
 
 from app.core.config import Settings
-from app.services.model_service import ModelService
+from app.services.model_service import (
+    MAX_PROVIDER_TOOL_CALLS_PER_TURN,
+    ModelService,
+)
 from app.services.runtime_types import (
     ProviderCallMetrics,
     ToolCall,
@@ -428,32 +431,244 @@ def test_stream_turn_sends_tool_schemas_and_assembles_one_fragmented_tool_call(
     ]
 
 
+def test_stream_turn_keeps_a_text_preamble_before_tool_calls(tmp_path) -> None:
+    settings = _settings(tmp_path, openai_api_key="provider-secret")
+    completions = RecordingCompletions(
+        [
+            _chunk("Let me check that."),
+            _tool_chunk(
+                index=0,
+                call_id="call-1",
+                name="read_file",
+                arguments='{"path":"notes.md"}',
+            ),
+        ]
+    )
+    service = ModelService(
+        settings=settings,
+        client_factory=lambda **_kwargs: _client(completions),
+    )
+
+    events = list(
+        service.stream_turn(
+            [{"role": "user", "content": "hello"}],
+            provider="openai",
+            model="gpt-4.1-mini",
+            call_index=1,
+            observer=_ignore_provider_metrics,
+        )
+    )
+
+    assert events == [
+        "Let me check that.",
+        ToolCall(
+            id="call-1",
+            name="read_file",
+            arguments={"path": "notes.md"},
+        ),
+    ]
+
+
+def test_stream_turn_rejects_text_after_a_tool_call_started(tmp_path) -> None:
+    settings = _settings(tmp_path, openai_api_key="provider-secret")
+    stream = [
+        _tool_chunk(
+            index=0,
+            call_id="call-1",
+            name="read_file",
+            arguments='{"path":"notes.md"}',
+        ),
+        _chunk("partial text"),
+    ]
+    service = ModelService(
+        settings=settings,
+        client_factory=lambda **_kwargs: _client(RecordingCompletions(stream)),
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        list(
+            service.stream_turn(
+                [{"role": "user", "content": "hello"}],
+                provider="openai",
+                model="gpt-4.1-mini",
+                call_index=1,
+                observer=_ignore_provider_metrics,
+            )
+        )
+
+    assert captured.value.status_code == 502
+    assert captured.value.detail["code"] == "provider_response_invalid"
+
+
+def test_stream_turn_assembles_parallel_tool_calls_by_stream_index(
+    tmp_path,
+) -> None:
+    settings = _settings(tmp_path, openai_api_key="provider-secret")
+    completions = RecordingCompletions(
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call-1",
+                                    type="function",
+                                    function=SimpleNamespace(
+                                        name="read_file",
+                                        arguments='{"path":',
+                                    ),
+                                ),
+                                SimpleNamespace(
+                                    index=1,
+                                    id="call-2",
+                                    type="function",
+                                    function=SimpleNamespace(
+                                        name="search_knowledge",
+                                        arguments='{"query":',
+                                    ),
+                                ),
+                            ],
+                        )
+                    )
+                ]
+            ),
+            _tool_chunk(index=1, arguments='"exam"}'),
+            _tool_chunk(index=0, arguments='"log.md"}'),
+        ]
+    )
+    service = ModelService(
+        settings=settings,
+        client_factory=lambda **_kwargs: _client(completions),
+    )
+
+    events = list(
+        service.stream_turn(
+            [{"role": "user", "content": "hello"}],
+            provider="openai",
+            model="gpt-4.1-mini",
+            call_index=1,
+            observer=_ignore_provider_metrics,
+        )
+    )
+
+    # Interleaved fragments must be reassembled per index, and emission order
+    # must follow the order the provider first announced each call.
+    assert events == [
+        ToolCall(id="call-1", name="read_file", arguments={"path": "log.md"}),
+        ToolCall(
+            id="call-2",
+            name="search_knowledge",
+            arguments={"query": "exam"},
+        ),
+    ]
+
+
 @pytest.mark.parametrize(
-    "stream",
+    ("stream", "expected_code"),
     [
-        [
-            _chunk("partial text"),
-            _tool_chunk(
-                index=0,
-                call_id="call-1",
-                name="read_file",
-                arguments='{"path":"notes.md"}',
-            ),
-        ],
-        [
-            _tool_chunk(
-                index=0,
-                call_id="call-1",
-                name="read_file",
-                arguments='{"path":"notes.md"}',
-            ),
-            _chunk("partial text"),
-        ],
+        (
+            [
+                _tool_chunk(
+                    index=0,
+                    call_id="call-1",
+                    name="read_file",
+                    arguments="not-json",
+                )
+            ],
+            "provider_tool_call_invalid",
+        ),
+        (
+            [
+                _tool_chunk(
+                    index=0,
+                    call_id="call-1",
+                    name="read_file",
+                    arguments="[]",
+                )
+            ],
+            "provider_tool_call_invalid",
+        ),
+        (
+            [_tool_chunk(index=0, call_id="call-1", name="read_file")],
+            "provider_tool_call_invalid",
+        ),
+        (
+            [
+                _tool_chunk(
+                    index=-1,
+                    call_id="call-1",
+                    name="read_file",
+                    arguments="{}",
+                )
+            ],
+            "provider_tool_call_invalid",
+        ),
+        (
+            [
+                _tool_chunk(
+                    index=0,
+                    call_id="call-1",
+                    name="read_file",
+                    arguments="{}",
+                ),
+                _tool_chunk(
+                    index=1,
+                    call_id="call-1",
+                    name="read_file",
+                    arguments="{}",
+                ),
+            ],
+            "provider_tool_call_invalid",
+        ),
+        (
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=None,
+                                tool_calls={"index": 0},
+                            )
+                        )
+                    ]
+                )
+            ],
+            "provider_tool_call_invalid",
+        ),
+        (
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=None,
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call-1",
+                                        type="custom",
+                                        function=SimpleNamespace(
+                                            name="read_file",
+                                            arguments="{}",
+                                        ),
+                                    )
+                                ],
+                            )
+                        )
+                    ]
+                )
+            ],
+            "provider_tool_call_invalid",
+        ),
     ],
 )
-def test_stream_turn_rejects_mixed_text_and_tool_call_output(
+def test_stream_turn_reports_malformed_tool_calls_with_a_diagnosable_code(
     tmp_path,
     stream: list[object],
+    expected_code: str,
 ) -> None:
     settings = _settings(tmp_path, openai_api_key="provider-secret")
     service = ModelService(
@@ -473,64 +688,89 @@ def test_stream_turn_rejects_mixed_text_and_tool_call_output(
         )
 
     assert captured.value.status_code == 502
-    assert captured.value.detail["code"] == "provider_call_failed"
+    assert captured.value.detail["code"] == expected_code
+    # The code separates a model protocol fault from an unreachable provider.
+    assert captured.value.detail["code"] != "provider_call_failed"
 
 
-def test_stream_turn_rejects_multiple_or_malformed_tool_calls(tmp_path) -> None:
+def test_stream_turn_rejects_more_tool_calls_than_one_turn_allows(
+    tmp_path,
+) -> None:
     settings = _settings(tmp_path, openai_api_key="provider-secret")
-    multiple = SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                delta=SimpleNamespace(
-                    content=None,
-                    tool_calls=[
-                        SimpleNamespace(
-                            index=0,
-                            id="call-1",
-                            type="function",
-                            function=SimpleNamespace(name="one", arguments="{}"),
-                        ),
-                        SimpleNamespace(
-                            index=1,
-                            id="call-2",
-                            type="function",
-                            function=SimpleNamespace(name="two", arguments="{}"),
-                        ),
-                    ],
-                )
-            )
-        ]
+    stream = [
+        _tool_chunk(
+            index=index,
+            call_id=f"call-{index}",
+            name="read_file",
+            arguments="{}",
+        )
+        for index in range(MAX_PROVIDER_TOOL_CALLS_PER_TURN + 1)
+    ]
+    service = ModelService(
+        settings=settings,
+        client_factory=lambda **_kwargs: _client(RecordingCompletions(stream)),
     )
 
-    for stream in (
-        [multiple],
+    with pytest.raises(HTTPException) as captured:
+        list(
+            service.stream_turn(
+                [{"role": "user", "content": "hello"}],
+                provider="openai",
+                model="gpt-4.1-mini",
+                call_index=1,
+                observer=_ignore_provider_metrics,
+            )
+        )
+
+    assert captured.value.detail["code"] == "provider_tool_call_invalid"
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [("auto", None), ("on", True), ("off", False)],
+)
+def test_stream_turn_applies_the_provider_parallel_tool_call_capability(
+    tmp_path,
+    configured: str,
+    expected: bool | None,
+) -> None:
+    settings = _settings(
+        tmp_path,
+        openai_api_key="provider-secret",
+        openai_parallel_tool_calls=configured,
+    )
+    completions = RecordingCompletions(
         [
             _tool_chunk(
                 index=0,
                 call_id="call-1",
                 name="read_file",
-                arguments="not-json",
+                arguments="{}",
             )
-        ],
-    ):
-        service = ModelService(
-            settings=settings,
-            client_factory=lambda **_kwargs: _client(
-                RecordingCompletions(stream)
-            ),
+        ]
+    )
+    definition = ToolDefinition(
+        name="read_file",
+        description="Read one workspace file.",
+        input_schema={"type": "object", "properties": {}},
+    )
+    service = ModelService(
+        settings=settings,
+        client_factory=lambda **_kwargs: _client(completions),
+    )
+
+    list(
+        service.stream_turn(
+            [{"role": "user", "content": "hello"}],
+            provider="openai",
+            model="gpt-4.1-mini",
+            call_index=1,
+            observer=_ignore_provider_metrics,
+            tools=(definition,),
         )
-        with pytest.raises(HTTPException) as captured:
-            list(
-                service.stream_turn(
-                    [{"role": "user", "content": "hello"}],
-                    provider="openai",
-                    model="gpt-4.1-mini",
-                    call_index=1,
-                    observer=_ignore_provider_metrics,
-                )
-            )
-        assert captured.value.status_code == 502
-        assert captured.value.detail["code"] == "provider_call_failed"
+    )
+
+    assert completions.calls[0].get("parallel_tool_calls", None) == expected
 
 
 @pytest.mark.parametrize(
@@ -657,7 +897,7 @@ def test_stream_turn_maps_an_empty_stream_to_provider_failure(tmp_path) -> None:
         )
 
     assert captured.value.status_code == 502
-    assert captured.value.detail["code"] == "provider_call_failed"
+    assert captured.value.detail["code"] == "provider_response_invalid"
 
 
 def test_stream_turn_failure_log_never_contains_input_exception_or_secret(

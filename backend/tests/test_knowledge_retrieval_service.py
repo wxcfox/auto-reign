@@ -479,7 +479,7 @@ def test_rag_rejects_invalid_source_offsets(
             available_tokens=available,
         )
 
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"
 
 
 @pytest.mark.parametrize(
@@ -534,7 +534,7 @@ def test_rag_hit_must_match_the_resolved_five_tuple(
             available_tokens=available,
         )
 
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"
 
 
 def test_rag_rejects_generated_or_stale_content_instead_of_returning_it(
@@ -577,7 +577,7 @@ def test_rag_rejects_generated_or_stale_content_instead_of_returning_it(
         )
 
     assert error.value.status_code == 503
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"
 
 
 @pytest.mark.parametrize(
@@ -635,7 +635,7 @@ def test_rag_rejects_malformed_non_authoritative_hit_fields(
             available_tokens=available,
         )
 
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"
 
 
 @pytest.mark.parametrize(
@@ -687,7 +687,7 @@ def test_corrupt_direct_source_never_falls_back_to_rag(
         )
 
     assert error.value.status_code == 503
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_content_unavailable"
     assert vector_store.search_calls == []
 
 
@@ -746,7 +746,7 @@ def test_noncanonical_parsed_pointer_fails_before_object_io_or_rag(
             available_tokens=10_000,
         )
 
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_content_unavailable"
     assert object_store.get_calls == []
     assert vector_store.search_calls == []
 
@@ -920,7 +920,7 @@ def test_retriever_scores_outside_zero_one_fail_closed(
             available_tokens=300,
         )
 
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"
 
 
 def test_below_threshold_hit_still_must_match_the_authoritative_slice(
@@ -956,7 +956,7 @@ def test_below_threshold_hit_still_must_match_the_authoritative_slice(
             available_tokens=available,
         )
 
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"
 
 
 def test_vector_failure_is_not_reported_as_an_empty_result(token_counter) -> None:
@@ -982,4 +982,4 @@ def test_vector_failure_is_not_reported_as_an_empty_result(token_counter) -> Non
         )
 
     assert error.value.status_code == 503
-    assert error.value.detail["code"] == "knowledge_unavailable"
+    assert error.value.detail["code"] == "knowledge_retriever_unavailable"

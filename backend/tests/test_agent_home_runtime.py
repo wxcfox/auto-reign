@@ -110,6 +110,7 @@ def _resolved_config(*, home: bool) -> ResolvedAgentConfig:
     resolved_home = (
         ResolvedAgentHome(
             workspace_id="workspace-1",
+            name="Home workspace",
             owner_user_id=0,
             initial_agents_md="# Initial root",
             config_json=home_config,

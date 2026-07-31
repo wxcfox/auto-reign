@@ -137,7 +137,23 @@ Agent `knowledge_scopes` 支持多个 Collection：
 
 只有第 3 步属于 RAG。直接原文与 Retriever 路径共享完全相同的权限、Document 状态、来源引用和上下文预算，不能因使用 RAG 扩大范围。
 
-Retriever 不可用，或者候选 metadata、score、generation、hash、范围、parsed object 不合法时，工具 fail-closed 返回稳定的 `knowledge_unavailable`，不能伪装成“没有结果”。直接原文路径发现来源损坏时也不能回退到二手投影掩盖故障。
+ToolResult 用 `status` 区分检索结论：命中返回 `"status":"hit"` 与有界 `sources`，范围内没有匹配返回 `"status":"no_match"` 与空 `sources`。`no_match` 是成功结果，不是错误，模型据此可以改查其他绑定来源。
+
+`mode` 同时向模型说明覆盖范围，两者都是真实检索结果：`direct` 表示本轮 scope 内全部有效文档的完整原文都已返回，可以据此判断资料库里有没有；`rag` 表示只返回按 query 命中的片段，未命中不等于不存在。工具 description 与 `knowledge_base` Prompt 都明确了这一区别，避免模型把 `direct` 误读成"没有检索"或忽略两者的覆盖差异。本轮绑定的 Collection 名称、文档范围和 `retrieval_mode` 由 Runtime 通过 `[CAPABILITY_SOURCES]` 描述，见[平台架构](platform.md)。
+
+系统故障 fail-closed 返回带 `code` 的错误 ToolResult，永远不能伪装成“没有结果”：
+
+| 错误码 | 触发条件 |
+| --- | --- |
+| `knowledge_retriever_unavailable` | Retriever 不可用，或候选 metadata、score、generation、hash、范围不合法 |
+| `knowledge_content_unavailable` | 权威 parsed object 读不到、指针非规范或内容损坏 |
+| `knowledge_scope_unavailable` | scope 解析失败，包括权限、资源引用和 Document 状态不可用 |
+| `knowledge_request_invalid` | 模型提交的参数不合法 |
+| `context_too_large` | 结果超出本轮剩余预算 |
+| `tool_not_found` | 本轮没有绑定 Knowledge |
+| `knowledge_unavailable` | 兜底：未映射的 HTTPException，以及 ObjectStore、VectorStore 或数据库故障 |
+
+直接原文路径发现来源损坏时也不能回退到二手投影掩盖故障。
 
 ### vector、keyword 与 hybrid
 

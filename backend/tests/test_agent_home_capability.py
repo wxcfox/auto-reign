@@ -36,6 +36,7 @@ def _resolved_agent_config(*, with_home: bool) -> ResolvedAgentConfig:
     if with_home:
         home = ResolvedAgentHome(
             workspace_id="workspace-1",
+            name="Home workspace",
             owner_user_id=99,
             initial_agents_md="# Home",
             config_json=frozen,
@@ -135,7 +136,14 @@ def test_tool_schemas_are_generated_from_strict_models(
     }
 
     assert schemas["list_files"]["properties"] == {
-        "directory": {"default": "", "title": "Directory", "type": "string"}
+        "directory": {
+            "default": "",
+            "description": (
+                "Agent Home directory to list. Empty lists the workspace root."
+            ),
+            "title": "Directory",
+            "type": "string",
+        }
     }
     assert schemas["read_file"]["required"] == ["path"]
     assert schemas["create_file"]["required"] == ["path", "content"]

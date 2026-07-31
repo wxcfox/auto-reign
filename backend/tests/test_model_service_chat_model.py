@@ -99,6 +99,64 @@ def test_bind_tools_maps_tool_call_to_langchain_chunk() -> None:
     )
 
 
+def test_parallel_tool_calls_keep_distinct_stream_indexes_and_arguments() -> None:
+    first = ToolCall(id="call-1", name="lookup", arguments={"key": "a"})
+    second = ToolCall(id="call-2", name="lookup", arguments={"key": "b"})
+    service = RecordingModelService((first, second))
+
+    def lookup(key: str) -> str:
+        return key
+
+    tool = StructuredTool.from_function(
+        func=lookup,
+        name="lookup",
+        description="Look up a value.",
+    )
+    bound = _model(service).bind_tools([tool])
+    chunks = list(bound.stream([HumanMessage(content="find both")]))
+
+    indexes = [
+        chunk["index"]
+        for chunk in (
+            raw for chunk in chunks for raw in chunk.tool_call_chunks
+        )
+    ]
+    assert indexes == [0, 1]
+
+    merged = chunks[0]
+    for chunk in chunks[1:]:
+        merged = merged + chunk
+    # Two calls must survive the merge with their own arguments rather than
+    # collapsing into one call with concatenated argument text.
+    assert merged.tool_calls == [
+        {"name": "lookup", "args": {"key": "a"}, "id": "call-1", "type": "tool_call"},
+        {"name": "lookup", "args": {"key": "b"}, "id": "call-2", "type": "tool_call"},
+    ]
+    assert merged.invalid_tool_calls == []
+
+
+def test_an_assistant_preamble_survives_conversion_alongside_tool_calls() -> None:
+    messages = [
+        HumanMessage(content="go"),
+        AIMessage(
+            content="Let me check that.",
+            tool_calls=[
+                {
+                    "id": "call-1",
+                    "name": "lookup",
+                    "args": {"key": "value"},
+                    "type": "tool_call",
+                }
+            ],
+        ),
+    ]
+
+    converted = to_model_messages(messages)
+
+    assert converted[-1]["content"] == "Let me check that."
+    assert converted[-1]["tool_calls"]
+
+
 def test_message_conversion_preserves_tool_linkage_for_model_service() -> None:
     messages = [
         HumanMessage(content="go"),

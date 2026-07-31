@@ -101,7 +101,10 @@ flowchart TD
 system 层级为：
 
 ```text
-平台行为协议与安全不变量
+平台行为协议与安全不变量（core、context_budget）
+  > 工具与数据源使用协议（tool_use，本轮绑定了工具时注入）
+  > 能力级来源模块（knowledge_base、agent_home，由对应 Capability Provider 声明）
+  > 本轮绑定来源描述（[CAPABILITY_SOURCES]，与 tool_use 同条件注入）
   > Agent system_prompt
   > 应用从 Agent Home 根路径读取的 AGENTS.md
   > 用户输入、Context、历史和 ToolResult
@@ -109,7 +112,42 @@ system 层级为：
 
 平台 Prompt 位于 `backend/app/prompts/platform/`。用户上传、Home 普通文件、Knowledge 原文和 ToolResult 都是不可信内容，不能改变工具 schema、权限、路径或租户隔离。
 
+`tool_use` 由 Runtime 拥有，只在本轮真的绑定了工具时注入，Capability Provider 不能声明它，也不能声明 `core`/`context_budget`。它只描述能力无关的编排契约：先判断意图再决定是否调用工具、按信号强度选择来源、读到足够证据即停止、一个来源为空时可以改查另一个来源、区分空结果与系统故障。具体某个来源装的是什么数据由该来源的能力模块和 tool description 说明。平台不按关键词把某类问题路由到固定数据源，也不把来源选择逻辑写进任何 Agent 的自定义 Prompt。
+
+工具 schema 只说明有哪些操作，说明不了本轮绑定的是哪些具体来源，因此 Runtime 另外注入 `[CAPABILITY_SOURCES]`：它把已冻结的 `ResolvedAgentConfig` 投影为确定性描述块，列出 Agent Home 名称、每个 Knowledge Collection 名称、文档范围（整库或显式选择的文档名）和 `retrieval_mode`。模型据此回答"绑定了哪些来源"，并在用户没有点名来源时判断哪个来源信号更高。
+
+该块受以下约束：
+
+- 与 `tool_use` 同条件注入。只有本轮真的绑定了工具才渲染，模型没有工具可达的来源不会被描述；
+- 只暴露标签和检索形态。owner id、collection/document id、object key、generation、`top_k`、`score_threshold`、retriever 与 filter 一律不出现，这些由服务端强制，模型不能复述也不能伪造；
+- 资源名称是用户自己写的字符串，因此每个标签都会折叠控制字符与换行、去掉方括号、截断长度，并在两个名称归一化后相同时追加确定性序号，任何名称都无法伪造块分隔符或新的 Prompt 行，也不会把两个来源渲染成同一个标签；块内明确声明名称是数据而不是指令；
+- 上述处理只约束标签的结构，不能阻止标签写得像一条指令。这一残余风险是显式接受的：标签作者不会因此获得他本来没有的影响力——Collection 与 Workspace 名称由资源所有者撰写，而同一个人本来就在同一段 Prompt 里撰写 Agent `system_prompt`；公共资源由管理员撰写，本就高于 Agent 指令。标签也不会跨租户，因为 scope 解析先按认证用户过滤再描述来源。数据边界始终由服务端强制，不依赖模型遵守这段文字；
+- 体积确定性有界：文档名超限先降级为计数，再降级为集合总数，绝不挤占对话预算。
+
 每轮用 Tool Registry 冻结当前能力集合，再构建 LangGraph `create_react_agent`。模型生成真实 `tool_call_id`，ToolResult 作为匹配 ToolMessage 进入 live graph state，并写入 Assistant `messages_chain`。Graph state 不启用持久 checkpointer，最终历史仍以 MySQL Subtask 为准。
+
+一个 Assistant 回合可以包含自然语言前导文本和多个并行 Tool Call，也可以在多轮里连续调用工具。Runtime 按 provider 流的 tool call index 累积片段、按 `tool_call_id` 关联 ToolResult，并按同样的结构写入 `messages_chain`。并行 Tool Call 的完成顺序不保证，关联完全依赖 call id 而不是位置。
+
+并行调用共享同一轮的预算与轮次计数：
+
+- 工具轮次按 Assistant 回合计数，不按 ToolResult 条数计数。否则一个含 N 个并行调用的回合会一次性耗尽 `RUNTIME_MAX_TOOL_ROUNDS`，让模型没有机会给出最终回答；
+- 同一回合的并行调用拿到的是剩余预算的确定性等分，而不是各自独占全部剩余预算。它们收到的是同一份工具执行前状态，若各自按全额计算，就会出现每个结果单独都放得下、合并后才超预算并让整轮以 `context_too_large` 失败。
+
+Provider 能力配置 `*_PARALLEL_TOOL_CALLS`（`auto`/`on`/`off`）决定是否显式下发 OpenAI 协议的 `parallel_tool_calls`。`auto` 不下发参数，沿用 Provider 默认行为。Qwen 默认为 `off`：其 OpenAI 兼容端点是并行 Tool Call 流不稳定的已观测来源，默认退化为逐轮 ReAct，因此不需要运维修改配置就是安全的。Runtime 本身已支持并行 Tool Call，确认端点稳定后可以改为 `auto` 或 `on`；若某个端点拒绝该参数，改回 `auto` 即可不下发。
+
+Runtime 错误按来源分类，不再统一折叠成 `provider_call_failed`：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `provider_call_failed` | Provider 传输或 API 调用失败 |
+| `provider_tool_call_invalid` | Provider 流里的 Tool Call 格式非法：参数非 JSON 对象、缺字段、同一条流内 id 重复、超过单轮上限 |
+| `provider_response_invalid` | Provider 流本身不可用（空流、Tool Call 开始后又输出文本） |
+| `runtime_tool_protocol_violation` | ReAct 层的工具协议异常：Tool Call 无法解析、跨流 id 重复、ToolResult 与 Tool Call 无法关联 |
+| `context_too_large` | 超出上下文预算 |
+
+id 重复在两层各有一次判定：单条 provider 流内重复由解析层拒绝，装配成 Assistant 消息后仍重复则由 ReAct 层拒绝。两者分别对应上表的两个错误码。
+
+工具自身的失败不走这些码，而是作为 ToolResult 的结构化 `code` 返回给模型，由模型决定是否改查其他来源。
 
 ## 上下文治理边界
 
