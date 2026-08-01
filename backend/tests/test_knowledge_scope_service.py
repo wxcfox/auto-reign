@@ -43,8 +43,14 @@ def _snapshot(
 ) -> ResolvedKnowledgeScope:
     return ResolvedKnowledgeScope(
         collection_id=collection_id,
+        name=f"collection {collection_id}",
         owner_user_id=owner_user_id,
         document_ids=document_ids,
+        document_names=(
+            None
+            if document_ids is None
+            else tuple(f"{value}.md" for value in document_ids)
+        ),
         config_json=MappingProxyType(config or _config()),
         updated_at=_SNAPSHOT_TIME,
     )

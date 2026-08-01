@@ -4,7 +4,7 @@ from dataclasses import asdict, is_dataclass
 import hashlib
 import json
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.services.agent_home_paths import normalize_home_path
 from app.services.agent_home_service import (
@@ -23,50 +23,73 @@ from app.services.token_counter import RuntimeTokenCounter
 from app.storage.object_store import ObjectNotFound, ObjectStoreError
 
 
+_HOME_SUMMARY = (
+    "Agent Home is this user's own long-term file workspace. It holds material "
+    "the user produced and kept - records, logs, checklists, drafts, personal "
+    "profiles - organised as files and addressed by path, not by content search."
+)
+
+
 class ListFilesInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    directory: str = ""
+    directory: str = Field(
+        default="",
+        description=(
+            "Agent Home directory to list. Empty lists the workspace root."
+        ),
+    )
 
 
 class ReadFileInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    path: str
+    path: str = Field(
+        description="Agent Home file path, as returned by list_files.",
+    )
 
 
 class CreateFileInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    path: str
-    content: str
+    path: str = Field(description="Agent Home file path to create.")
+    content: str = Field(description="Full UTF-8 file body.")
 
 
 class WriteFileInput(CreateFileInput):
     model_config = ConfigDict(extra="forbid")
 
-    expected_etag: str
+    expected_etag: str = Field(
+        description="ETag from the most recent read_file of this path.",
+    )
 
 
 TOOL_MODELS: tuple[tuple[str, str, type[BaseModel]], ...] = (
     (
         "list_files",
-        "List direct children in one Agent Home directory.",
+        f"{_HOME_SUMMARY} List the direct children of one directory. Use it "
+        "first to discover what exists whenever the user did not name an exact "
+        "path.",
         ListFilesInput,
     ),
     (
         "read_file",
-        "Read one UTF-8 Agent Home file and its ETag.",
+        f"{_HOME_SUMMARY} Read one UTF-8 file and its ETag. Use it when "
+        "answering needs the content the user kept in that file. "
+        "`workspace_file_not_found` means the path holds nothing - a valid "
+        "finding, not a failure.",
         ReadFileInput,
     ),
     (
         "create_file",
-        "Create a new UTF-8 Agent Home file; fail if it exists.",
+        f"{_HOME_SUMMARY} Create a new UTF-8 file; fail if it already exists. "
+        "Only use it when the user asked to persist something.",
         CreateFileInput,
     ),
     (
         "write_file",
-        "Replace one Agent Home file using the ETag returned by read_file.",
+        f"{_HOME_SUMMARY} Replace one file using the ETag returned by "
+        "read_file. Only use it when the user asked to persist something.",
         WriteFileInput,
     ),
 )

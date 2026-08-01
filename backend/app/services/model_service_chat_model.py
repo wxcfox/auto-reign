@@ -83,6 +83,7 @@ class ModelServiceChatModel(BaseChatModel):
         del stop, kwargs
         call_index = self._next_call_index
         self._next_call_index += 1
+        tool_call_index = 0
         for event in self.model_service.stream_turn(
             to_model_messages(messages),
             provider=self.provider_name,
@@ -106,6 +107,9 @@ class ModelServiceChatModel(BaseChatModel):
                 )
                 continue
             if isinstance(event, ToolCall):
+                # Each provider tool call keeps its own stream index so
+                # LangChain merges parallel calls into distinct tool calls
+                # instead of concatenating their arguments.
                 yield ChatGenerationChunk(
                     message=AIMessageChunk(
                         content="",
@@ -118,12 +122,13 @@ class ModelServiceChatModel(BaseChatModel):
                                     separators=(",", ":"),
                                 ),
                                 "id": event.id,
-                                "index": 0,
+                                "index": tool_call_index,
                                 "type": "tool_call_chunk",
                             }
                         ],
                     )
                 )
+                tool_call_index += 1
                 continue
             raise TypeError("unsupported model service event")
 
@@ -134,7 +139,10 @@ def to_model_messages(messages: Sequence[BaseMessage]) -> list[dict[str, object]
     for message in converted:
         item = dict(message)
         if item.get("role") == "assistant" and item.get("tool_calls"):
-            item["content"] = None
+            # Keep a natural-language preamble that the model streamed with its
+            # tool calls; anything else collapses to the protocol's null body.
+            content = item.get("content")
+            item["content"] = content if isinstance(content, str) and content else None
         if item.get("role") == "tool":
             item.pop("name", None)
         normalized.append(item)

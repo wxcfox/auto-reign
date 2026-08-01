@@ -7,6 +7,7 @@ from typing import Any
 import warnings
 
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     ToolMessage,
     convert_to_messages,
@@ -154,12 +155,18 @@ class ReactLoop:
                     pending_reasoning = []
                 result = message.artifact
                 if not isinstance(result, ToolResult):
-                    raise TypeError("tool message did not preserve its audit artifact")
+                    raise _tool_protocol_violation(
+                        "A tool result lost its audit artifact."
+                    )
                 if message.tool_call_id != result.call_id:
-                    raise TypeError("tool message did not match its audit artifact")
+                    raise _tool_protocol_violation(
+                        "A tool result did not match its audit artifact."
+                    )
                 call = active_calls.get(result.call_id)
                 if call is None or not starts_emitted:
-                    raise TypeError("tool result did not match an assistant tool call")
+                    raise _tool_protocol_violation(
+                        "A tool result did not match an assistant tool call."
+                    )
                 yield ToolResultEvent(call=call, result=result)
                 if result.metadata.get("terminal") is True:
                     raise _context_too_large_terminal()
@@ -189,8 +196,12 @@ class ReactLoop:
     ) -> Callable[[dict[str, Any]], dict[str, object]]:
         def guard(state: dict[str, Any]) -> dict[str, object]:
             messages = state.get("messages", ())
+            # One assistant turn is one round even when it carries several
+            # parallel calls. Counting ToolMessages instead would let a single
+            # parallel turn exhaust the limit and block the final answer.
             completed_tool_rounds = sum(
-                isinstance(message, ToolMessage) for message in messages
+                isinstance(message, AIMessage) and bool(message.tool_calls)
+                for message in messages
             )
             if completed_tool_rounds >= self.max_tool_rounds:
                 raise ToolCallLimitExceeded()
@@ -216,12 +227,17 @@ class ReactLoop:
         ) -> Any:
             call = _runtime_tool_call(request.tool_call)
             state_messages = request.state.get("messages", ())
+            # Parallel calls in one turn all receive the same pre-tool state, so
+            # each must be given a share of the remaining budget instead of the
+            # whole of it. Otherwise every sibling fits on its own and only the
+            # merged state is found to be over budget, which fails the turn.
+            siblings = _sibling_tool_calls(state_messages, call)
             remaining = self._remaining_tokens(
                 context=context,
                 messages=to_model_messages(state_messages[:-1]),
                 definitions=registry.definitions,
-                call=call,
-            )
+                calls=siblings,
+            ) // len(siblings)
             if remaining <= 0:
                 return _tool_message(call, terminal_budget_audit(call))
 
@@ -264,12 +280,14 @@ class ReactLoop:
         context: CapabilityContext,
         messages: list[dict[str, object]],
         definitions: tuple[ToolDefinition, ...],
-        call: ToolCall,
+        calls: tuple[ToolCall, ...],
     ) -> int:
         used = self.token_counter.count_model_input(
             messages,
             tools=definitions,
-        ) + self.token_counter.count_assistant_tool_call(call)
+        ) + sum(
+            self.token_counter.count_assistant_tool_call(call) for call in calls
+        )
         return context.token_budget - used
 
     def _fit_result(
@@ -327,9 +345,41 @@ def _context_too_large_terminal() -> RuntimeTerminalError:
     )
 
 
+def _tool_protocol_violation(message: str) -> RuntimeTerminalError:
+    """A tool call/result pair that the harness could not correlate.
+
+    This is a runtime protocol fault, not an unavailable provider, so it keeps
+    its own diagnosable code instead of collapsing into ``provider_call_failed``.
+    """
+
+    return RuntimeTerminalError(
+        code="runtime_tool_protocol_violation",
+        message=message,
+        status_code=502,
+    )
+
+
+def _sibling_tool_calls(
+    state_messages: Any,
+    call: ToolCall,
+) -> tuple[ToolCall, ...]:
+    """Return every tool call declared by the assistant turn being executed.
+
+    The budget for one turn's results has to be split across the calls that
+    share it, so the split must be derived from the assistant message rather
+    than from the single call this wrapper happens to be running.
+    """
+
+    terminal = state_messages[-1] if state_messages else None
+    if not isinstance(terminal, AIMessage) or not terminal.tool_calls:
+        return (call,)
+    siblings = tuple(_runtime_tool_call(value) for value in terminal.tool_calls)
+    return siblings if any(item.id == call.id for item in siblings) else (call,)
+
+
 def _runtime_tool_call(value: object) -> ToolCall:
     if not isinstance(value, dict):
-        raise TypeError("invalid LangGraph tool call")
+        raise _tool_protocol_violation("The model returned an unusable tool call.")
     call_id = value.get("id")
     name = value.get("name")
     arguments = value.get("args")
@@ -340,7 +390,7 @@ def _runtime_tool_call(value: object) -> ToolCall:
         or not name.strip()
         or not isinstance(arguments, dict)
     ):
-        raise TypeError("invalid LangGraph tool call")
+        raise _tool_protocol_violation("The model returned an unusable tool call.")
     return ToolCall(id=call_id, name=name, arguments=arguments)
 
 
@@ -395,9 +445,23 @@ def _assistant_event(
     provider: str,
     model: str,
 ) -> AssistantMessageEvent:
+    if chunk.invalid_tool_calls:
+        # The provider stream produced tool call syntax LangChain could not
+        # parse. Surface it as its own runtime code so it is never confused
+        # with an unavailable provider.
+        raise _tool_protocol_violation(
+            "The model tool call could not be parsed from the provider stream."
+        )
     calls: list[ToolCall] = []
+    seen: set[str] = set()
     for value in chunk.tool_calls:
-        calls.append(_runtime_tool_call(value))
+        call = _runtime_tool_call(value)
+        if call.id in seen:
+            raise _tool_protocol_violation(
+                "The model reused one tool call id in a single turn."
+            )
+        seen.add(call.id)
+        calls.append(call)
     content = _assistant_content(chunk)
     if calls and content == "":
         content = None

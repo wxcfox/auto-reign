@@ -28,6 +28,94 @@ _DATA_IMAGE_URL = re.compile(
 )
 _SAFE_PROVIDER_REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,256}$")
 
+MAX_PROVIDER_TOOL_CALLS_PER_TURN = 8
+
+
+class ProviderStreamError(Exception):
+    """A provider stream that the runtime could not turn into a valid turn.
+
+    ``code`` separates a malformed model tool call from a transport failure so
+    the runtime and operators can tell a model protocol violation apart from an
+    unavailable provider.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(code)
+        self.code = code
+        self.public_message = message
+
+
+def _tool_call_invalid(message: str) -> ProviderStreamError:
+    return ProviderStreamError("provider_tool_call_invalid", message)
+
+
+def _response_invalid(message: str) -> ProviderStreamError:
+    return ProviderStreamError("provider_response_invalid", message)
+
+
+class _ToolCallAccumulator:
+    """Accumulate OpenAI-protocol streamed tool call fragments by index."""
+
+    def __init__(self) -> None:
+        self._order: list[int] = []
+        self._parts: dict[int, dict[str, list[str]]] = {}
+
+    def __bool__(self) -> bool:
+        return bool(self._order)
+
+    def append(self, index: int, tool_delta: object, field: object) -> None:
+        if index not in self._parts:
+            if len(self._order) >= MAX_PROVIDER_TOOL_CALLS_PER_TURN:
+                raise _tool_call_invalid(
+                    "The model requested too many tool calls in one turn."
+                )
+            self._order.append(index)
+            self._parts[index] = {"id": [], "name": [], "arguments": []}
+        parts = self._parts[index]
+        _append_fragment(parts["id"], field(tool_delta, "id"))
+        function = field(tool_delta, "function")
+        if function is not None:
+            _append_fragment(parts["name"], field(function, "name"))
+            _append_fragment(parts["arguments"], field(function, "arguments"))
+
+    def finish(self) -> tuple[ToolCall, ...]:
+        calls: list[ToolCall] = []
+        seen: set[str] = set()
+        for index in self._order:
+            parts = self._parts[index]
+            call_id = "".join(parts["id"])
+            name = "".join(parts["name"])
+            raw_arguments = "".join(parts["arguments"])
+            if not call_id or not name or not raw_arguments:
+                raise _tool_call_invalid(
+                    "The model returned an incomplete tool call."
+                )
+            if call_id in seen:
+                raise _tool_call_invalid(
+                    "The model reused one tool call id in a single turn."
+                )
+            seen.add(call_id)
+            try:
+                arguments = json.loads(raw_arguments)
+            except (TypeError, ValueError, RecursionError) as error:
+                raise _tool_call_invalid(
+                    "The model tool call arguments are not valid JSON."
+                ) from error
+            if not isinstance(arguments, dict):
+                raise _tool_call_invalid(
+                    "The model tool call arguments must be a JSON object."
+                )
+            calls.append(ToolCall(id=call_id, name=name, arguments=arguments))
+        return tuple(calls)
+
+
+def _append_fragment(parts: list[str], fragment: object) -> None:
+    if fragment is None:
+        return
+    if not isinstance(fragment, str):
+        raise _tool_call_invalid("The model returned an invalid tool call fragment.")
+    parts.append(fragment)
+
 
 class ModelService:
     def __init__(
@@ -56,10 +144,13 @@ class ModelService:
             raise ValueError("runtime observer is required")
         normalized_messages = self._validate_messages(messages)
         normalized_tools = self._validate_tools(tools)
-        resolved_provider, resolved_model, api_key, base_url = self._resolve_provider(
-            provider,
-            model,
-        )
+        (
+            resolved_provider,
+            resolved_model,
+            api_key,
+            base_url,
+            parallel_tool_calls,
+        ) = self._resolve_provider(provider, model)
         started = self._read_clock()
         stream: object | None = None
         provider_request_id: str | None = None
@@ -82,14 +173,14 @@ class ModelService:
             }
             if normalized_tools:
                 request["tools"] = self._tool_payloads(normalized_tools)
+                if parallel_tool_calls is not None:
+                    request["parallel_tool_calls"] = parallel_tool_calls
             stream = client.chat.completions.create(**request)
             provider_request_id = self._provider_request_id(stream)
 
             yielded_text = False
-            tool_index: int | None = None
-            tool_id_parts: list[str] = []
-            tool_name_parts: list[str] = []
-            tool_argument_parts: list[str] = []
+            tool_calls_started = False
+            accumulator = _ToolCallAccumulator()
             for chunk in stream:
                 usage = self._field(chunk, "usage")
                 observed_input = self._safe_token_count(
@@ -119,8 +210,14 @@ class ModelService:
                             first_token_latency_ms = self._elapsed_milliseconds(started)
                         yield ProviderReasoningDelta(content=reasoning)
                     for text in text_parts:
-                        if tool_index is not None:
-                            raise ValueError("mixed model stream")
+                        # A short natural-language preamble before tool calls is
+                        # a normal OpenAI-protocol turn. Only text emitted after
+                        # tool call fragments have started is unrecoverable,
+                        # because the assistant turn is then already ambiguous.
+                        if tool_calls_started:
+                            raise _response_invalid(
+                                "The model streamed text after starting a tool call."
+                            )
                         if first_token_latency_ms is None:
                             first_token_latency_ms = self._elapsed_milliseconds(
                                 started
@@ -131,69 +228,59 @@ class ModelService:
                     tool_calls = self._field(delta, "tool_calls")
                     if tool_calls is None or tool_calls == []:
                         continue
-                    if yielded_text:
-                        raise ValueError("mixed model stream")
-                    if not isinstance(tool_calls, (list, tuple)) or len(tool_calls) != 1:
-                        raise ValueError("multiple model tool calls")
-                    tool_delta = tool_calls[0]
-                    index = self._field(tool_delta, "index")
-                    if isinstance(index, bool) or not isinstance(index, int) or index != 0:
-                        raise ValueError("invalid model tool call index")
-                    if tool_index is None:
-                        tool_index = index
-                    elif index != tool_index:
-                        raise ValueError("multiple model tool calls")
-
-                    call_type = self._field(tool_delta, "type")
-                    if call_type is not None and call_type != "function":
-                        raise ValueError("invalid model tool call type")
-                    self._append_fragment(
-                        tool_id_parts,
-                        self._field(tool_delta, "id"),
-                    )
-                    function = self._field(tool_delta, "function")
-                    if function is not None:
-                        self._append_fragment(
-                            tool_name_parts,
-                            self._field(function, "name"),
+                    if not isinstance(tool_calls, (list, tuple)):
+                        raise _tool_call_invalid(
+                            "The model returned an invalid tool call delta."
                         )
-                        self._append_fragment(
-                            tool_argument_parts,
-                            self._field(function, "arguments"),
-                        )
+                    tool_calls_started = True
+                    for tool_delta in tool_calls:
+                        index = self._field(tool_delta, "index")
+                        if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+                            raise _tool_call_invalid(
+                                "The model returned an invalid tool call index."
+                            )
+                        call_type = self._field(tool_delta, "type")
+                        if call_type is not None and call_type != "function":
+                            raise _tool_call_invalid(
+                                "The model returned an unsupported tool call type."
+                            )
+                        accumulator.append(index, tool_delta, self._field)
 
-            if tool_index is not None:
-                call_id = "".join(tool_id_parts)
-                name = "".join(tool_name_parts)
-                raw_arguments = "".join(tool_argument_parts)
-                if not call_id or not name or not raw_arguments:
-                    raise ValueError("incomplete model tool call")
-                arguments = json.loads(raw_arguments)
-                if not isinstance(arguments, dict):
-                    raise ValueError("model tool arguments must be an object")
+            if accumulator:
+                # Assemble before claiming success: a malformed tool call must
+                # be reported as a failed provider call, not a completed one.
+                calls = accumulator.finish()
                 status = "completed"
-                yield ToolCall(id=call_id, name=name, arguments=arguments)
+                yield from calls
                 return
             if not yielded_text:
-                raise ValueError("empty model stream")
+                raise _response_invalid("The model returned an empty stream.")
             status = "completed"
         except Exception as error:
             if provider_request_id is None:
                 provider_request_id = self._provider_request_id(error)
+            error_code = (
+                error.code
+                if isinstance(error, ProviderStreamError)
+                else "provider_call_failed"
+            )
+            public_message = (
+                f"The {resolved_provider} model response could not be parsed: "
+                f"{error.public_message}"
+                if isinstance(error, ProviderStreamError)
+                else f"The {resolved_provider} model request failed."
+            )
             logger.error(
                 "provider_stream_failed",
                 extra={
                     "provider": resolved_provider,
                     "model": resolved_model,
                     "exception_type": type(error).__name__,
-                    "error_code": "provider_call_failed",
+                    "error_code": error_code,
                 },
                 exc_info=False,
             )
-            raise bad_gateway(
-                "provider_call_failed",
-                f"The {resolved_provider} model request failed.",
-            ) from error
+            raise bad_gateway(error_code, public_message) from error
         finally:
             self._close_stream(stream)
             unavailable_fields = tuple(
@@ -266,47 +353,59 @@ class ModelService:
     def _validate_assistant_tool_message(
         item: dict[str, object],
     ) -> dict[str, object]:
-        if item.get("content") is not None:
+        content = item.get("content")
+        # A model may pair a short natural-language preamble with its tool
+        # calls. Replaying that turn must preserve the preamble so the model
+        # keeps its own reasoning trail across ReAct rounds.
+        if content is not None and not (isinstance(content, str) and content):
             raise ValueError("validated chat messages are required")
         tool_calls = item.get("tool_calls")
-        if not isinstance(tool_calls, list) or len(tool_calls) != 1:
+        if not isinstance(tool_calls, list) or not tool_calls:
             raise ValueError("validated chat messages are required")
-        call = tool_calls[0]
-        if not isinstance(call, dict):
+        if len(tool_calls) > MAX_PROVIDER_TOOL_CALLS_PER_TURN:
             raise ValueError("validated chat messages are required")
-        call_id = call.get("id")
-        if (
-            not isinstance(call_id, str)
-            or not call_id
-            or call.get("type") != "function"
-        ):
-            raise ValueError("validated chat messages are required")
-        function = call.get("function")
-        if not isinstance(function, dict):
-            raise ValueError("validated chat messages are required")
-        name = function.get("name")
-        raw_arguments = function.get("arguments")
-        if not isinstance(name, str) or not name or not isinstance(raw_arguments, str):
-            raise ValueError("validated chat messages are required")
-        try:
-            arguments = json.loads(raw_arguments)
-        except (TypeError, ValueError) as error:
-            raise ValueError("validated chat messages are required") from error
-        if not isinstance(arguments, dict):
-            raise ValueError("validated chat messages are required")
-        return {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
+        normalized_calls: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for call in tool_calls:
+            if not isinstance(call, dict):
+                raise ValueError("validated chat messages are required")
+            call_id = call.get("id")
+            if (
+                not isinstance(call_id, str)
+                or not call_id
+                or call_id in seen
+                or call.get("type") != "function"
+            ):
+                raise ValueError("validated chat messages are required")
+            seen.add(call_id)
+            function = call.get("function")
+            if not isinstance(function, dict):
+                raise ValueError("validated chat messages are required")
+            name = function.get("name")
+            raw_arguments = function.get("arguments")
+            if (
+                not isinstance(name, str)
+                or not name
+                or not isinstance(raw_arguments, str)
+            ):
+                raise ValueError("validated chat messages are required")
+            try:
+                arguments = json.loads(raw_arguments)
+            except (TypeError, ValueError) as error:
+                raise ValueError("validated chat messages are required") from error
+            if not isinstance(arguments, dict):
+                raise ValueError("validated chat messages are required")
+            normalized_calls.append(
                 {
                     "id": call_id,
                     "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": raw_arguments,
-                    },
+                    "function": {"name": name, "arguments": raw_arguments},
                 }
-            ],
+            )
+        return {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": normalized_calls,
         }
 
     @staticmethod
@@ -449,14 +548,6 @@ class ModelService:
                 exc_info=False,
             )
 
-    @staticmethod
-    def _append_fragment(parts: list[str], fragment: object) -> None:
-        if fragment is None:
-            return
-        if not isinstance(fragment, str):
-            raise ValueError("invalid model tool call fragment")
-        parts.append(fragment)
-
     @classmethod
     def _content_delta_parts(
         cls,
@@ -516,7 +607,7 @@ class ModelService:
         self,
         provider: str,
         model: str,
-    ) -> tuple[str, str, str, str | None]:
+    ) -> tuple[str, str, str, str | None, bool | None]:
         if not isinstance(provider, str) or not provider:
             raise self._model_unavailable()
         if not isinstance(model, str) or not model:
@@ -531,6 +622,7 @@ class ModelService:
             model,
             provider_config.api_key,
             provider_config.base_url,
+            provider_config.parallel_tool_calls,
         )
 
     @staticmethod

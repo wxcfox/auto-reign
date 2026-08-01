@@ -151,6 +151,14 @@ S3_ADDRESSING_STYLE=virtual
 
 应用运行时的对象大小、上下文预算、Knowledge 检索、Worker、模型超时和工具轮次上限也应显式填写；这些配置由 `Settings` 统一读取，完整示例见 `deploy/auto-reign.env.example`。Compose 固定把 backend 的 `REDIS_URL` 指向内部 `redis:6379/0`，并注入容器路径、数据库 URL、Retriever URL 和发布版本等拓扑值。
 
+`DEEPSEEK_PARALLEL_TOOL_CALLS`、`OPENAI_PARALLEL_TOOL_CALLS` 和 `QWEN_PARALLEL_TOOL_CALLS` 声明各 Provider 的并行 Tool Call 能力，取值 `auto`/`on`/`off`：
+
+- `auto`（OpenAI、DeepSeek 默认）不下发请求参数，沿用 Provider 默认行为；
+- `off`（Qwen 默认）显式下发 `parallel_tool_calls: false`。Qwen 的 OpenAI 兼容端点是并行 Tool Call 流不稳定的已观测来源，默认退化为逐轮 ReAct，因此不改配置就是安全的；
+- `on` 显式要求并行调用。
+
+Runtime 本身支持并行 Tool Call，确认端点稳定后可以放开；若某个端点拒绝该参数并返回 4xx，把对应 Provider 改回 `auto` 即可不下发。改动只影响后续请求，不需要迁移或数据重置。
+
 production validator 固定要求：
 
 - `APP_ENV=production`；

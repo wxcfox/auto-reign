@@ -15,6 +15,10 @@ const ERROR_CODE_KEYS: Record<string, string> = {
   model_unavailable: "chat:errors.model_unavailable",
   provider_call_failed: "chat:errors.provider_call_failed",
   provider_invalid_response: "chat:errors.provider_invalid_response",
+  provider_response_invalid: "chat:errors.provider_response_invalid",
+  provider_tool_call_invalid: "chat:errors.provider_tool_call_invalid",
+  runtime_tool_protocol_violation:
+    "chat:errors.runtime_tool_protocol_violation",
   upload_filename_invalid: "chat:errors.upload_filename_invalid",
   upload_type_invalid: "chat:errors.upload_type_invalid",
   upload_too_large: "chat:errors.upload_too_large",

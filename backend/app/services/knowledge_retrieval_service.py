@@ -5,6 +5,8 @@ import json
 import math
 from typing import Protocol
 
+from fastapi import HTTPException
+
 from app.core.errors import bad_request, service_unavailable
 from app.core.limits import (
     DEFAULT_KNOWLEDGE_MAX_QUERY_CHARS,
@@ -66,6 +68,19 @@ class _KnowledgeSearchRetrieverFactory(Protocol):
     def get(self, retriever_type: RetrieverType) -> KnowledgeRetriever: ...
 
 
+def knowledge_result_status(sources: list[KnowledgeSource]) -> str:
+    """Return the single source of truth for a search outcome's status.
+
+    ``status`` separates "the scope holds no match" from "the knowledge backend
+    failed". Only the latter is reported as a tool error, so a model can decide
+    to query another bound source instead of treating an empty result as an
+    outage. The tool result body and its audit metadata must never disagree,
+    so both derive the value here.
+    """
+
+    return "hit" if sources else "no_match"
+
+
 def serialize_knowledge_result(
     mode: str,
     sources: list[KnowledgeSource],
@@ -73,6 +88,7 @@ def serialize_knowledge_result(
     return json.dumps(
         {
             "type": "untrusted_knowledge_sources",
+            "status": knowledge_result_status(sources),
             "mode": mode,
             "sources": [
                 {
@@ -248,8 +264,12 @@ class KnowledgeRetrievalService:
                         )
                     seen_chunks.add(chunk_key)
                     candidates.append(candidate)
+            except HTTPException:
+                # Source content failures already carry their own code and must
+                # not be relabelled as a retriever outage.
+                raise
             except Exception as error:
-                raise self._unavailable("Knowledge retrieval is unavailable.") from error
+                raise self._retriever_unavailable() from error
         return candidates
 
     def _validate_hit(
@@ -377,7 +397,7 @@ class KnowledgeRetrievalService:
             document.index_generation,
         )
         if document.parsed_object_key != expected_key:
-            raise self._unavailable("Knowledge content is unavailable.")
+            raise self._content_unavailable()
         try:
             text = read_parsed_text(
                 self.object_store,
@@ -385,7 +405,7 @@ class KnowledgeRetrievalService:
                 max_parsed_chars=self.max_parsed_chars,
             )
         except KnowledgeContentUnavailable as error:
-            raise self._unavailable("Knowledge content is unavailable.") from error
+            raise self._content_unavailable() from error
         cache[key] = text
         return text
 
@@ -423,7 +443,7 @@ class KnowledgeRetrievalService:
                 or group.owner_user_id < 0
                 or group.collection_id in seen_collections
             ):
-                raise self._unavailable("Knowledge content is unavailable.")
+                raise self._content_unavailable()
             seen_collections.add(group.collection_id)
             for document in group.documents:
                 if (
@@ -439,7 +459,7 @@ class KnowledgeRetrievalService:
                     or not isinstance(document.filename, str)
                     or not document.filename
                 ):
-                    raise self._unavailable("Knowledge content is unavailable.")
+                    raise self._content_unavailable()
                 expected_key = KnowledgeDocumentService.parsed_key(
                     document.owner_user_id,
                     document.collection_id,
@@ -447,7 +467,7 @@ class KnowledgeRetrievalService:
                     document.index_generation,
                 )
                 if document.parsed_object_key != expected_key:
-                    raise self._unavailable("Knowledge content is unavailable.")
+                    raise self._content_unavailable()
                 seen_documents.add(document.document_id)
 
     @staticmethod
@@ -562,5 +582,15 @@ class KnowledgeRetrievalService:
         return normalized
 
     @staticmethod
-    def _unavailable(message: str):
-        return service_unavailable("knowledge_unavailable", message)
+    def _retriever_unavailable():
+        return service_unavailable(
+            "knowledge_retriever_unavailable",
+            "Knowledge retrieval is unavailable.",
+        )
+
+    @staticmethod
+    def _content_unavailable():
+        return service_unavailable(
+            "knowledge_content_unavailable",
+            "Knowledge content is unavailable.",
+        )

@@ -150,6 +150,15 @@ class Settings(BaseSettings):
     default_chat_provider: str = "qwen"
     deepseek_base_url: str = "https://api.deepseek.com"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # Parallel tool call capability per chat provider. "auto" sends no request
+    # parameter and lets the provider decide; "on"/"off" pin the OpenAI-protocol
+    # `parallel_tool_calls` flag for endpoints that need an explicit contract.
+    # Qwen defaults to "off": its OpenAI-compatible endpoint is the observed
+    # source of unstable parallel tool call streams, so the safe sequential
+    # ReAct contract must hold without an operator editing the environment.
+    openai_parallel_tool_calls: Literal["auto", "on", "off"] = "auto"
+    deepseek_parallel_tool_calls: Literal["auto", "on", "off"] = "auto"
+    qwen_parallel_tool_calls: Literal["auto", "on", "off"] = "off"
     jwt_secret_key: str | None = None
     access_token_expire_minutes: int = 60 * 24 * 7
     app_version: str = "development"

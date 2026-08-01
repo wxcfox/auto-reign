@@ -50,6 +50,7 @@ FrozenJsonValue: TypeAlias = (
 @dataclass(frozen=True)
 class ResolvedAgentHome:
     workspace_id: str
+    name: str
     owner_user_id: int
     initial_agents_md: str
     config_json: Mapping[str, FrozenJsonValue]
@@ -59,8 +60,12 @@ class ResolvedAgentHome:
 @dataclass(frozen=True)
 class ResolvedKnowledgeScope:
     collection_id: str
+    name: str
     owner_user_id: int
     document_ids: tuple[str, ...] | None
+    # Filenames of the explicitly selected documents, in ``document_ids`` order.
+    # ``None`` means the scope is the whole Collection rather than a selection.
+    document_names: tuple[str, ...] | None
     config_json: Mapping[str, FrozenJsonValue]
     updated_at: datetime
 
@@ -261,7 +266,7 @@ class AgentService:
         if resource is None:
             raise conflict("agent_unavailable", "Agent is unavailable.")
         config = AgentConfig.model_validate(resource.config_json)
-        resources_by_id, _documents_by_id, reference_configs = (
+        resources_by_id, documents_by_id, reference_configs = (
             self._lock_and_validate_references(
                 session,
                 owner_id=resource.user_id,
@@ -283,6 +288,7 @@ class AgentService:
             )
             resolved_home = ResolvedAgentHome(
                 workspace_id=workspace.id,
+                name=workspace.name,
                 owner_user_id=workspace.user_id,
                 initial_agents_md=workspace_config.initial_agents_md,
                 config_json=frozen_workspace,
@@ -290,6 +296,7 @@ class AgentService:
             )
             normalized_home_snapshot = {
                 "workspace_id": workspace.id,
+                "name": workspace.name,
                 "owner_user_id": workspace.user_id,
                 "updated_at": workspace.updated_at.isoformat(),
                 "config": normalized_workspace,
@@ -309,11 +316,21 @@ class AgentService:
                 if scope.document_ids is not None
                 else None
             )
+            document_names = (
+                tuple(
+                    documents_by_id[document_id].name
+                    for document_id in document_ids
+                )
+                if document_ids is not None
+                else None
+            )
             resolved_scopes.append(
                 ResolvedKnowledgeScope(
                     collection_id=collection.id,
+                    name=collection.name,
                     owner_user_id=collection.user_id,
                     document_ids=document_ids,
+                    document_names=document_names,
                     config_json=frozen_collection,
                     updated_at=collection.updated_at,
                 )
@@ -321,11 +338,17 @@ class AgentService:
             normalized_scope_snapshots.append(
                 {
                     "collection_id": collection.id,
+                    "name": collection.name,
                     "owner_user_id": collection.user_id,
                     "updated_at": collection.updated_at.isoformat(),
                     "config": normalized_collection,
                     "document_ids": (
                         list(document_ids) if document_ids is not None else None
+                    ),
+                    "document_names": (
+                        list(document_names)
+                        if document_names is not None
+                        else None
                     ),
                 }
             )
